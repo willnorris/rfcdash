@@ -1,7 +1,11 @@
 #!/usr/bin/env python
 
-import os, re, sqlite3, urllib
+import copy, os, re, sqlite3, string, urllib
 from bs4 import BeautifulSoup, NavigableString, Tag 
+
+DOCUMENTS_DIR = os.path.join('rfc.docset', 'Contents', 'Resources', 'Documents')
+HTML_DIR = os.path.join('tools.ietf.org', 'html')
+RFC_DIR = os.path.join('tools.ietf.org', 'rfc')
 
 db = sqlite3.connect('rfc.docset/Contents/Resources/docSet.dsidx')
 cur = db.cursor()
@@ -10,9 +14,6 @@ try: cur.execute('DROP TABLE searchIndex;')
 except: pass
 cur.execute('CREATE TABLE searchIndex(id INTEGER PRIMARY KEY, name TEXT, type TEXT, path TEXT);')
 cur.execute('CREATE UNIQUE INDEX anchor ON searchIndex (name, type, path);')
-
-DOCUMENTS_DIR = os.path.join('rfc.docset', 'Contents', 'Resources', 'Documents')
-HTML_DIR = os.path.join('tools.ietf.org', 'html')
 
 for filename in os.listdir(os.path.join(DOCUMENTS_DIR, HTML_DIR)):
     page = open(os.path.join(DOCUMENTS_DIR, HTML_DIR, filename)).read()
@@ -49,3 +50,25 @@ for filename in os.listdir(os.path.join(DOCUMENTS_DIR, HTML_DIR)):
 
 db.commit()
 db.close()
+
+
+# build index file
+
+index = open(os.path.join(DOCUMENTS_DIR, RFC_DIR, 'index.html')).read()
+soup = BeautifulSoup(index)
+
+content = soup.find('div', class_='content').extract()
+soup.find('div', class_='page').append(content)
+
+[t.extract() for t in soup(['script', 'table'])]
+
+for a in soup('a'):
+    if u'href' in a.attrs and a[u'href'].startswith(u'http://tools.ietf.org'):
+        id = string.split(a[u'href'], '/')[-1].lstrip("0")
+        a[u'href'] = "../html/rfc" + id + ".html"
+
+soup = re.sub(r"<block>.*<\/block>", "", str(soup), flags=re.DOTALL)
+
+fp = open(os.path.join(DOCUMENTS_DIR, RFC_DIR, 'index.html'), 'w')
+fp.write(soup)
+fp.close()
