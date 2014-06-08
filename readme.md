@@ -17,9 +17,9 @@ take a little over 500 MB on disk.
 Updating the Docset
 -------------------
 
-Most people shouldn't need to update the docset yourself. It generally easier for me to do it, so
-these notes are mainly for myself.  If you notice that the docset is missing an RFC that you need,
-just [open an issue][] and I'm happy to update things.
+Most people generally shouldn't need to update the docset on their own. It's generally easier for me
+to do it, so these notes are mainly for myself.  If you notice that the docset is missing an RFC
+that you need, just [open an issue][] and I'm happy to update it.
 
 Updating requires:
 
