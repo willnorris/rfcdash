@@ -3,11 +3,11 @@
 import copy, os, re, sqlite3, string, urllib
 from bs4 import BeautifulSoup, NavigableString, Tag 
 
-DOCUMENTS_DIR = os.path.join('rfc.docset', 'Contents', 'Resources', 'Documents')
+DOCUMENTS_DIR = os.path.join('RFCs.docset', 'Contents', 'Resources', 'Documents')
 HTML_DIR = os.path.join('tools.ietf.org', 'html')
 RFC_DIR = os.path.join('tools.ietf.org', 'rfc')
 
-db = sqlite3.connect('rfc.docset/Contents/Resources/docSet.dsidx')
+db = sqlite3.connect('RFCs.docset/Contents/Resources/docSet.dsidx')
 cur = db.cursor()
 
 try: cur.execute('DROP TABLE searchIndex;')
