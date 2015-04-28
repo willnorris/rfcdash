@@ -35,6 +35,10 @@ everything to make sure we have the latest.
 Once everything is downloaded, run [`rebuild.py`][] to build the index file, rebuild the search
 index, and add tables of contents to each RFC.
 
+Manually update the index page to use relative links by running:
+
+    gsed -r -i 's/href="http:\/\/tools\.ietf\.org\/html\/0*([[:alnum:]]+)"/href="..\/html\/rfc\1\.html"/g' RFCs.docset/Contents/Resources/Documents/tools.ietf.org/rfc/index.html
+
 [Dash.app]: http://kapeli.com/dash
 [open an issue]: https://github.com/willnorris/rfcdash/issues
 [`sync`]: https://github.com/willnorris/rfcdash/blob/master/sync
