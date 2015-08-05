@@ -40,7 +40,16 @@ Manually update the index page to use relative links by running:
 
     gsed -r -i 's/href="http:\/\/tools\.ietf\.org\/html\/0*([[:alnum:]]+)"/href="..\/html\/rfc\1\.html"/g' RFCs.docset/Contents/Resources/Documents/tools.ietf.org/rfc/index.html
 
+
+License
+-------
+
+The RFCs themselves contained in this repo are subject to the [IETF IPR policy][].  The scripts used
+to construct the docset are released under an [Apache 2.0 license][].
+
 [Dash.app]: http://kapeli.com/dash
 [open an issue]: https://github.com/willnorris/rfcdash/issues
 [`sync`]: https://github.com/willnorris/rfcdash/blob/master/sync
 [`rebuild.py`]: https://github.com/willnorris/rfcdash/blob/master/rebuild.py
+[IETF IPR policy]: https://www.ietf.org/ipr/
+[Apache 2.0 license]: LICENSE
