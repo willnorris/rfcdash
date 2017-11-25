@@ -1,3 +1,7 @@
+![status: inactive](https://img.shields.io/badge/status-inactive-red.svg)
+
+This project is no longer actively maintained, since I don't use MacOS much anymore.  If someone would like to take over maintenance of the project, open an issue and say hello.
+
 rfcdash
 =======
 
