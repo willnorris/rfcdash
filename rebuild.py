@@ -29,7 +29,7 @@ for filename in os.listdir(os.path.join(DOCUMENTS_DIR, HTML_DIR)):
         if len(name) > 0:
             path = os.path.join(HTML_DIR, filename)
             cur.execute('INSERT OR IGNORE INTO searchIndex(name, type, path) VALUES (?,?,?)', (name, 'Guide', path))
-            print 'name: %s, path: %s' % (name, path)
+            print('name: %s, path: %s' % (name, path))
 
     # support table of contents by adding dash <a> tags for each header in the file
     for tag in soup.find_all('span'):
@@ -44,7 +44,7 @@ for filename in os.listdir(os.path.join(DOCUMENTS_DIR, HTML_DIR)):
                     text = text.replace(u'\xa0', u' ') # convert non-breaking space to regular space
 
                     #print 'adding toc tag for section: %s' % text
-                    name = '//apple_ref/Section/' + urllib.quote(text, '')
+                    name = '//apple_ref/Section/' + urllib.parse.quote(text, '')
                     dashAnchor = BeautifulSoup('<a name="%s" class="dashAnchor"></a>' % name).a
                     tag.insert(0, dashAnchor)
 
@@ -58,7 +58,7 @@ db.close()
 
 # build index file
 index = open(os.path.join(DOCUMENTS_DIR, RFC_DIR, 'index.html')).read()
-soup = BeautifulSoup(index)
+soup = BeautifulSoup(index, "html5lib")
 
 # strip unecessary sidebar and javascript
 content = soup.find('div', class_='content').extract()
@@ -68,7 +68,7 @@ soup.find('div', class_='page').append(content)
 # rewrite all absolute links for RFCs to be local relative links
 for a in soup('a'):
     if u'href' in a.attrs and a[u'href'].startswith(u'http://tools.ietf.org'):
-        id = string.split(a[u'href'], '/')[-1].lstrip("0")
+        id = a[u'href'].split('/')[-1].lstrip("0")
         a[u'href'] = "../html/rfc" + id + ".html"
 
 # unfortunately, bs4 doesn't seem to be able to find non-standard tag names like <block> so we have
