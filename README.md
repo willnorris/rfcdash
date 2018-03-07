@@ -1,13 +1,11 @@
-rfcdash
-=======
+# rfcdash
 
 rfcdash is a docset for [Dash.app][] containing all published RFCs from the IETF.
 
 ![Dash screenshot showing RFC 2324](screenshot.png)
 
 
-Installing
-----------
+## Installing
 
 Install by opening Dash.app preferences, switch to `Downloads`, open `User Contributed`, and search
 for "RFCs".  If you prefer, you can also subscribe to the docset feed URL at
@@ -15,8 +13,7 @@ for "RFCs".  If you prefer, you can also subscribe to the docset feed URL at
 take a little over 500 MB on disk.
 
 
-Updating the Docset
--------------------
+## Updating the Docset
 
 Most people generally shouldn't need to update the docset on their own. It's generally easier for me
 to do it, so these notes are mainly for myself.  If you notice that the docset is missing an RFC
@@ -36,13 +33,8 @@ everything to make sure we have the latest.
 Once everything is downloaded, run [`rebuild.py`][] to build the index file, rebuild the search
 index, and add tables of contents to each RFC.
 
-Manually update the index page to use relative links by running:
 
-    gsed -r -i 's/href="http:\/\/tools\.ietf\.org\/html\/0*([[:alnum:]]+)"/href="..\/html\/rfc\1\.html"/g' RFCs.docset/Contents/Resources/Documents/tools.ietf.org/rfc/index.html
-
-
-License
--------
+## License
 
 The RFCs themselves contained in this repo are subject to the [IETF IPR policy][].  The scripts used
 to construct the docset are released under an [Apache 2.0 license][].
