@@ -8,9 +8,13 @@ rfcdash is a docset for [Dash.app][] containing all published RFCs from the IETF
 ## Installing
 
 Install by opening Dash.app preferences, switch to `Downloads`, open `User Contributed`, and search
-for "RFCs".  If you prefer, you can also subscribe to the docset feed URL at
-`https://raw.githubusercontent.com/willnorris/rfcdash/master/RFCs.xml`.  The unpacked docset will
-take a little over 500 MB on disk.
+for "RFCs".
+
+If you prefer, you can also subscribe to the docset feed URL at:
+
+    https://raw.githubusercontent.com/weppos/rfcdash/master/RFCs.xml
+    
+The unpacked docset will take a little over 500 MB on disk.
 
 
 ## Updating the Docset
