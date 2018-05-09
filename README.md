@@ -12,7 +12,7 @@ for "RFCs".
 
 If you prefer, you can also subscribe to the docset feed URL at:
 
-    https://raw.githubusercontent.com/weppos/rfcdash/master/RFCs.xml
+    https://raw.githubusercontent.com/willnorris/rfcdash/master/RFCs.xml
     
 The unpacked docset will take a little over 500 MB on disk.
 
