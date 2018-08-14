@@ -1,9 +1,9 @@
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml"><!-- Mirrored from tools.ietf.org/html/rfc3545 by HTTrack Website Copier/3.x [XR&CO'2014], Tue, 06 Mar 2018 23:18:46 GMT --><!-- Added by HTTrack --><head><meta content="text/html;charset=utf-8" http-equiv="content-type"/><!-- /Added by HTTrack -->
+<html lang="en" xml:lang="en" xmlns="http://www.w3.org/1999/xhtml"><!-- Mirrored from tools.ietf.org/html/rfc3545 by HTTrack Website Copier/3.x [XR&CO'2014], Tue, 14 Aug 2018 14:27:45 GMT --><!-- Added by HTTrack --><head><meta content="text/html;charset=utf-8" http-equiv="content-type"/><!-- /Added by HTTrack -->
 
     <meta content="text/html; charset=utf-8" http-equiv="Content-Type"/>
     <meta content="index,follow" name="robots"/>
-    <meta content="rfcmarkup version 1.126" name="creator"/>
+    <meta content="rfcmarkup version 1.127" name="creator"/>
     <link href="http://purl.org/dc/elements/1.1/" rel="schema.DC"/>
 <meta content="draft-koren-avt-crtp-enhance" name="DC.Relation.Replaces"/>
 <meta content="urn:ietf:rfc:3545" name="DC.Identifier"/>
@@ -25,7 +25,121 @@ corruption by changing the way the compressor updates the context at
 the decompressor: updates are repeated and include updates to full and
 differential context parameters. With these extensions, CRTP performs
 well over links with packet loss, packet reordering and long delays.
-[STANDARDS-TRACK]" name="DC.Description.Abstract"/>
+1.0 Introduction  RTP header compression (CRTP) as described in RFC
+2508 was designed to reduce the header overhead of IP/UDP/RTP
+datagrams by compressing the three headers. The IP/UDP/RTP headers are
+compressed to 2-4 bytes most of the time.  CRTP was designed for
+reliable point to point links with short delays. It does not perform
+well over links with high rate of packet loss, packet reordering and
+long delays.  An example of such a link is a PPP session that is
+tunneled using an IP level tunneling protocol such as L2TP. Packets
+within the tunnel are carried by an IP network and hence may get lost
+and reordered. The longer the tunnel, the longer the round trip time.
+Another example is an IP network that uses layer 2 technologies such
+as ATM and Frame Relay for the access portion of the network. Layer 2
+transport networks such as ATM and Frame Relay behave like point to
+point serial links in that they do not reorder packets. In addition,
+Frame Relay and ATM virtual circuits used as IP access technologies
+often have a low bit rate associated with them. These virtual circuits
+differ from low speed serial links in that they may span a larger
+physical distance than a point to point serial link. Speed of light
+delays within the layer 2 transport network will result in higher
+round trip delays between the endpoints of the circuit. In addition,
+congestion within the layer 2 transport network may result in an
+effective drop rate for the virtual circuit which is significantly
+higher than error rates typically experienced on point to point serial
+links.  It may be desirable to extend existing CRTP implementations
+for use also over IP tunnels and other virtual circuits, where packet
+losses, reordering, and long delays are common characteristics. To
+address these scenarios, this document defines modifications and
+extensions to CRTP to increase robustness to both packet loss and
+misordering between the compressor and the decompressor. This is
+achieved by repeating updates and allowing the sending of absolute
+(uncompressed) values in addition to delta values for selected context
+parameters. Although these new mechanisms impose some additional
+overhead, the overall compression is still substantial. The enhanced
+CRTP, as defined in this document, is thus suitable for many
+applications in the scenarios discussed above, e.g. tunneling and
+other virtual circuits.  RFC 3095 defines another RTP header
+compression scheme called Robust Header Compression [ROHC]. ROHC was
+developed with wireless links as the main target, and introduced new
+compression mechanisms with the primary objective to achieve the
+combination of robustness against packet loss and maximal compression
+efficiency. ROHC is expected to be the preferred compression mechanism
+over links where compression efficiency is important. However, ROHC
+was designed with the same link assumptions as CRTP, e.g. that the
+compression scheme should not have to tolerate misordering of
+compressed packets between the compressor and decompressor, which may
+occur when packets are carried in an IP tunnel across multiple hops.
+At some time in the future, enhancements may be defined for ROHC to
+allow it to perform well in the presence of misordering of compressed
+packets. The result might be more efficient than the compression
+protocol specified in this document. However, there are many
+environments for which the enhanced CRTP defined here may be the
+preferred choice. In particular, for those environments where CRTP is
+already implemented, the additional effort required to implement the
+extensions defined here is expected to be small. There are also cases
+where the implementation simplicity of this enhanced CRTP relative to
+ROHC is more important than the performance advantages of ROHC.  1.1
+CRTP Operation  During compression of an RTP stream, a session context
+is defined. For each context, the session state is established and
+shared between the compressor and the decompressor. Once the context
+state is established, compressed packets may be sent.  The context
+state consists of the full IP/UDP/RTP headers, a few first order
+differential values, a link sequence number, a generation number and a
+delta encoding table.  The headers part of the context is set by the
+FULL_HEADER packet that always starts a compression session. The first
+order differential values (delta values) are set by sending
+COMPRESSED_RTP packets that include updates to the delta values.  The
+context state must be synchronized between compressor and decompressor
+for successful decompression to take place. If the context gets out of
+sync, the decompressor is not able to restore the compressed headers
+accurately. The decompressor invalidates the context and sends a
+CONTEXT_STATE packet to the compressor indicating that the context has
+been corrupted. To resume compression, the compressor must reestablish
+the context.  During the time the context is corrupted, the
+decompressor discards all the packets received for that context. Since
+the context repair mechanism in CRTP involves feedback from the
+decompressor, context repair takes at least as much time as the round
+trip time of the link. If the round trip time of the link is long, and
+especially if the link bandwidth is high, many packets will be
+discarded before the context is repaired. On such links it is
+desirable to minimize context invalidation.   1.2 How do contexts get
+corrupted?  As long as the fields in the combined IP/UDP/RTP headers
+change as expected for the sequence of packets in a session, those
+headers can be compressed, and the decompressor can fully restore the
+compressed headers using the context state. When the headers don't
+change as expected it's necessary to update some of the full or the
+delta values of the context. For example, the RTP timestamp is
+expected to increment by delta RTP timestamp (dT). If silence
+suppression is used, packets are not sent during silence periods. Then
+when voice activity resumes, packets are sent again, but the RTP
+timestamp is incremented by a large value and not by dT. In this case
+an update must be sent.  If a packet that includes an update to some
+context state values is lost, the state at the decompressor is not
+updated. The shared state is now different at the compressor and
+decompressor. When the next packet arrives at the decompressor, the
+decompressor will fail to restore the compressed headers accurately
+since the context state at the decompressor is different than the
+state at the compressor.   1.3 Preventing context corruption  Note
+that the decompressor fails not when a packet is lost, but when the
+next compressed packet arrives. If the next packet happens to include
+the same context update as in the lost packet, the context at the
+decompressor may be updated successfully and decompression may
+continue uninterrupted. If the lost packet included an update to a
+delta field such as the delta RTP timestamp (dT), the next packet
+can't compensate for the loss since the update of a delta value is
+relative to the previous packet which was lost. But if the update is
+for an absolute value such as the full RTP timestamp or the RTP
+payload type, this update can be repeated in the next packet
+independently of the lost packet. Hence it is useful to be able to
+update the absolute values of the context.  The next chapter describes
+several extensions to CRTP that add the capability to selectively
+update absolute values of the context, rather than sending a
+FULL_HEADER packet, in addition to the existing updates of the delta
+values. This enhanced version of CRTP is intended to minimize context
+invalidation and thus improve the performance over lossy links with a
+long round trip time.   1.4 Specification of Requirements" name="DC.Description.Abstract"/>
 <meta content="Enhanced Compressed RTP (CRTP) for Links with High Delay, Packet Loss and Reordering" name="DC.Title"/>
 
     <link href="https://tools.ietf.org/images/rfc.png" rel="icon" type="image/png"/>
@@ -1419,7 +1533,7 @@ Acknowledgement
 Koren, et al.               Standards Track                    [Page 22]
 
 </pre><br/>
-    <span class="noprint"><small><small>Html markup produced by rfcmarkup 1.126, available from
+    <span class="noprint"><small><small>Html markup produced by rfcmarkup 1.127, available from
       <a href="https://tools.ietf.org/tools/rfcmarkup/">https://tools.ietf.org/tools/rfcmarkup/</a>
     </small></small></span>
   </div>
@@ -1427,4 +1541,4 @@ Koren, et al.               Standards Track                    [Page 22]
 
 
 
-</body><!-- Mirrored from tools.ietf.org/html/rfc3545 by HTTrack Website Copier/3.x [XR&CO'2014], Tue, 06 Mar 2018 23:18:46 GMT --></html>
+</body><!-- Mirrored from tools.ietf.org/html/rfc3545 by HTTrack Website Copier/3.x [XR&CO'2014], Tue, 14 Aug 2018 14:27:45 GMT --></html>
