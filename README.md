@@ -14,7 +14,7 @@ If you prefer, you can also subscribe to the docset feed URL at:
 
     https://raw.githubusercontent.com/willnorris/rfcdash/master/RFCs.xml
     
-The unpacked docset will take a little over 500 MB on disk.
+The unpacked docset will take a little over 700 MB on disk.
 
 
 ## Updating the Docset
@@ -25,17 +25,16 @@ that you need, just [open an issue][] and I'm happy to update it.
 
 Updating requires:
 
- - [httrack](http://www.httrack.com/)
- - python, with [beautifulsoup4](https://pypi.python.org/pypi/beautifulsoup4)
+ - [rsync](https://rsync.samba.org/)
+ - Python 3, with [beautifulsoup4](https://pypi.python.org/pypi/beautifulsoup4)
    and [html5lib](https://pypi.python.org/pypi/html5lib) modules
 
-To grab the latest RFCs, run the [`sync`][] script.  This will use httrack to download all published
-RFCs from the IETF website.  This typically takes about half an hour because it downloads everything
-every time.  This is necessary because new RFCs sometimes update or obsolete older RFCs, so we grab
-everything to make sure we have the latest.
+To grab the latest RFCs, run the [`sync`][] script.  This will use rsync to fetch all RFCs from the
+IETF website.  This is necessary because new RFCs sometimes update or obsolete older RFCs, so we
+grab everything to make sure we have the latest.
 
-Once everything is downloaded, run [`rebuild.py`][] to build the index file, rebuild the search
-index, and add tables of contents to each RFC.
+Once everything is downloaded, run [`rebuild.py`][] to rebuild the search index, and add tables of
+contents to each RFC.
 
 
 ## License
