@@ -1,0 +1,782 @@
+<html><head></head><body><pre>Network Working Group                                           J. Kempf
+Request for Comments: 3082                                J. Goldschmidt
+Category: Experimental                                  Sun Microsystems
+                                                              March 2001
+
+
+                 <span class="h1">Notification and Subscription for SLP</span>
+
+Status of this Memo
+
+   This memo defines an Experimental Protocol for the Internet
+   community.  It does not specify an Internet standard of any kind.
+   Discussion and suggestions for improvement are requested.
+   Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2001).  All Rights Reserved.
+
+Abstract
+
+   The Service Location Protocol (SLP) provides mechanisms whereby
+   service agent clients can advertise and user agent clients can query
+   for services.  The design is very much demand-driven, so that user
+   agents only obtain service information when they specifically ask for
+   it.  There exists another class of user agent applications, however,
+   that requires notification when a new service appears or disappears.
+   In the <a href="./rfc2608">RFC 2608</a> design, these applications are forced to poll the
+   network to catch changes.  In this document, we describe a protocol
+   for allowing such clients to be notified when a change occurs,
+   removing the need for polling.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>. Introduction</span>
+
+   The Service Location Protocol (SLP) [<a href="#ref-1" title='"Service Location Protocol"'>1</a>] provides a mechanism for
+   service agent (SA) clients to advertise network services and for user
+   agent (UA) clients to find them.  The mechanism is demand-driven.
+   UAs obtain service information by actively querying for it, and do
+   not obtain any information unless they do so.  While this design
+   satisfies the requirements for most applications, there are some
+   applications that require more timely information about the
+   appearance or disappearance in the services of interest.
+
+   Ideally, these applications would like to be notified when a new
+   service comes up or when a service disappears.  In order to obtain
+   this information with SLP as described in <a href="./rfc2608">RFC 2608</a>, such applications
+   must poll the network to periodically refresh their local cache of
+   available service advertisements.
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   An example of such a client is a desktop GUI that wants to display
+   network service icons as soon as they appear to provide users with an
+   accurate picture of all services available to them.
+
+   Because polling is inefficient and wasteful of network and processor
+   resources, we would like to provide these applications a mechanism
+   whereby they can be explicitly notified of changes.  In this
+   document, we describe a scalable mechanism allowing UAs to be
+   notified of changes in service availability.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20Notation%20Conventions"></a><a class="selflink" href="#section-2" id="section-2">2</a>. Notation Conventions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="#ref-2" title='"Key Words for Use in RFCs to Indicate Requirement Levels"'>2</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20Terminology"></a><a class="selflink" href="#section-3" id="section-3">3</a>. Terminology</span>
+
+   In this section, we present some additional terminology beyond that
+   in [<a href="#ref-1" title='"Service Location Protocol"'>1</a>] and [<a href="#ref-3" title='"Service Templates and service: Schemes"'>3</a>].
+
+   Notification - A message sent to an interested agent informing that
+                  agent that a service has appeared or disappeared.
+
+   Subscription - A request to be informed about changes in service
+                  availability for a particular service type and scopes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20Design%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>. Design Considerations</span>
+
+   The primary design consideration in a notification protocol for SLP
+   is that we would like it to exhibit the same high degree of
+   scalability and robustness that the base SLP protocol exhibits.
+   Notification should work in small networks with only a few SAs, as
+   well as large enterprise networks with thousands of SAs and hundreds
+   of DAs.  Small networks should not be required to deploy DAs in order
+   to receive the benefits of notification.  We also want to assure that
+   notification in large networks does not cause heavy processing loads
+   to fall on any one particular SLP agent.  This requires that the task
+   of notification be distributed rather than centralized, to avoid
+   loading down one agent with doing all the notification work.
+   Finally, we would like the notification scheme to be robust in the
+   face of DA failures, just as the base SLP design is.
+
+   An important consideration is that the UA clients obtain
+   notifications of SA events in a timely fashion.  If a UA has
+   subscribed to notification for a particular service type, the UA
+   should receive such notification regardless of the state of
+   intervening DAs.  SLP is transparent with respect to DAs supporting a
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   particular scope; that is, a UA can use any DA with a particular
+   scope and expect to get the same service advertisements.
+   Notifications should exhibit the same property.  Whether or not a UA
+   receives a notification should not depend on the DA to which they
+   happen to connect. This preserves the DAs' identity as a pure cache.
+
+   Another goal is that the notification messages contain enough
+   information about the triggering event that the UA can determine
+   whether or not it is of interest in the large majority of cases
+   without having to issue another SLP request a priori.  The UA may, of
+   course, issue an SLP request for related reasons, but it should not
+   have to issue a request to obtain more information on the event that
+   triggered the notification in most cases.  This reduces the amount of
+   network traffic related to the event.
+
+   In order to simplify implementation, we would like to use similar
+   mechanisms for notification in large and small networks.  The
+   mechanisms are not identical, obviously, but we want to avoid having
+   radically different mechanisms that require completely separate
+   implementations.  Having similar mechanisms reduces the amount of
+   code in UA and SA clients.
+
+   A minor goal is to make use of existing SLP message types and
+   mechanisms wherever possible.  This reduces the amount of code
+   necessary to implement the notification mechanism, because much code
+   can be reused between the base SLP and the notification mechanism.
+   In particular, we expect to make use of the SLP extension mechanism
+   in certain cases to support subscription.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20Notification%20Design%20Description"></a><a class="selflink" href="#section-5" id="section-5">5</a>. Notification Design Description</span>
+
+   In order to support scalability, we split the design into two parts.
+   A small network design is used when no DAs are present in the
+   network.  A large network design is used in networks with DAs.  The
+   following subsections describe the two designs.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1%20Small%20Network%20Design"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a> Small Network Design</span>
+
+   In networks without DAs, UAs are notified by an SA when the SA
+   initially appears, and when the SA disappears.  This allows UAs to
+   know about the list of service types the SA supports.  In small
+   networks, there is no centralized agent available to administer
+   subscriptions for newly appearing SAs.  This rules out any kind of
+   subscription design in which a UA subscribes to notifications for a
+   particular service type in particular scopes of interest, because a
+   newly appearing SA can't tell whether or not there are any
+   subscriptions without a centralizing agent to tell it.
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   As a result, SAs perform notification when they come on line and
+   prior to shutting down regardless of their scope or service type, if
+   they are capable of performing notification.  This means that a UA
+   receives notification of all types of changes for all scopes and
+   service types, and consequently must be prepared to filter out those
+   changes in which it is not interested (other scopes, other service
+   types).
+
+   The design requires SAs to perform notification by IP multicasting
+   (or broadcasting in IPv4 if multicast is not available) SLP SrvReg or
+   SrvDereg messages using the multicast transmit algorithm described in
+   <a href="#section-9.0">Section 9.0</a>.  The port number for notifications is not the default
+   SLP port, because that port is only accessible to privileged users on
+   some operating systems, but rather the port 1847, as assigned by
+   IANA.
+
+   In IPv4, the SA performs multicast on the SLP multicast address
+   (239.255.255.253, default TTL 255) and is administratively scoped in
+   the same manner as SLP [<a href="#ref-4" title='"Administratively Scoped IP Multicast"'>4</a>].  IPv4 UAs interested in notification join
+   the multicast group 239.255.255.253 and listen on port 1847.  In
+   IPv6, the multicast is performed to the scoped IPv6 addresses for the
+   service type advertised, as described in [<a href="#ref-8" title='"Service Location Protocol Modifications for IPv6"'>8</a>].  The SA advertises on
+   all addresses up to and including the largest multicast scope that it
+   supports.  IPv6 UAs interested in notification join the multicast
+   groups corresponding to the multicast scopes and service type in
+   which they are interested and listen on port 1847.  For example, an
+   IPv6 UA that has access to site local scope and is interested in a
+   service type whose hash is 42, calculated according to the algorithm
+   in [<a href="#ref-8" title='"Service Location Protocol Modifications for IPv6"'>8</a>], joins the groups FF01:0:0:0:0:0:10042 through
+   FF05:0:0:0:0:0:10042.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2%20Large%20Network%20Design"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a> Large Network Design</span>
+
+   In networks with DAs, a DA supporting a particular scope can act as
+   an intermediary for administering UA subscriptions.  A subscription
+   consists of a service type and a collection of scopes.  A UA
+   interested in being notified about changes in a particular service
+   type attaches the Subscribe extension to a SrvRqst message sent to
+   the DA.  The DA obtains multicast group addresses for notification
+   based on the algorithm described in <a href="#section-8.0">Section 8.0</a> and puts them into a
+   NotifyAt extension which it attaches to the SrvRply.  The UA listens
+   on the group addresses in the reply for notifications.
+
+   When a new subscription comes in, existing SAs are informed about the
+   subscription using the following procedure.  The DA compares the
+   service type and scopes in the new subscription against a list of
+   existing subscriptions.  If no previous subscription has the same
+   service type and scopes, the DA MUST multicast a DAAdvert, using the
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   multicast transmit algorithm described in <a href="#section-9.0">Section 9.0</a>, and MUST
+   include the NotifyAt extension with the multicast group addresses for
+   notification.  If an existing subscription covers the same service
+   type and scopes as the new subscription, the DA MUST NOT multicast a
+   DAAdvert.
+
+   A DA MUST keep track of subscriptions it has arranged as well as
+   subscriptions arranged by other DAs in any scopes with which the DA
+   is configured.  To avoid multiple multicast NotifyAt messages, a DA
+   MUST wait a random amount of time, uniformly distributed between 0
+   and 3 seconds before sending the multicast DAAdvert with NotifyAt.
+   During this period, the DA MUST listen for NotifyAt messages that
+   match the one from the new subscription.  If a matching NotifyAt is
+   detected, the DA MUST not multicast.
+
+   When a new SA registers with a DA that has existing subscriptions,
+   the new SA is informed of notifications it should perform using the
+   following procedure.  If the service type and scopes in the new SA's
+   SrvReg messages match an existing subscription, a NotifyAt containing
+   the multicast addresses for notification MUST be included in the
+   SrvAck.  If the SA doesn't support notification, it simply ignores
+   the extension.  If the service type and scopes in the new SA's SrvReg
+   do not match any existing subscriptions, the DA MUST NOT include a
+   NotifyAt.
+
+   The DA itself MUST also perform notification, according to the
+   multicast transmit algorithm, when a service advertisement times out.
+   Time-out of a service advertisement results in the DA multicasting a
+   SrvDereg for the deregistered URL.  This allows interested UAs to be
+   informed of the service advertisement's demise even if the SA has
+   disappeared without deregistering.  A DA MUST NOT perform
+   notification when it receives a SrvReg from an SA, however, that is
+   the job of the SA.
+
+   As in small networks, notification is performed primarily by SAs.  If
+   an SA receives a DAAdvert or SrvAck with a NotifyAt extension and the
+   following conditions are met:
+
+           1. The SA supports notification.
+
+           2. The SA's service type matches the service type in the
+              NotifyAt extension.
+
+           3. The SA's scopes match one of the scopes of the NotifyAt
+              extension.
+
+
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   then the SA saves the multicast addresses that correspond to the
+   scopes and service types it supports.  The SA MUST perform
+   notification immediately after the SA has performed the SrvReg or
+   SrvDereg with the DA.  An SA that has detected a DA in its scopes
+   MUST NOT multicast any notifications unless it receives a NotifyAt
+   extension in a SrvAck with service type and scopes matching the SA's
+   service type and scopes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20Subscribe%20Extension"></a><a class="selflink" href="#section-6" id="section-6">6</a>. Subscribe Extension</span>
+
+   The Subscribe extension has the following format:
+
+     0                   1                   2                   3
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |    Extension Type = 0x0004    |        Extension Length       |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    | Ex. Len. (ct) | Abs. Type Fl. |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+   The scope list and service type of the extension are taken from the
+   accompanying SrvRqst.  The abstract type flag indicates whether the
+   UA is interested in hearing from all SAs advertising concrete
+   instances of an abstract type [<a href="#ref-3" title='"Service Templates and service: Schemes"'>3</a>], and is only of interest if the
+   service type in the SrvRqst is a concrete type.  If the flag is 1,
+   the UA is interested in hearing from all SAs advertising concrete
+   types having the same abstract type as the type of the SrvRqst.  If
+   the flag is 0, the UA is only interested in hearing from SAs
+   supporting the particular concrete type in the SrvRqst.  If the
+   service type in the accompanying SrvRqst is not a concrete type, the
+   flag is ignored.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20NotifyAt%20Extension"></a><a class="selflink" href="#section-7" id="section-7">7</a>. NotifyAt Extension</span>
+
+     0                   1                   2                   3
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |    Extension Type = 0x0005    |        Extension Length       |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    | Ext. Len (ct) |  Subscription Lifetime        |SGL List Len.  \
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |SGL L. Len (ct)|       Scope/Group List                        \
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |  Length of Service Type Name  |        Service Type Name      \
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   The service type name is in the same format as in the SrvRqst.  The
+   scope/group list is a list of scope names and multicast group
+   addresses.  The following ABNF [<a href="#ref-5" title='"Augmented BNF for Syntax Specifications: ABNF"'>5</a>] syntax describes the list:
+
+        sglist          = sgitem / sgitem "," sglist
+        sgitem          = scope-name ":" ip-addr
+        ip-addr         = ipv4-number | ipv6-number
+        scope-name      =  ; See <a href="./rfc2608">RFC 2608</a> for the format of scope names.
+        ipv4-number     =  1*3DIGIT 3("." 1*3DIGIT)
+        ipv6-number     = ;See <a href="./rfc2373">RFC 2373</a> [<a href="#ref-9" title='"IP Version 6 Addressing Architecture"'>9</a>] <a href="#section-2.2">Section 2.2</a>
+
+   An example of a scope/group list for IPv4 is:
+
+        eng:239.255.255.42,corp:239.255.255.43
+
+   An example of a scope/group listfor IPv6 is:
+
+        eng:FF02:0:0:0:0:0:1:1042,corp:FF03:0:0:0:0:0:1:1042
+
+   The scope/group list gives the multicast addresses to use for
+   notifications involving the service type for the given scopes.
+
+   The service type name can be a simple type name, an abstract type
+   name, or a concrete type name.  If the name is an abstract type name,
+   all SAs advertising the abstract type MUST notify.  If the name is a
+   concrete or simple type name, ONLY those SAs advertising the simple
+   or concrete type MUST notify, others MUST NOT notify.  A DA that
+   receives a subscription for a concrete type with the abstract type
+   flag set, MUST include the abstract type name in all the NotifyAt
+   messages it sends.  If the DA receives a subscription for a concrete
+   type with the abstract type flag not set, the DA MUST NOT include the
+   abstract type, but rather MUST include the concrete type name.
+
+   There are three cases in which an agent may receive a NotifyAt
+   extension: in a SrvRply returned to a UA, in a multicast DAAdvert,
+   and in a SrvAck returned to an SA.  The three subsections below
+   describe the response in each of these cases.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1%20NotifyAt%20received%20with%20SrvRply"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a> NotifyAt received with SrvRply</span>
+
+   When a UA sends a SrvRqst with a Subscribe extension, the DA responds
+   with a SrvRply including a NotifyAt.  The DA MUST NOT unicast a
+   NotifyAt to a UA with any other message and MUST NOT send a NotifyAt
+   unless a SrvRqst with a Subscribe extension was received.
+
+   The UA responds by setting up a multicast listener to the group
+   addresses included in the extension on the SLP notification port
+   1847.  The UA MAY also want to note the expiration lifetime of the
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   subscription assigned by the DA, and reissue a  subscription before
+   the lifetime expires.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2%20NotifyAt%20received%20with%20Multicast%20DAAdvert"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a> NotifyAt received with Multicast DAAdvert</span>
+
+   The DA multicasts a NotifyAt with a DAAdvert using the multicast
+   transmit algorithm when a UA has requested notification and the
+   scopes and service type in the subscription were not previously seen.
+   This message informs existing SAs having the service type and scopes
+   in the announcement that they should multicast notifications when
+   they shut down.
+
+   A receiving SA participating in notification responds by noting the
+   multicast address if the service type and scopes match.  When the SA
+   is about to go down, the SA MUST first unicast a SrvDereg without
+   attribute tag list to its DAs (as per standard SLP), then it MUST
+   multicast the same SrvDereg message according to the multicast
+   transmit algorithm.  The SA MUST cease performing notification when
+   the subscription lifetime expires, unless a subsequent NotifyAt is
+   received prolonging the subscription.
+
+   A UA that is performing passive DA detection will naturally also
+   receive the extension, but the UA SHOULD ignore the extension.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.3%20NotifyAt%20received%20with%20SrvAck"></a><a class="selflink" href="#section-7.3" id="section-7.3">7.3</a> NotifyAt received with SrvAck</span>
+
+   An SA can receive a NotifyAt with a SrvAck when it first comes up and
+   registers itself with a DA.  If the DA has any subscriptions from UAs
+   for the service type and scopes represented by the SA, it MUST return
+   a NotifyAt with the SrvAck.
+
+   The SA upon receiving the NotifyAt immediately multicasts the same
+   SrvReg it sent to the DA, according to the multicast transmit
+   algorithm.  The SA MUST only perform the multicast algorithm once,
+   even if it registers with more than one DA and receives the NotifyAt
+   in reply from more than one.  Prior to its demise and after
+   deregistering with a DA, the SA MUST notify with the same SrvDereg,
+   as described in <a href="#section-7.2">Section 7.2</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20Multicast%20Address%20Allocation"></a><a class="selflink" href="#section-8" id="section-8">8</a>. Multicast Address Allocation</span>
+
+   Enterprise networks that allow SLP notification SHOULD deploy the
+   Multicast Address Allocation Architecture (MAAA) including
+   administratively scoped multicast and Multicast Address Dynamic
+   Client Allocation Protocol (MADCAP) [<a href="#ref-6" title='"Multicast Address Dynamic Client Allocation Protocol (MADCAP)"'>6</a>].
+
+   If it is not possible to obtain a multicast address for use in SLP
+   notifications, the SLP multicast address is used.
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   If the MAAA infrastructure is deployed, DAs and SAs obtain their
+   scope configuration from MADCAP, because the SLP scopes are the same
+   as the MADCAP scopes.  Each SLP scope MUST correspond to a multicast
+   scope name, in the sense of [<a href="#ref-6" title='"Multicast Address Dynamic Client Allocation Protocol (MADCAP)"'>6</a>].  In such a case, a DA allocates,
+   using MADCAP, a new multicast group address for each new service
+   type/scope pair to which a UA subscribes.  The allocation is made by
+   MADCAP from the multicast address range for the scope.  In this way,
+   only those UAs interested in the service type and scopes in the
+   subscription receive the multicast notification.  The DA sets up the
+   lease on the multicast address to correspond with the duration of the
+   subscription.  If the MADCAP server runs out of addresses, the SLP
+   multicast group is used as a last resort.
+
+   For example, if the multicast scope has an address range of 239.1.0.0
+   through 239.1.255.255, the notification group address for service
+   type X in scope A could be 239.1.0.42 and for service type Y in scope
+   B could be 239.1.42.42.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20Multicast%20Transmit%20Algorithm"></a><a class="selflink" href="#section-9" id="section-9">9</a>. Multicast Transmit Algorithm</span>
+
+   The DA and SAs use a multicast transmit algorithm similar to that
+   used for discovering services in SLP, described in <a href="./rfc2608">RFC 2608</a> [<a href="#ref-1" title='"Service Location Protocol"'>1</a>],
+   except the agent performing the notification doesn't wait for
+   replies.  The agent performing the notification transmits a
+   notification message repeatedly over a period of 15 seconds, backing
+   off exponentially on the duration of the time interval between the
+   multicasts.  The rationale for this algorithm is to limit the
+   duration and scope of the multicast announcement while still
+   repeating the announcement enough times to increase the probability
+   that one message gets through.
+
+   For an SA, a notification message is either a SrvReg or a SrvDereg
+   message, depending on whether the SA is registering a new service or
+   deregistering a service.  When a new service is registered, the
+   SrvReg message MUST have the fresh bit set in the SLP header.  The
+   entire list of attributes for the service SHOULD be included.  The
+   SrvDereg message MUST NOT include an attribute tag list.
+   Notifications MUST NOT be transmitted at any other time, to minimize
+   multicast traffic.
+
+   Since a SrvReg could contain attribute lists of arbitrary length, the
+   message could potentially overflow the packet MTU for UDP.  If an
+   attribute list causes a packet MTU overflow, the SA MUST set the
+   overflow bit in the SLP header.  The attribute list in the
+   notification message MUST be formatted so that a UA can use the
+   attributes even if an overflow occurs.  If a UA needs more attributes
+   than are transmitted in the notification message, it can contact the
+   SA (if no DA is present) or the DA for the attributes it needs.
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                      [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   A DA multicasts a DAAdvert when a subscription comes in containing a
+   service type and scopes that do not match any on the DA's list of
+   known subscriptions.  The same algorithm MUST be used.  If the
+   combination of the DA attributes and the NotifyAt message cause the
+   DAAdvert to overflow a UDP packet, DA attributes MUST be truncated to
+   allow the NotifyAt to fit and the overflow bit MUST be set in the
+   header.  An SA knows that the purpose of the message is to inform it
+   of a new subscription rather than for passive advertisement, because
+   of the extension, and it can therefore ignore the DA attribute list
+   field if the overflow bit is set in the header.  A DA also transmits
+   a SrvDereg message when a service advertisement is deregistered due
+   to timeout, following the same rules as for an SA.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.0%20DA%20Disappearance"></a><a class="selflink" href="#section-10.0" id="section-10.0">10.0</a> DA Disappearance</span>
+
+   Robustness to DA failure is an important goal of the design.  When a
+   DA disappears due to unforeseen circumstances, subscription
+   information from UAs is lost.  UAs continue to get notifications from
+   existing SAs.  However, new SAs will not be informed of the
+   subscription unless other DAs also have the subscription information.
+   Because a UA may not discover a new DA until it tries to perform an
+   active request, the UA could potentially miss the appearance of new
+   services.  For this reason, UAs that are concerned about receiving
+   notification of absolutely every service that appears SHOULD issue
+   subscriptions to every newly discovered DA that supports the scopes
+   it supports.  Similarly, if a DA disappears through controlled
+   shutdown, a UA performing passive discovery can detect the shutdown
+   and reissue the subscription to an alternate DA.
+
+   On the SA side, when a DA goes down, existing SAs continue to notify
+   until the subscription expires.  Before ceasing to notify, an SA MUST
+   determine whether the DA is still active and, if not, verify with
+   another DA whether the subscription has been extended.  If no other
+   DA is available, the SA MUST ignore the subscription expiration time
+   and continue notifying until a new DA is discovered.  When a new DA
+   is discovered the SA must send a new SrvReg to the DA, according to
+   <a href="./rfc2608">RFC 2608</a> [<a href="#ref-1" title='"Service Location Protocol"'>1</a>].  The replying SrvAck contains a NotifyAt extension if
+   the UA has renewed its subscription with the DA.  If the SrvAck does
+   not contain a NotifyAt message the SA MUST continue to notify until
+   the subscription expires.  If a UA is interested in continuing the
+   notification, it renews the subscription with the new DA prior to the
+   expiration  of the old one, and so the SA is informed to continue
+   notifying.
+
+
+
+
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                     [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+   Note that this procedure still does not inform SAs that come up
+   between the time a newly booted DA comes up and the time the UA has
+   renewed its subscription with the newly booted DA.  If this situation
+   is of concern, multiple DAs can be used to assure that all
+   subscriptions are covered when a DA goes down.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20Network%20Administration%20Considerations"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  Network Administration Considerations</span>
+
+   In SLP networks with DAs as described in <a href="./rfc2608">RFC 2608</a>, the only multicast
+   is the SrvRqst for DAAdverts performed during active DA discovery,
+   and unsolicited DAAdverts sent periodically by the DA for passive
+   discovery.  There is no multicast involved in UA queries or SA
+   registrations.  This allows network administrators to set up DAs for
+   a particular collection of IP subnets and confine all service
+   discovery traffic to unicast between the SA and UA clients and the
+   DA.  Administratively scoped multicast can additionally be used to
+   limit the extent of active DA discovery and passive DA advertising.
+   The amount of multicast involved is not high and DHCP DA and scope
+   configuration can be used to limit which DAs a particular UA or SA
+   client sees, or to inhibit multicast entirely so that UAs and SAs
+   only use configured DAs.
+
+   With notification, however, multicast traffic involving events in SAs
+   becomes available.  Because DAs request multicast addresses based on
+   scope and service type, the multicast associated with particular
+   events should only propagate to those subnets in which UAs and SAs of
+   the same scope are interacting.  Routers should be configured with
+   administrative multicast scoping to limit multicast.  If DAs are not
+   deployed (or the MAAA is not deployed), however, the amount of
+   multicast on the SLP multicast address when notifications are being
+   used could quickly become very large.  Therefore, it is crucial that
+   DAs supporting notification be deployed in large networks where UA
+   clients are interested in notification.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.%20Security%20Considerations"></a><a class="selflink" href="#section-12" id="section-12">12</a>. Security Considerations</span>
+
+   The SrvReg and SrvDereg messages contain authentication blocks for
+   all SLP SPIs supported by the DAs with which the SA registers.  Since
+   these SPIs are necessarily the same as those that UAs can verify, a
+   UA receiving a multicast notification is in a position to verify the
+   notification.  It does so by selecting the authentication block or
+   blocks that it can verify.  If authentication fails, either due to
+   lack of an authentication block, or lack of the proper SPI, the UA
+   simply discards the notification.  In a network without DAs, the SPIs
+   of the UA and SA must also match.
+
+
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                     [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/13.%20IANA%20Considerations"></a><a class="selflink" href="#section-13" id="section-13">13</a>. IANA Considerations</span>
+
+   The SLP Notification services use the IANA-assigned port number of
+   1847.  The SLP extension identifiers assigned by IANA are 0x0004 for
+   Subscribe and 0x0005 for NotifyAt.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/14.%20Acknowledgements"></a><a class="selflink" href="#section-14" id="section-14">14</a>. Acknowledgements</span>
+
+   The authors would like to thank Charles Perkins, of Nokia, and Erik
+   Guttman and Jonathan Wood, of Sun Microsystems, for their stimulating
+   discussion and suggestions during the initial phases of the
+   subscription/notification design.  We would also like to thank Erik
+   for his intense scrutiny of the specification during the later
+   phases.  His comments were instrumental in refining the design.
+   Shivaun Albright, of HP, motivated simplification of the protocol to
+   focus on initial registration and deregistration only.  Vaishali
+   Mithbaokar implemented the simplified protocol.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.%20References"></a><a class="selflink" href="#section-15" id="section-15">15</a>. References</span>
+
+   [<a id="ref-1">1</a>] Guttman, E., Perkins, C., Veizades, J. and M. Day, "Service
+       Location Protocol", <a href="./rfc2608">RFC 2608</a>, July 1999.
+
+   [<a id="ref-2">2</a>] Bradner, S., "Key Words for Use in RFCs to Indicate Requirement
+       Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-3">3</a>] Guttman, E., Perkins, C. and J. Kempf, "Service Templates and
+       service: Schemes", <a href="./rfc2609">RFC 2609</a>, July 1999.
+
+   [<a id="ref-4">4</a>] Meyer, D., "Administratively Scoped IP Multicast", <a href="./rfc2365">RFC 2365</a>, July
+       1998.
+
+   [<a id="ref-5">5</a>] Crocker, D. and P. Overell, "Augmented BNF for Syntax
+       Specifications: ABNF", <a href="./rfc2234">RFC 2234</a>, November 1997.
+
+   [<a id="ref-6">6</a>] Hanna, S., Patel,B. and M. Shah, "Multicast Address Dynamic
+       Client Allocation Protocol (MADCAP)", <a href="./rfc2730">RFC 2730</a>, December 1999.
+
+   [<a id="ref-7">7</a>] <a href="http://www.isi.edu/in-notes/iana/assignments/multicast-addresses">http://www.isi.edu/in-notes/iana/assignments/multicast-addresses</a>
+
+   [<a id="ref-8">8</a>] Guttman, E., <a href="https://www.google.com/search?sitesearch=datatracker.ietf.org%2Fdoc%2Fhtml%2F&amp;q=inurl:draft-+%22Service+Location+Protocol+Modifications+for+IPv6%22" style="text-decoration: none">"Service Location Protocol Modifications for IPv6"</a>,
+       Work in Progress.
+
+   [<a id="ref-9">9</a>] Hinden, R. and S. Deering, "IP Version 6 Addressing
+       Architecture", <a href="./rfc2375">RFC 2375</a>, July 1997.
+
+
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                     [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/16.%20Author%27s%20Addresses"></a><a class="selflink" href="#section-16" id="section-16">16</a>. Author's Addresses</span>
+
+   James Kempf
+   Sun Microsystems
+   UMPK15-214
+   901 San Antonio Rd.
+   Palo Alto, CA 94040
+   USA
+
+   Phone:    +1 650 786 5890
+   EMail:    james.kempf@sun.com
+
+
+   Jason Goldschmidt
+   Sun Microsystems
+   UMPK17-202
+   901 San Antonio Rd.
+   Palo Alto, CA 94040
+   USA
+
+   Phone: +1 650 786 3502
+   EMail: jason.goldschmidt@sun.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Kempf &amp; Goldschmidt           Experimental                     [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc3082">RFC 3082</a>         Notification and Subscription for SLP        March 2001</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The Internet Society (2001).  All Rights Reserved.
+
+   This document and translations of it may be copied and furnished to
+   others, and derivative works that comment on or otherwise explain it
+   or assist in its implementation may be prepared, copied, published
+   and distributed, in whole or in part, without restriction of any
+   kind, provided that the above copyright notice and this paragraph are
+   included on all such copies and derivative works.  However, this
+   document itself may not be modified in any way, such as by removing
+   the copyright notice or references to the Internet Society or other
+   Internet organizations, except as needed for the purpose of
+   developing Internet standards in which case the procedures for
+   copyrights defined in the Internet Standards process must be
+   followed, or as required to translate it into languages other than
+   English.
+
+   The limited permissions granted above are perpetual and will not be
+   revoked by the Internet Society or its successors or assigns.
+
+   This document and the information contained herein is provided on an
+   "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+   TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+   BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+   HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is currently provided by the
+   Internet Society.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Kempf &amp; Goldschmidt           Experimental                     [Page 14]
+</pre>
+</body></html>

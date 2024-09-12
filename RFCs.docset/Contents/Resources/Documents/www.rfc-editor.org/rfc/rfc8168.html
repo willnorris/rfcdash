@@ -1,0 +1,502 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                             T. Li
+Request for Comments: 8168                                        C. Liu
+Category: Standards Track                                         Y. Cui
+ISSN: 2070-1721                                      Tsinghua University
+                                                                May 2017
+
+
+                    <span class="h1">DHCPv6 Prefix-Length Hint Issues</span>
+
+Abstract
+
+   DHCPv6 Prefix Delegation allows a client to include a prefix-length
+   hint value in the IA_PD option to indicate a preference for the size
+   of the prefix to be delegated, but it is unclear about how the client
+   and server should act in different situations involving the prefix-
+   length hint.  This document provides a summary of the existing
+   problems with the prefix-length hint and guidance on what the client
+   and server could do in different situations.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc8168">http://www.rfc-editor.org/info/rfc8168</a>.
+
+Copyright Notice
+
+   Copyright (c) 2017 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Requirements Language . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  Problem Description and Proposed Solutions  . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-3.1">3.1</a>.  Creation of Solicit Message . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-3.2">3.2</a>.  Receipt of Solicit Message  . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-3.3">3.3</a>.  Receipt of Advertise Message  . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+     <a href="#section-3.4">3.4</a>.  Creation of Renew/Rebind Message  . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-3.5">3.5</a>.  Receipt of Renew/Rebind Message . . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-3.6">3.6</a>.  General Recommendation  . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-4">4</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-5">5</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-6">6</a>.  Normative References  . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   DHCPv6 Prefix Delegation [<a href="./rfc3633" title='"IPv6 Prefix Options for Dynamic Host Configuration Protocol (DHCP) version 6"'>RFC3633</a>] allows a client to include a
+   prefix-length hint value in the message sent to the server to
+   indicate a preference for the size of the prefix to be delegated.  A
+   prefix-length hint is communicated by a client to the server by
+   including an IA_PD Prefix Option (IAPREFIX option), encapsulated in
+   an IA_PD option, with the "IPv6 prefix" field set to zero and the
+   "prefix-length" field set to a non-zero value.  The servers are free
+   to ignore the prefix-length hint values depending on server policy.
+   However, some clients may not be able to function (or only in a
+   degraded state) when they're provided with a prefix whose length is
+   different from what they requested.  For example, if the client is
+   asking for a /56 and the server returns a /64, the functionality of
+   the client might be limited because it might not be able to split the
+   prefix for all its interfaces.  For other hints, such as requesting
+   for an explicit address, this might be less critical, as it just
+   helps a client that wishes to continue using what it used last time.
+   The prefix-length hint directly impacts the operational capability of
+   the client; thus, it should be given more consideration.
+
+   [<a id="ref-RFC3633">RFC3633</a>] is unclear about how the client and server should act in
+   different situations involving the prefix-length hint.  From the
+   client perspective, it should be able to use the prefix-length hint
+   to signal to the server its real-time need and should be able to
+   handle prefixes with lengths different from the prefix-length hint.
+   This document provides guidance on what a client should do in
+   different situations to help it operate properly.  From the server
+   perspective, the server is free to ignore the prefix-length hints
+   depending on server policy; however, in cases where the server has a
+
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+   policy for considering the hint, this document provides guidance on
+   how the prefix-length hint should be handled by the server in
+   different situations.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Requirements%20Language"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Requirements Language</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Problem%20Description%20and%20Proposed%20Solutions"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Problem Description and Proposed Solutions</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Creation%20of%20Solicit%20Message"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Creation of Solicit Message</span>
+
+   Problem:
+
+   The Solicit message allows a client to ask servers for prefixes and
+   other configuration parameters.  The client might want a different
+   prefix length due to configuration changes, or it might just want the
+   same prefix again after reboot.  The client might also prefer a
+   prefix of a specific length in case the requested prefix is not
+   available.  The server could decide whether to provide the client
+   with the preferred prefix depending on server policy, but the client
+   should be able to signal to the server its real-time need.
+
+   The server usually has a record of the prefix it gave to the client
+   during its most recent interaction.  The best way to assure a
+   completely new delegated prefix is to send a new IAID (Identity
+   Association IDentifier) in the IA_PD (Identity Association for Prefix
+   Delegation).  However, this would require the client device to have
+   persistent storage, because rebooting the device would cause the
+   client to use the original IAID in the IA_PD.
+
+   Solution:
+
+   When the client prefers a prefix of a specific length from the
+   server, the client MUST send a Solicit message using the same IAID in
+   the IA_PD, include the preferred prefix-length value in the "prefix-
+   length" field of the IAPREFIX option, and set the "IPv6 prefix" field
+   to zero.  This is an indication to the server that the client prefers
+   a prefix of the specified length, regardless of what it received
+   before.
+
+   When the client wants the same prefix back from the server, it MUST
+   send a Solicit message using the same IAID in the IA_PD, include the
+   previously delegated prefix value in the "IPv6 prefix" field of the
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+   IAPREFIX option, and include the length of the prefix in the "prefix-
+   length" field.  This is an indication to the server that the client
+   wants the same prefix back.
+
+   When the client wants the same prefix back from the server and would
+   prefer to accept a prefix of a specified length in case the requested
+   prefix is not available, the client MUST send a Solicit message using
+   the same IAID in the IA_PD, include the previously delegated prefix
+   in one IAPREFIX option, and include the prefix-length hint in another
+   IAPREFIX option.  There is no requirement regarding the order of the
+   two IAPREFIX options.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Receipt%20of%20Solicit%20Message"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Receipt of Solicit Message</span>
+
+   Problem:
+
+   [<a id="ref-RFC3633">RFC3633</a>] allows a client to include a prefix-length hint in the
+   Solicit message to signal its preference to the server.  How the
+   prefix-length hint should be handled by the server is unclear.  The
+   client might want a different prefix length due to configuration
+   changes or it might just want the same prefix again after reboot.
+   The server should interpret these cases differently.
+
+   Many servers are configured to provide only prefixes of specific
+   lengths to the client, for example, if the client requested for a /54
+   but the server could only provide /30, /48, and /56.  How should
+   these servers decide which prefix to give to the client based on the
+   prefix-length hint?
+
+   Solution:
+
+   Upon the receipt of Solicit message, if the client included only a
+   prefix-length hint in the message, the server SHOULD first check its
+   prefix pool for a prefix with a length matching the prefix-length
+   hint value, regardless of the prefix record from previous
+   interactions with the client.  If the server does not have a prefix
+   with a length matching the prefix-length hint value, then the server
+   SHOULD provide the prefix whose length is shorter and closest to the
+   prefix-length hint value.
+
+   If the client included a specific prefix value in the Solicit
+   message, the server SHOULD check its prefix pool for a prefix
+   matching the requested prefix value.  If the requested prefix is not
+   available in the server's prefix pool, and the client also included a
+   prefix-length hint in the same IA_PD option, then the server SHOULD
+   check its prefix pool for a prefix with a length matching the prefix-
+   length hint value.  If the server does not have a prefix with a
+   length matching the prefix-length hint value, the server SHOULD
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+   provide the prefix whose length is shorter and closest to the prefix-
+   length hint value.
+
+   If the server will not assign any prefixes to any IA_PDs in a
+   subsequent Request from the client, the server MUST send an Advertise
+   message to the client as described in <a href="./rfc3633#section-11.2">Section 11.2 of [RFC3633]</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Receipt%20of%20Advertise%20Message"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Receipt of Advertise Message</span>
+
+   Problem:
+
+   The server might not be able to honor the prefix-length hint due to
+   server policy or lack of resources in its prefix pool.  If the prefix
+   length provided by the server in the Advertise message is different
+   from what the client requested in the Solicit message, the question
+   would be whether the client should use the provided prefix length or
+   continue to ask for its preferred prefix length.  There are certain
+   situations in which the client could not operate properly if it used
+   a prefix whose length is different from what it requested in the
+   prefix-length hint.  However, if the client ignores the Advertise
+   messages and continues to solicit for the preferred prefix length,
+   the client might be stuck in the DHCP process.  Another question is
+   whether the client should ignore other configuration parameters such
+   as available addresses.
+
+   Solution:
+
+   If the client could use the prefixes included in the Advertise
+   messages despite being different from the prefix-length hint, the
+   client SHOULD choose the shortest prefix length that is closest to
+   the prefix-length hint.  The client SHOULD continue requesting the
+   preferred prefix in the subsequent DHCPv6 messages as defined in
+   <a href="#section-3.4">Section 3.4</a> of this document.
+
+   If the client sent a Solicit with only IA_PDs and cannot use the
+   prefixes included in the Advertise messages, it MUST ignore the
+   Advertise messages and continue to send Solicit messages until it
+   gets the preferred prefix.  To avoid traffic congestion, the client
+   MUST send Solicit messages at defined intervals, as specified in
+   [<a href="./rfc7083" title='"Modification to Default Values of SOL_MAX_RT and INF_MAX_RT"'>RFC7083</a>].
+
+   If the client also solicited for other stateful configuration options
+   such as IA_NAs and the client cannot use the prefixes included in the
+   Advertise messages, the client SHOULD accept the other stateful
+   configuration options and continue to request the desired IA_PD
+   prefix in subsequent DHCPv6 messages as specified in [<a href="./rfc7550" title='"Issues and Recommendations with Multiple Stateful DHCPv6 Options"'>RFC7550</a>].
+
+
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.4.%20%20Creation%20of%20Renew%2FRebind%20Message"></a><a class="selflink" href="#section-3.4" id="section-3.4">3.4</a>.  Creation of Renew/Rebind Message</span>
+
+   Problem:
+
+   Servers might not be able to provide a prefix with the length equal
+   to or shorter than the prefix-length hint.  If the client decided to
+   use the prefix provided by the server despite it being longer than
+   the prefix-length hint but would still prefer the prefix-length hint
+   originally requested in the Solicit message, there should be some way
+   for the client to express this preference during Renew/Rebind.  For
+   example, if the client requested for a /60 but got a /64, the client
+   should be able to signal to the server during Renew/Rebind that it
+   would still prefer a /60.  This is to see whether the server has the
+   prefix preferred by the client available in its prefix pool during
+   Renew/Rebind.  [<a href="./rfc3633" title='"IPv6 Prefix Options for Dynamic Host Configuration Protocol (DHCP) version 6"'>RFC3633</a>] is not completely clear on whether the
+   client is allowed to include a prefix-length hint in the Renew/Rebind
+   message.
+
+   Solution:
+
+   During Renew/Rebind, if the client prefers a prefix length that is
+   different from the prefix it is currently using, then the client
+   SHOULD send the Renew/Rebind message with the same IA_PD, and include
+   two IAPREFIX options, one containing the currently delegated prefix
+   and the other containing the prefix-length hint.  This is to extend
+   the lifetime of the prefix the client is currently using, get the
+   prefix the client prefers, and go through a graceful switch over.
+
+   If the server is unable to provide the client with the newly
+   requested prefix, but is able to extend lifetime of the old prefix,
+   the client SHOULD continue using the old prefix.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.5.%20%20Receipt%20of%20Renew%2FRebind%20Message"></a><a class="selflink" href="#section-3.5" id="section-3.5">3.5</a>.  Receipt of Renew/Rebind Message</span>
+
+   Problem:
+
+   The prefix preferred by the client might become available in the
+   server's prefix pool during Renew/Rebind, even though it was
+   unavailable during Solicit.  This might be due to a server
+   configuration change or because some other client stopped using the
+   prefix.
+
+   The question is whether the server should remember the prefix-length
+   hint the client originally included in the Solicit message and check
+   it during Renew/Rebind to see if it has the prefix length the client
+   preferred.  This would require the server to keep extra information
+   about the client.  There is also the possibility that the client's
+   preference for the prefix length might have changed during this time
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+   interval, so the prefix-length hint remembered by the server might
+   not be what the client prefers during Renew/Rebind.
+
+   Instead of having the server remember the prefix-length hint of the
+   client, another option is for the client to include the prefix-length
+   hint in the Renew/Rebind message.  [<a href="./rfc3633" title='"IPv6 Prefix Options for Dynamic Host Configuration Protocol (DHCP) version 6"'>RFC3633</a>] is unclear about what
+   the server should do if the client also included a prefix-length hint
+   value in the Renew/Rebind message and whether the server could
+   provide a different prefix to the client during Renew/Rebind.
+
+   Solution:
+
+   Upon the receipt of a Renew/Rebind message, if the client included in
+   the IA_PD both an IAPREFIX option with the delegated prefix value and
+   an IAPREFIX option with a prefix-length hint value, the server SHOULD
+   check whether it could extend the lifetime of the original delegated
+   prefix and whether it has any available prefix matching the prefix-
+   length hint (or determine the closest possible to the prefix-length
+   hint) within its limit.
+
+   If the server assigned the prefix included in IA_PD to the client,
+   the server SHOULD do one of the following, depending on its policy:
+
+   1. Extend the lifetime of the original delegated prefix.
+
+   2. Extend the lifetime of the original delegated prefix and assign a
+      new prefix of the requested length.
+
+   3. Mark the original delegated prefix as invalid by giving it 0
+      lifetimes, and assign a new prefix of the requested length.  This
+      avoids the complexity of handling multiple delegated prefixes but
+      may break all the existing connections of the client.
+
+   4. Assign the original delegated prefix with 0 preferred-lifetime, a
+      specific non-zero valid-lifetime depending on actual requirement,
+      and assign a new prefix of the requested length.  This allows the
+      client to finish up existing connections with the original prefix
+      and use the new prefix to establish new connections.
+
+   5. Do not include the original delegated prefix in the Reply message,
+      and assign a new prefix of the requested length.  The original
+      prefix would be valid until its lifetime expires.  This avoids
+      sudden renumbering on the client.
+
+   If the server does not know the client's bindings (e.g., a different
+   server receiving the message during Rebind), then the server SHOULD
+   ignore the original delegated prefix and try to assign a new prefix
+   of the requested length.
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+   It's unnecessary for the server to remember the prefix-length hint
+   the client requested during Solicit.  It is possible that the
+   client's preference for the prefix length might have changed during
+   this time interval, so the prefix-length hint in the Renew message is
+   reflecting what the client prefers at the time.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.6.%20%20General%20Recommendation"></a><a class="selflink" href="#section-3.6" id="section-3.6">3.6</a>.  General Recommendation</span>
+
+   The recommendation to address the issues discussed in this document
+   is for a client that wants (at least) to have a delegated prefix of a
+   specific prefix length to always include an IAPREFIX option with just
+   the prefix-length hint in addition to any IAPREFIX options it has
+   included for each IA_PD in any Solicit, Request, Renew, and Rebind
+   messages it sends.  While a server is free to ignore the hint,
+   servers that do not choose to ignore the hint should attempt to
+   assign a prefix of the hint length (or assign the next closest length
+   that does not exceed the hint) if one is available.  Whether a server
+   favors the hint or avoiding a renumbering event is a matter of server
+   policy.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Security%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Security Considerations</span>
+
+   This document provides guidance on how the clients and servers
+   interact with regard to the DHCPv6 prefix-length hint.  Security
+   considerations in DHCP are described in <a href="./rfc3315#section-23">Section 23 of [RFC3315]</a>.
+   Security considerations regarding DHCPv6 prefix delegation are
+   described in <a href="./rfc3633#section-15">Section 15 of [RFC3633]</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  IANA Considerations</span>
+
+   This document does not require any IANA actions.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Normative%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc2119">http://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3315">RFC3315</a>]  Droms, R., Ed., Bound, J., Volz, B., Lemon, T., Perkins,
+              C., and M. Carney, "Dynamic Host Configuration Protocol
+              for IPv6 (DHCPv6)", <a href="./rfc3315">RFC 3315</a>, DOI 10.17487/RFC3315, July
+              2003, &lt;<a href="http://www.rfc-editor.org/info/rfc3315">http://www.rfc-editor.org/info/rfc3315</a>&gt;.
+
+   [<a id="ref-RFC3633">RFC3633</a>]  Troan, O. and R. Droms, "IPv6 Prefix Options for Dynamic
+              Host Configuration Protocol (DHCP) version 6", <a href="./rfc3633">RFC 3633</a>,
+              DOI 10.17487/RFC3633, December 2003,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc3633">http://www.rfc-editor.org/info/rfc3633</a>&gt;.
+
+
+
+<span class="grey">Li, et al.                   Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8168">RFC 8168</a>            DHCPv6 Prefix-Length Hint Issues            May 2017</span>
+
+
+   [<a id="ref-RFC7083">RFC7083</a>]  Droms, R., "Modification to Default Values of SOL_MAX_RT
+              and INF_MAX_RT", <a href="./rfc7083">RFC 7083</a>, DOI 10.17487/RFC7083, November
+              2013, &lt;<a href="http://www.rfc-editor.org/info/rfc7083">http://www.rfc-editor.org/info/rfc7083</a>&gt;.
+
+   [<a id="ref-RFC7550">RFC7550</a>]  Troan, O., Volz, B., and M. Siodelski, "Issues and
+              Recommendations with Multiple Stateful DHCPv6 Options",
+              <a href="./rfc7550">RFC 7550</a>, DOI 10.17487/RFC7550, May 2015,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc7550">http://www.rfc-editor.org/info/rfc7550</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="http://www.rfc-editor.org/info/rfc8174">http://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+Acknowledgements
+
+   Many thanks to Qi Sun, Bernie Volz, Ole Troan, Sunil Gandhewar,
+   Marcin Siodelski, Ted Lemon, Roni Even, Benoit Claise, Mirja
+   Kuehlewind, Kathleen Moriarty, Eric Rescorla, Alvaro Retana, Susan
+   Hares, and Hilarie Orman for their review and comments.
+
+Authors' Addresses
+
+   Tianxiang Li
+   Tsinghua University
+   Beijing  100084
+   China
+
+   Phone: +86-18301185866
+   Email: peter416733@gmail.com
+
+
+   Cong Liu
+   Tsinghua University
+   Beijing  100084
+   China
+
+   Phone: +86-10-6278-5822
+   Email: gnocuil@gmail.com
+
+
+   Yong Cui
+   Tsinghua University
+   Beijing  100084
+   China
+
+   Phone: +86-10-6260-3059
+   Email: yong.cui.thu@gmail.com
+
+
+
+
+Li, et al.                   Standards Track                    [Page 9]
+</pre>
+</body></html>

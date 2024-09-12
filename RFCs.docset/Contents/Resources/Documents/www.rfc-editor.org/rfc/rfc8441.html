@@ -1,0 +1,446 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                        P. McManus
+Request for Comments: 8441                                       Mozilla
+Updates: <a href="./rfc6455">6455</a>                                             September 2018
+Category: Standards Track
+ISSN: 2070-1721
+
+
+                  <span class="h1">Bootstrapping WebSockets with HTTP/2</span>
+
+Abstract
+
+   This document defines a mechanism for running the WebSocket Protocol
+   (<a href="./rfc6455">RFC 6455</a>) over a single stream of an HTTP/2 connection.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8441">https://www.rfc-editor.org/info/rfc8441</a>.
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Terminology . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  The SETTINGS_ENABLE_CONNECT_PROTOCOL SETTINGS Parameter . . .   <a href="#page-3">3</a>
+   <a href="#section-4">4</a>.  The Extended CONNECT Method . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   5.  Using Extended CONNECT to Bootstrap the WebSocket Protocol  .   4
+     <a href="#section-5.1">5.1</a>.  Example . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-6">6</a>.  Design Considerations . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-7">7</a>.  About Intermediaries  . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-8">8</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-9">9</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-9.1">9.1</a>.  A New HTTP/2 Setting  . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-9.2">9.2</a>.  A New HTTP Upgrade Token  . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-10">10</a>. Normative References  . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   Author's Address  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The Hypertext Transfer Protocol (HTTP) [<a href="./rfc7230" title='"Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing"'>RFC7230</a>] provides compatible
+   resource-level semantics across different versions, but it does not
+   offer compatibility at the connection-management level.  Other
+   protocols that rely on connection-management details of HTTP, such as
+   WebSockets, must be updated for new versions of HTTP.
+
+   The WebSocket Protocol [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>] uses the HTTP/1.1 Upgrade mechanism
+   (<a href="./rfc7230#section-6.7">Section 6.7 of [RFC7230]</a>) to transition a TCP connection from HTTP
+   into a WebSocket connection.  A different approach must be taken with
+   HTTP/2 [<a href="./rfc7540" title='"Hypertext Transfer Protocol Version 2 (HTTP/2)"'>RFC7540</a>].  Due to its multiplexing nature, HTTP/2 does not
+   allow connection-wide header fields or status codes, such as the
+   Upgrade and Connection request-header fields or the 101 (Switching
+   Protocols) response code.  These are all required by the [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>]
+   opening handshake.
+
+   Being able to bootstrap WebSockets from HTTP/2 allows one TCP
+   connection to be shared by both protocols and extends HTTP/2's more
+   efficient use of the network to WebSockets.
+
+   This document extends the HTTP CONNECT method, as specified for
+   HTTP/2 in <a href="./rfc7540#section-8.3">Section 8.3 of [RFC7540]</a>.  The extension allows the
+   substitution of a new protocol name to connect to rather than the
+   external host normally used by CONNECT.  The result is a tunnel on a
+   single HTTP/2 stream that can carry data for WebSockets (or any other
+   protocol).  The other streams on the connection may carry more
+   extended CONNECT tunnels, traditional HTTP/2 data, or a mixture of
+   both.
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+   This tunneled stream will be multiplexed with other regular streams
+   on the connection and enjoys the normal priority, cancellation, and
+   flow-control features of HTTP/2.
+
+   Streams that successfully establish a WebSocket connection using a
+   tunneled stream and the modifications to the opening handshake
+   defined in this document then use the traditional WebSocket Protocol,
+   treating the stream as if it were the TCP connection in that
+   specification.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Terminology"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Terminology</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20The%20SETTINGS_ENABLE_CONNECT_PROTOCOL%20SETTINGS%20Parameter"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  The SETTINGS_ENABLE_CONNECT_PROTOCOL SETTINGS Parameter</span>
+
+   This document adds a new SETTINGS parameter to those defined by
+   <a href="./rfc7540#section-6.5.2">[RFC7540], Section 6.5.2</a>.
+
+   The new parameter name is SETTINGS_ENABLE_CONNECT_PROTOCOL.  The
+   value of the parameter MUST be 0 or 1.
+
+   Upon receipt of SETTINGS_ENABLE_CONNECT_PROTOCOL with a value of 1, a
+   client MAY use the Extended CONNECT as defined in this document when
+   creating new streams.  Receipt of this parameter by a server does not
+   have any impact.
+
+   A sender MUST NOT send a SETTINGS_ENABLE_CONNECT_PROTOCOL parameter
+   with the value of 0 after previously sending a value of 1.
+
+   Using a SETTINGS parameter to opt into an otherwise incompatible
+   protocol change is a use of "Extending HTTP/2" defined by <a href="./rfc7540#section-5.5">Section 5.5
+   of [RFC7540]</a>.  Specifically, the addition a new pseudo-header field,
+   ":protocol", and the change in meaning of the :authority pseudo-
+   header field in <a href="#section-4">Section 4</a> require opt-in negotiation.  If a client
+   were to use the provisions of the extended CONNECT method defined in
+   this document without first receiving a
+   SETTINGS_ENABLE_CONNECT_PROTOCOL parameter, a non-supporting peer
+   would detect a malformed request and generate a stream error
+   (<a href="./rfc7540#section-8.1.2.6">Section 8.1.2.6 of [RFC7540]</a>).
+
+
+
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20The%20Extended%20CONNECT%20Method"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  The Extended CONNECT Method</span>
+
+   Usage of the CONNECT method in HTTP/2 is defined by <a href="./rfc7540#section-8.3">Section 8.3 of
+   [RFC7540]</a>.  This extension modifies the method in the following ways:
+
+   o  A new pseudo-header field :protocol MAY be included on request
+      HEADERS indicating the desired protocol to be spoken on the tunnel
+      created by CONNECT.  The pseudo-header field is single valued and
+      contains a value from the "Hypertext Transfer Protocol (HTTP)
+      Upgrade Token Registry" located at
+      &lt;<a href="https://www.iana.org/assignments/http-upgrade-tokens/">https://www.iana.org/assignments/http-upgrade-tokens/</a>&gt;
+
+   o  On requests that contain the :protocol pseudo-header field, the
+      :scheme and :path pseudo-header fields of the target URI (see
+      <a href="#section-5">Section 5</a>) MUST also be included.
+
+   o  On requests bearing the :protocol pseudo-header field, the
+      :authority pseudo-header field is interpreted according to
+      <a href="./rfc7540#section-8.1.2.3">Section 8.1.2.3 of [RFC7540]</a> instead of <a href="#section-8.3">Section 8.3</a> of that
+      document.  In particular, the server MUST NOT create a tunnel to
+      the host indicated by the :authority as it would with a CONNECT
+      method request that was not modified by this extension.
+
+   Upon receiving a CONNECT request bearing the :protocol pseudo-header
+   field, the server establishes a tunnel to another service of the
+   protocol type indicated by the pseudo-header field.  This service may
+   or may not be co-located with the server.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Using%20Extended%20CONNECT%20to%20Bootstrap%20the%20WebSocket%20Protocol"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Using Extended CONNECT to Bootstrap the WebSocket Protocol</span>
+
+   The :protocol pseudo-header field MUST be included in the CONNECT
+   request, and it MUST have a value of "websocket" to initiate a
+   WebSocket connection on an HTTP/2 stream.  Other HTTP request and
+   response-header fields, such as those for manipulating cookies, may
+   be included in the HEADERS with the CONNECT method as usual.  This
+   request replaces the GET-based request in [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>] and is used to
+   process the WebSockets opening handshake.
+
+   The scheme of the target URI (<a href="./rfc7230#section-5.1">Section 5.1 of [RFC7230]</a>) MUST be
+   "https" for "wss"-schemed WebSockets and "http" for "ws"-schemed
+   WebSockets.  The remainder of the target URI is the same as the
+   WebSocket URI.  The WebSocket URI is still used for proxy
+   autoconfiguration.  The security requirements for the HTTP/2
+   connection used by this specification are established by [<a href="./rfc7540" title='"Hypertext Transfer Protocol Version 2 (HTTP/2)"'>RFC7540</a>]
+   for https requests and [<a href="./rfc8164" title='"Opportunistic Security for HTTP/2"'>RFC8164</a>] for http requests.
+
+
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+   [<a id="ref-RFC6455">RFC6455</a>] requires the use of Connection and Upgrade header fields
+   that are not part of HTTP/2.  They MUST NOT be included in the
+   CONNECT request defined here.
+
+   [<a id="ref-RFC6455">RFC6455</a>] requires the use of a Host header field that is also not
+   part of HTTP/2.  The Host information is conveyed as part of the
+   :authority pseudo-header field, which is required on every HTTP/2
+   transaction.
+
+   Implementations using this extended CONNECT to bootstrap WebSockets
+   do not do the processing of the Sec-WebSocket-Key and Sec-WebSocket-
+   Accept header fields of [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>] as that functionality has been
+   superseded by the :protocol pseudo-header field.
+
+   The Origin [<a href="./rfc6454" title='"The Web Origin Concept"'>RFC6454</a>], Sec-WebSocket-Version, Sec-WebSocket-Protocol,
+   and Sec-WebSocket-Extensions header fields are used in the CONNECT
+   request and response-header fields as defined in [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>].  Note
+   that HTTP/1 header field names were case insensitive, whereas HTTP/2
+   requires they be encoded as lowercase.
+
+   After successfully processing the opening handshake, the peers should
+   proceed with the WebSocket Protocol [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>] using the HTTP/2 stream
+   from the CONNECT transaction as if it were the TCP connection
+   referred to in [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>].  The state of the WebSocket connection at
+   this point is OPEN, as defined by <a href="./rfc6455#section-4.1">[RFC6455], Section 4.1</a>.
+
+   The HTTP/2 stream closure is also analogous to the TCP connection
+   closure of [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>].  Orderly TCP-level closures are represented as
+   END_STREAM flags (<a href="./rfc7540#section-6.1">[RFC7540], Section 6.1</a>).  RST exceptions are
+   represented with the RST_STREAM frame (<a href="./rfc7540#section-6.4">[RFC7540], Section 6.4</a>) with
+   the CANCEL error code (<a href="./rfc7540#section-7">[RFC7540], Section 7</a>).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Example"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Example</span>
+
+[[ From Client ]]                       [[ From Server ]]
+
+                                        SETTINGS
+                                        SETTINGS_ENABLE_CONNECT_[..] = 1
+
+HEADERS + END_HEADERS
+:method = CONNECT
+:protocol = websocket
+:scheme = https
+:path = /chat
+:authority = server.example.com
+sec-websocket-protocol = chat, superchat
+sec-websocket-extensions = permessage-deflate
+sec-websocket-version = 13
+origin = http://www.example.com
+
+                                        HEADERS + END_HEADERS
+                                        :status = 200
+                                        sec-websocket-protocol = chat
+
+DATA
+WebSocket Data
+
+                                        DATA + END_STREAM
+                                        WebSocket Data
+
+DATA + END_STREAM
+WebSocket Data
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Design%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Design Considerations</span>
+
+   A more native integration with HTTP/2 is certainly possible with
+   larger additions to HTTP/2.  This design was selected to minimize the
+   solution complexity while still addressing the primary concern of
+   running HTTP/2 and WebSockets concurrently.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20About%20Intermediaries"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  About Intermediaries</span>
+
+   This document does not change how WebSockets interacts with HTTP
+   forward proxies.  If a client wishing to speak WebSockets connects
+   via HTTP/2 to an HTTP proxy, it should continue to use a traditional
+   CONNECT (i.e., not with a :protocol pseudo-header field) to tunnel
+   through that proxy to the WebSocket server via HTTP.
+
+
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+   The resulting version of HTTP on that tunnel determines whether
+   WebSockets is initiated directly or via a modified CONNECT request
+   described in this document.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Security%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Security Considerations</span>
+
+   [<a id="ref-RFC6455">RFC6455</a>] ensures that non-WebSockets clients, especially
+   XMLHttpRequest-based clients, cannot make a WebSocket connection.
+   Its primary mechanism for doing that is the use of Sec-prefixed
+   request-header fields that cannot be created by XMLHttpRequest-based
+   clients.  This specification addresses that concern in two ways:
+
+   o  XMLHttpRequest also prohibits use of the CONNECT method in
+      addition to Sec-prefixed request-header fields.
+
+   o  The use of a pseudo-header field is something that is connection
+      specific, and HTTP/2 never allows a pseudo-header to be created
+      outside of the protocol stack.
+
+   The security considerations of <a href="./rfc6455#section-10">[RFC6455], Section 10</a> continue to
+   apply to the use of the WebSocket Protocol when using this
+   specification, with the exception of 10.8.  That section is not
+   relevant, because it is specific to the bootstrapping handshake that
+   is changed in this document.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  IANA Considerations</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20A%20New%20HTTP%2F2%20Setting"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  A New HTTP/2 Setting</span>
+
+   This document registers an entry in the "HTTP/2 Settings" registry
+   that was established by <a href="./rfc7540#section-11.3">Section 11.3 of [RFC7540]</a>.
+
+      Code: 0x8
+      Name: SETTINGS_ENABLE_CONNECT_PROTOCOL
+      Initial Value: 0
+      Specification: This document
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20A%20New%20HTTP%20Upgrade%20Token"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  A New HTTP Upgrade Token</span>
+
+   This document registers an entry in the "HTTP Upgrade Tokens"
+   registry that was established by [<a href="./rfc7230" title='"Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing"'>RFC7230</a>].
+
+      Value: websocket
+      Description: The Web Socket Protocol
+      Expected Version Tokens:
+      References: [<a href="./rfc6455" title='"The WebSocket Protocol"'>RFC6455</a>] [<a href="./rfc8441">RFC8441</a>]
+
+
+
+
+
+<span class="grey">McManus                      Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8441">RFC 8441</a>                      H2 WebSockets               September 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20Normative%20References"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC6454">RFC6454</a>]  Barth, A., "The Web Origin Concept", <a href="./rfc6454">RFC 6454</a>,
+              DOI 10.17487/RFC6454, December 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6454">https://www.rfc-editor.org/info/rfc6454</a>&gt;.
+
+   [<a id="ref-RFC6455">RFC6455</a>]  Fette, I. and A. Melnikov, "The WebSocket Protocol",
+              <a href="./rfc6455">RFC 6455</a>, DOI 10.17487/RFC6455, December 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6455">https://www.rfc-editor.org/info/rfc6455</a>&gt;.
+
+   [<a id="ref-RFC7230">RFC7230</a>]  Fielding, R., Ed. and J. Reschke, Ed., "Hypertext Transfer
+              Protocol (HTTP/1.1): Message Syntax and Routing",
+              <a href="./rfc7230">RFC 7230</a>, DOI 10.17487/RFC7230, June 2014,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7230">https://www.rfc-editor.org/info/rfc7230</a>&gt;.
+
+   [<a id="ref-RFC7540">RFC7540</a>]  Belshe, M., Peon, R., and M. Thomson, Ed., "Hypertext
+              Transfer Protocol Version 2 (HTTP/2)", <a href="./rfc7540">RFC 7540</a>,
+              DOI 10.17487/RFC7540, May 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7540">https://www.rfc-editor.org/info/rfc7540</a>&gt;.
+
+   [<a id="ref-RFC8164">RFC8164</a>]  Nottingham, M. and M. Thomson, "Opportunistic Security for
+              HTTP/2", <a href="./rfc8164">RFC 8164</a>, DOI 10.17487/RFC8164, May 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8164">https://www.rfc-editor.org/info/rfc8164</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+Acknowledgments
+
+   The 2017 HTTP Workshop had a very productive discussion that helped
+   determine the key problem and acceptable level of solution
+   complexity.
+
+Author's Address
+
+   Patrick McManus
+   Mozilla
+
+   Email: mcmanus@ducksong.com
+
+
+
+
+
+
+McManus                      Standards Track                    [Page 8]
+</pre>
+</body></html>

@@ -1,0 +1,614 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)               T. Lodderstedt, Ed.
+Request for Comments: 7009                           Deutsche Telekom AG
+Category: Standards Track                                      S. Dronia
+ISSN: 2070-1721
+                                                            M. Scurtescu
+                                                                  Google
+                                                             August 2013
+
+
+                       <span class="h1">OAuth 2.0 Token Revocation</span>
+
+Abstract
+
+   This document proposes an additional endpoint for OAuth authorization
+   servers, which allows clients to notify the authorization server that
+   a previously obtained refresh or access token is no longer needed.
+   This allows the authorization server to clean up security
+   credentials.  A revocation request will invalidate the actual token
+   and, if applicable, other tokens based on the same authorization
+   grant.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc7009">http://www.rfc-editor.org/info/rfc7009</a>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2013 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-1.1">1.1</a>.  Requirements Language . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Token Revocation  . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-2.1">2.1</a>.  Revocation Request  . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-2.2">2.2</a>.  Revocation Response . . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+       <a href="#section-2.2.1">2.2.1</a>.  Error Response  . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-2.3">2.3</a>.  Cross-Origin Support  . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-3">3</a>.  Implementation Note . . . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-4">4</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+     <a href="#section-4.1">4.1</a>.  OAuth Extensions Error Registration . . . . . . . . . . .   <a href="#page-8">8</a>
+       <a href="#section-4.1.1">4.1.1</a>.  The "unsupported_token_type" Error Value  . . . . . .   <a href="#page-8">8</a>
+       <a href="#section-4.1.2">4.1.2</a>.  OAuth Token Type Hints Registry . . . . . . . . . . .   <a href="#page-8">8</a>
+         <a href="#section-4.1.2.1">4.1.2.1</a>.  Registration Template . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+         <a href="#section-4.1.2.2">4.1.2.2</a>.  Initial Registry Contents . . . . . . . . . . . .   <a href="#page-9">9</a>
+   <a href="#section-5">5</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   <a href="#section-6">6</a>.  Acknowledgements  . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+   <a href="#section-7">7</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-7.1">7.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-7.2">7.2</a>.  Informative References  . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The OAuth 2.0 core specification [<a href="./rfc6749" title='"The OAuth 2.0 Authorization Framework"'>RFC6749</a>] defines several ways for a
+   client to obtain refresh and access tokens.  This specification
+   supplements the core specification with a mechanism to revoke both
+   types of tokens.  A token is a string representing an authorization
+   grant issued by the resource owner to the client.  A revocation
+   request will invalidate the actual token and, if applicable, other
+   tokens based on the same authorization grant and the authorization
+   grant itself.
+
+   From an end-user's perspective, OAuth is often used to log into a
+   certain site or application.  This revocation mechanism allows a
+   client to invalidate its tokens if the end-user logs out, changes
+   identity, or uninstalls the respective application.  Notifying the
+   authorization server that the token is no longer needed allows the
+   authorization server to clean up data associated with that token
+   (e.g., session data) and the underlying authorization grant.  This
+   behavior prevents a situation in which there is still a valid
+   authorization grant for a particular client of which the end-user is
+   not aware.  This way, token revocation prevents abuse of abandoned
+   tokens and facilitates a better end-user experience since invalidated
+   authorization grants will no longer turn up in a list of
+   authorization grants the authorization server might present to the
+   end-user.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Requirements%20Language"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Requirements Language</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Token%20Revocation"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Token Revocation</span>
+
+   Implementations MUST support the revocation of refresh tokens and
+   SHOULD support the revocation of access tokens (see Implementation
+   Note).
+
+   The client requests the revocation of a particular token by making an
+   HTTP POST request to the token revocation endpoint URL.  This URL
+   MUST conform to the rules given in <a href="./rfc6749#section-3.1">[RFC6749], Section 3.1</a>.  Clients
+   MUST verify that the URL is an HTTPS URL.
+
+   The means to obtain the location of the revocation endpoint is out of
+   the scope of this specification.  For example, the client developer
+   may consult the server's documentation or automatic discovery may be
+   used.  As this endpoint is handling security credentials, the
+   endpoint location needs to be obtained from a trustworthy source.
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+   Since requests to the token revocation endpoint result in the
+   transmission of plaintext credentials in the HTTP request, URLs for
+   token revocation endpoints MUST be HTTPS URLs.  The authorization
+   server MUST use Transport Layer Security (TLS) [<a href="./rfc5246" title='"The Transport Layer Security (TLS) Protocol Version 1.2"'>RFC5246</a>] in a version
+   compliant with <a href="./rfc6749#section-1.6">[RFC6749], Section 1.6</a>.  Implementations MAY also
+   support additional transport-layer security mechanisms that meet
+   their security requirements.
+
+   If the host of the token revocation endpoint can also be reached over
+   HTTP, then the server SHOULD also offer a revocation service at the
+   corresponding HTTP URI, but it MUST NOT publish this URI as a token
+   revocation endpoint.  This ensures that tokens accidentally sent over
+   HTTP will be revoked.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Revocation%20Request"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Revocation Request</span>
+
+   The client constructs the request by including the following
+   parameters using the "application/x-www-form-urlencoded" format in
+   the HTTP request entity-body:
+
+   token   REQUIRED.  The token that the client wants to get revoked.
+
+   token_type_hint  OPTIONAL.  A hint about the type of the token
+           submitted for revocation.  Clients MAY pass this parameter in
+           order to help the authorization server to optimize the token
+           lookup.  If the server is unable to locate the token using
+           the given hint, it MUST extend its search across all of its
+           supported token types.  An authorization server MAY ignore
+           this parameter, particularly if it is able to detect the
+           token type automatically.  This specification defines two
+           such values:
+
+           * access_token: An access token as defined in <a href="./rfc6749#section-1.4">[RFC6749],
+             Section 1.4</a>
+
+           * refresh_token: A refresh token as defined in <a href="./rfc6749#section-1.5">[RFC6749],
+             Section 1.5</a>
+
+           Specific implementations, profiles, and extensions of this
+           specification MAY define other values for this parameter
+           using the registry defined in <a href="#section-4.1.2">Section 4.1.2</a>.
+
+   The client also includes its authentication credentials as described
+   in <a href="./rfc6749#section-2.3">Section 2.3. of [RFC6749]</a>.
+
+
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+   For example, a client may request the revocation of a refresh token
+   with the following request:
+
+     POST /revoke HTTP/1.1
+     Host: server.example.com
+     Content-Type: application/x-www-form-urlencoded
+     Authorization: Basic czZCaGRSa3F0MzpnWDFmQmF0M2JW
+
+     token=45ghiukldjahdnhzdauz&amp;token_type_hint=refresh_token
+
+   The authorization server first validates the client credentials (in
+   case of a confidential client) and then verifies whether the token
+   was issued to the client making the revocation request.  If this
+   validation fails, the request is refused and the client is informed
+   of the error by the authorization server as described below.
+
+   In the next step, the authorization server invalidates the token.
+   The invalidation takes place immediately, and the token cannot be
+   used again after the revocation.  In practice, there could be a
+   propagation delay, for example, in which some servers know about the
+   invalidation while others do not.  Implementations should minimize
+   that window, and clients must not try to use the token after receipt
+   of an HTTP 200 response from the server.
+
+   Depending on the authorization server's revocation policy, the
+   revocation of a particular token may cause the revocation of related
+   tokens and the underlying authorization grant.  If the particular
+   token is a refresh token and the authorization server supports the
+   revocation of access tokens, then the authorization server SHOULD
+   also invalidate all access tokens based on the same authorization
+   grant (see Implementation Note).  If the token passed to the request
+   is an access token, the server MAY revoke the respective refresh
+   token as well.
+
+   Note: A client compliant with [<a href="./rfc6749" title='"The OAuth 2.0 Authorization Framework"'>RFC6749</a>] must be prepared to handle
+   unexpected token invalidation at any time.  Independent of the
+   revocation mechanism specified in this document, resource owners may
+   revoke authorization grants, or the authorization server may
+   invalidate tokens in order to mitigate security threats.  Thus,
+   having different server policies with respect to cascading the
+   revocation of tokens should not pose interoperability problems.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Revocation%20Response"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Revocation Response</span>
+
+   The authorization server responds with HTTP status code 200 if the
+   token has been revoked successfully or if the client submitted an
+   invalid token.
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+   Note: invalid tokens do not cause an error response since the client
+   cannot handle such an error in a reasonable way.  Moreover, the
+   purpose of the revocation request, invalidating the particular token,
+   is already achieved.
+
+   The content of the response body is ignored by the client as all
+   necessary information is conveyed in the response code.
+
+   An invalid token type hint value is ignored by the authorization
+   server and does not influence the revocation response.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.1.%20%20Error%20Response"></a><a class="selflink" href="#section-2.2.1" id="section-2.2.1">2.2.1</a>.  Error Response</span>
+
+   The error presentation conforms to the definition in <a href="./rfc6749#section-5.2">Section 5.2 of
+   [RFC6749]</a>.  The following additional error code is defined for the
+   token revocation endpoint:
+
+   unsupported_token_type:  The authorization server does not support
+           the revocation of the presented token type.  That is, the
+           client tried to revoke an access token on a server not
+           supporting this feature.
+
+   If the server responds with HTTP status code 503, the client must
+   assume the token still exists and may retry after a reasonable delay.
+   The server may include a "Retry-After" header in the response to
+   indicate how long the service is expected to be unavailable to the
+   requesting client.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Cross-Origin%20Support"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Cross-Origin Support</span>
+
+   The revocation endpoint MAY support Cross-Origin Resource Sharing
+   (CORS) [<a href="#ref-W3C.WD-cors-20120403">W3C.WD-cors-20120403</a>] if it is aimed at use in combination
+   with user-agent-based applications.
+
+   In addition, for interoperability with legacy user-agents, it MAY
+   also offer JSONP (Remote JSON - JSONP) [<a href="#ref-jsonp" title='"Remote JSON - JSONP"'>jsonp</a>] by allowing GET
+   requests with an additional parameter:
+
+   callback  OPTIONAL.  The qualified name of a JavaScript function.
+
+   For example, a client may request the revocation of an access token
+   with the following request (line breaks are for display purposes
+   only):
+
+     https://example.com/revoke?token=agabcdefddddafdd&amp;
+     callback=package.myCallback
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+   Successful response:
+
+     package.myCallback();
+
+   Error response:
+
+     package.myCallback({"error":"unsupported_token_type"});
+
+   Clients should be aware that when relying on JSONP, a malicious
+   revocation endpoint may attempt to inject malicious code into the
+   client.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Implementation%20Note"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Implementation Note</span>
+
+   OAuth 2.0 allows deployment flexibility with respect to the style of
+   access tokens.  The access tokens may be self-contained so that a
+   resource server needs no further interaction with an authorization
+   server issuing these tokens to perform an authorization decision of
+   the client requesting access to a protected resource.  A system
+   design may, however, instead use access tokens that are handles
+   referring to authorization data stored at the authorization server.
+   This consequently requires a resource server to issue a request to
+   the respective authorization server to retrieve the content of the
+   access token every time a client presents an access token.
+
+   While these are not the only options, they illustrate the
+   implications for revocation.  In the latter case, the authorization
+   server is able to revoke an access token previously issued to a
+   client when the resource server relays a received access token.  In
+   the former case, some (currently non-standardized) backend
+   interaction between the authorization server and the resource server
+   may be used when immediate access token revocation is desired.
+   Another design alternative is to issue short-lived access tokens,
+   which can be refreshed at any time using the corresponding refresh
+   tokens.  This allows the authorization server to impose a limit on
+   the time revoked when access tokens are in use.
+
+   Which approach of token revocation is chosen will depend on the
+   overall system design and on the application service provider's risk
+   analysis.  The cost of revocation in terms of required state and
+   communication overhead is ultimately the result of the desired
+   security properties.
+
+
+
+
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  IANA Considerations</span>
+
+   This specification registers an error value in the "OAuth Extensions
+   Error Registry" and establishes the "OAuth Token Type Hints"
+   registry.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20OAuth%20Extensions%20Error%20Registration"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  OAuth Extensions Error Registration</span>
+
+   This specification registers the following error value in the "OAuth
+   Extensions Error Registry" defined in [<a href="./rfc6749" title='"The OAuth 2.0 Authorization Framework"'>RFC6749</a>].
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.1.%20%20The%20%22unsupported_token_type%22%20Error%20Value"></a><a class="selflink" href="#section-4.1.1" id="section-4.1.1">4.1.1</a>.  The "unsupported_token_type" Error Value</span>
+
+   Error name:  unsupported_token_type
+
+   Error Usage Location:  Revocation endpoint error response
+
+   Related Protocol Extension:  Token Revocation Endpoint
+
+   Change controller:  IETF
+
+   Specification document(s):  [<a href="./rfc7009">RFC7009</a>]
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.2.%20%20OAuth%20Token%20Type%20Hints%20Registry"></a><a class="selflink" href="#section-4.1.2" id="section-4.1.2">4.1.2</a>.  OAuth Token Type Hints Registry</span>
+
+   This specification establishes the "OAuth Token Type Hints" registry.
+   Possible values of the parameter "token_type_hint" (see <a href="#section-2.1">Section 2.1</a>)
+   are registered with a Specification Required ([<a href="./rfc5226" title="">RFC5226</a>]) after a two-
+   week review period on the oauth-ext-review@ietf.org mailing list, on
+   the advice of one or more Designated Experts.  However, to allow for
+   the allocation of values prior to publication, the Designated
+   Expert(s) may approve registration once they are satisfied that such
+   a specification will be published.  Registration requests must be
+   sent to the oauth-ext-review@ietf.org mailing list for review and
+   comment, with an appropriate subject (e.g., "Request for parameter:
+   example").  Within the review period, the Designated Expert(s) will
+   either approve or deny the registration request, communicating this
+   decision to the review list and IANA.  Denials should include an
+   explanation and, if applicable, suggestions as to how to make the
+   request successful.  IANA must only accept registry updates from the
+   Designated Expert(s) and should direct all requests for registration
+   to the review mailing list.
+
+
+
+
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.2.1.%20%20Registration%20Template"></a><a class="selflink" href="#section-4.1.2.1" id="section-4.1.2.1">4.1.2.1</a>.  Registration Template</span>
+
+   Hint Value:  The additional value, which can be used to indicate a
+      certain token type to the authorization server.
+
+   Change controller:  For Standards Track RFCs, state "IETF".  For
+      others, give the name of the responsible party.  Other details
+      (e.g., postal address, email address, and home page URI) may also
+      be included.
+
+   Specification document(s):  Reference to the document(s) that
+      specifies the type, preferably including a URI that can be used to
+      retrieve a copy of the document(s).  An indication of the relevant
+      sections may also be included but is not required.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.2.2.%20%20Initial%20Registry%20Contents"></a><a class="selflink" href="#section-4.1.2.2" id="section-4.1.2.2">4.1.2.2</a>.  Initial Registry Contents</span>
+
+   The OAuth Token Type Hint registry's initial contents are as follows.
+
+             +---------------+-------------------+-----------+
+             |   Hint Value  | Change Controller | Reference |
+             +---------------+-------------------+-----------+
+             |  access_token |        IETF       | [<a href="./rfc7009">RFC7009</a>] |
+             | refresh_token |        IETF       | [<a href="./rfc7009">RFC7009</a>] |
+             +---------------+-------------------+-----------+
+
+         Table 1: OAuth Token Type Hints initial registry contents
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Security%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Security Considerations</span>
+
+   If the authorization server does not support access token revocation,
+   access tokens will not be immediately invalidated when the
+   corresponding refresh token is revoked.  Deployments must take this
+   into account when conducting their security risk analysis.
+
+   Cleaning up tokens using revocation contributes to overall security
+   and privacy since it reduces the likelihood for abuse of abandoned
+   tokens.  This specification in general does not intend to provide
+   countermeasures against token theft and abuse.  For a discussion of
+   respective threats and countermeasures, consult the security
+   considerations given in <a href="#section-10">Section 10</a> of the OAuth core specification
+   [<a href="./rfc6749" title='"The OAuth 2.0 Authorization Framework"'>RFC6749</a>] and the OAuth threat model document [<a href="./rfc6819" title='"OAuth 2.0 Threat Model and Security Considerations"'>RFC6819</a>].
+
+   Malicious clients could attempt to use the new endpoint to launch
+   denial-of-service attacks on the authorization server.  Appropriate
+   countermeasures, which should be in place for the token endpoint as
+   well, MUST be applied to the revocation endpoint (see <a href="./rfc6819#section-4.4.1.11">[RFC6819],
+   Section 4.4.1.11</a>).  Specifically, invalid token type hints may
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+   misguide the authorization server and cause additional database
+   lookups.  Care MUST be taken to prevent malicious clients from
+   exploiting this feature to launch denial-of-service attacks.
+
+   A malicious client may attempt to guess valid tokens on this endpoint
+   by making revocation requests against potential token strings.
+   According to this specification, a client's request must contain a
+   valid client_id, in the case of a public client, or valid client
+   credentials, in the case of a confidential client.  The token being
+   revoked must also belong to the requesting client.  If an attacker is
+   able to successfully guess a public client's client_id and one of
+   their tokens, or a private client's credentials and one of their
+   tokens, they could do much worse damage by using the token elsewhere
+   than by revoking it.  If they chose to revoke the token, the
+   legitimate client will lose its authorization grant and will need to
+   prompt the user again.  No further damage is done and the guessed
+   token is now worthless.
+
+   Since the revocation endpoint is handling security credentials,
+   clients need to obtain its location from a trustworthy source only.
+   Otherwise, an attacker could capture valid security tokens by
+   utilizing a counterfeit revocation endpoint.  Moreover, in order to
+   detect counterfeit revocation endpoints, clients MUST authenticate
+   the revocation endpoint (certificate validation, etc.).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Acknowledgements"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Acknowledgements</span>
+
+   We would like to thank Peter Mauritius, Amanda Anganes, Mark Wubben,
+   Hannes Tschofenig, Michiel de Jong, Doug Foiles, Paul Madsen, George
+   Fletcher, Sebastian Ebling, Christian Stuebner, Brian Campbell, Igor
+   Faynberg, Lukas Rosenstock, and Justin Richer for their valuable
+   feedback.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Normative%20References"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC5226">RFC5226</a>]  Narten, T. and H. Alvestrand, "Guidelines for Writing an
+              IANA Considerations Section in RFCs", <a href="https://www.rfc-editor.org/bcp/bcp26">BCP 26</a>, <a href="./rfc5226">RFC 5226</a>,
+              May 2008.
+
+   [<a id="ref-RFC5246">RFC5246</a>]  Dierks, T. and E. Rescorla, "The Transport Layer Security
+              (TLS) Protocol Version 1.2", <a href="./rfc5246">RFC 5246</a>, August 2008.
+
+
+
+
+
+<span class="grey">Lodderstedt, et al.          Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc7009">RFC 7009</a>                    Token Revocation                 August 2013</span>
+
+
+   [<a id="ref-RFC6749">RFC6749</a>]  Hardt, D., "The OAuth 2.0 Authorization Framework",
+              <a href="./rfc6749">RFC 6749</a>, October 2012.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Informative%20References"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC6819">RFC6819</a>]  Lodderstedt, T., McGloin, M., and P. Hunt, "OAuth 2.0
+              Threat Model and Security Considerations", <a href="./rfc6819">RFC 6819</a>,
+              January 2013.
+
+   [<a id="ref-W3C.WD-cors-20120403">W3C.WD-cors-20120403</a>]
+              Kesteren, A., "Cross-Origin Resource Sharing", World Wide
+              Web Consortium LastCall WD-cors-20120403, April 2012,
+              &lt;<a href="http://www.w3.org/TR/2012/WD-cors-20120403">http://www.w3.org/TR/2012/WD-cors-20120403</a>&gt;.
+
+   [<a id="ref-jsonp">jsonp</a>]    Ippolito, B., "Remote JSON - JSONP", December 2005,
+              &lt;<a href="http://bob.pythonmac.org/archives/2005/12/05/remote-json-jsonp">http://bob.pythonmac.org/archives/2005/12/05/</a>
+              <a href="http://bob.pythonmac.org/archives/2005/12/05/remote-json-jsonp">remote-json-jsonp</a>&gt;.
+
+Authors' Addresses
+
+   Torsten Lodderstedt (editor)
+   Deutsche Telekom AG
+
+   EMail: torsten@lodderstedt.net
+
+
+   Stefanie Dronia
+
+   EMail: sdronia@gmx.de
+
+
+   Marius Scurtescu
+   Google
+
+   EMail: mscurtescu@google.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Lodderstedt, et al.          Standards Track                   [Page 11]
+</pre>
+</body></html>

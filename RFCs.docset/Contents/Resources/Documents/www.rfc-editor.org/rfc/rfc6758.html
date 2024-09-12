@@ -1,0 +1,614 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                       A. Melnikov
+Request for Comments: 6758                                     Isode Ltd
+Category: Informational                                      K. Carlberg
+ISSN: 2070-1721                                                      G11
+                                                            October 2012
+
+
+             <span class="h1">Tunneling of SMTP Message Transfer Priorities</span>
+
+Abstract
+
+   This memo defines a mechanism for tunneling of SMTP (Simple Mail
+   Transfer Protocol) Message Transfer Priority values through MTAs
+   (Message Transfer Agents) that don't support the MT-PRIORITY SMTP
+   extension.
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for informational purposes.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Not all documents
+   approved by the IESG are a candidate for any level of Internet
+   Standard; see <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6758">http://www.rfc-editor.org/info/rfc6758</a>.
+
+Copyright Notice
+
+   Copyright (c) 2012 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-2">2</a>
+   <a href="#section-2">2</a>. Conventions Used in This Document ...............................<a href="#page-3">3</a>
+   <a href="#section-3">3</a>. Handling of Messages Received via SMTP ..........................<a href="#page-4">4</a>
+      3.1. Handling of the MT-PRIORITY Parameter by the
+           Receiving SMTP Server ......................................<a href="#page-4">4</a>
+      <a href="#section-3.2">3.2</a>. Relay of Messages to Other Conforming SMTP/LMTP Servers ....<a href="#page-4">4</a>
+      <a href="#section-3.3">3.3</a>. Relay of Messages to Non-Conforming SMTP/LMTP Servers ......<a href="#page-5">5</a>
+      <a href="#section-3.4">3.4</a>. Mailing Lists and Aliases ..................................<a href="#page-5">5</a>
+      <a href="#section-3.5">3.5</a>. Gatewaying a Message into a Foreign Environment ............<a href="#page-5">5</a>
+      <a href="#section-3.6">3.6</a>. Interaction with the DSN SMTP Extension ....................<a href="#page-5">5</a>
+   <a href="#section-4">4</a>. Header Field: MT-Priority .......................................<a href="#page-5">5</a>
+   <a href="#section-5">5</a>. Example .........................................................<a href="#page-6">6</a>
+   <a href="#section-6">6</a>. IANA Considerations .............................................<a href="#page-7">7</a>
+   <a href="#section-7">7</a>. Security Considerations .........................................<a href="#page-7">7</a>
+      <a href="#section-7.1">7.1</a>. Modification of the MT-Priority Header Field and DKIM ......<a href="#page-9">9</a>
+   <a href="#section-8">8</a>. References ......................................................<a href="#page-9">9</a>
+      <a href="#section-8.1">8.1</a>. Normative References .......................................<a href="#page-9">9</a>
+      <a href="#section-8.2">8.2</a>. Informative References ....................................<a href="#page-10">10</a>
+   <a href="#appendix-A">Appendix A</a>. Acknowledgements ......................................<a href="#page-11">11</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The SMTP Message Transfer Priorities extension [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>] specifies a
+   mechanism to allow messages to be given a label to indicate
+   preferential handling, to enable mail handling nodes to take this
+   into account for onward processing.  However, as with all SMTP
+   extensions, all SMTP Message Transfer Agents (MTAs) between the
+   source and the destination must support the extension in order for it
+   to be successfully used.  This document describes an application-
+   layer tunneling of message priority, to convey the priority of the
+   messages through MTAs that do not support the Message Transfer
+   Priorities extension.  The tunneling is done by adding a new message
+   header field to the Internet Message Format specified in [<a href="./rfc5322" title='"Internet Message Format"'>RFC5322</a>].
+
+   A number of other header fields are already in use, mostly in Message
+   User Agents (MUAs), to convey meanings related to importance or
+   priority of messages.  Examples of such header fields are Importance
+   [<a href="./rfc2156" title='"MIXER (Mime Internet X.400 Enhanced Relay): Mapping between X.400 and RFC 822/MIME"'>RFC2156</a>], Priority [<a href="./rfc2156" title='"MIXER (Mime Internet X.400 Enhanced Relay): Mapping between X.400 and RFC 822/MIME"'>RFC2156</a>], and X-Priority (undocumented).
+   Considering sometimes subtle and sometimes significant differences in
+   the meaning of these header fields and widely different syntax, this
+   document defines a new header field.
+
+   This document is motivated by 2 main deployment scenarios: (1) an MUA
+   talking to a non-MT-PRIORITY-aware Message Submission Agent (MSA),
+   and (2) the use of an unextended MUA to talk to an MT-PRIORITY-aware
+   MSA.  These 2 use cases are discussed in more detail below.
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+   Use case (1) is about an MT-PRIORITY-capable MUA talking to a
+   non-MT-PRIORITY-capable MSA [<a href="./rfc6409" title='"Message Submission for Mail"'>RFC6409</a>], which in turn is talking to an
+   MT-PRIORITY-capable MTA [<a href="./rfc5321" title='"Simple Mail Transfer Protocol"'>RFC5321</a>].  Both the MSA and MTA are within
+   the same ADministrative Management Domain (ADMD) and are on a fast
+   network; however, some recipients are accessible via the MTA that is
+   talking over a slow link to the next MTA.  Communications over that
+   slow link can benefit from the use of the MT-PRIORITY SMTP extension.
+
+   In use case (2), a widely deployed client (such as a desktop client)
+   is talking to an MT-PRIORITY-capable MSA.  The client might be
+   extendable via a plug-in API provided by the client developers;
+   however, existing APIs frequently allow easy manipulation of email
+   header fields, while not allowing for addition of SMTP protocol
+   features.  In such a case, installing a plug-in on the client that
+   can set the MT-Priority header field could provide easier and earlier
+   deployment of the MT-PRIORITY SMTP extension in an organization
+   without requiring changes to desktop clients.
+
+   We note that the above use cases are not exhaustive and that other
+   use cases -- variations of the above -- may exist.  The purpose of
+   this document is not to consider every scenario, but rather examples
+   that reinforce the need to consider a tunneling mechanism that can
+   deal with SMTP-capable devices that do not support [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Conventions%20Used%20in%20This%20Document"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Conventions Used in This Document</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] when they
+   appear in ALL CAPS.  These words also appear in this document in
+   lower case as plain English words, absent their normative meanings.
+
+   The formal syntax uses the Augmented Backus-Naur Form (ABNF)
+   [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>] notation, including the core rules defined in <a href="./rfc5234#appendix-B">Appendix B of
+   RFC 5234</a> [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>].
+
+   In examples, "C:" and "S:" indicate lines sent by the client and
+   server, respectively.  Line breaks that do not start with a new "C:"
+   or "S:" exist for editorial reasons and are not a part of the
+   protocol.
+
+   This document uses the term "priority" specifically in relation to
+   the internal treatment of a message by the server.  Messages with
+   higher priorities may be given expedited handling, and those with
+   lower priorities may be handled only as resources become available.
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Handling%20of%20Messages%20Received%20via%20SMTP"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Handling of Messages Received via SMTP</span>
+
+   The subsections of this section update the corresponding subsections
+   of <a href="./rfc6710#section-4">Section 4 of [RFC6710]</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Handling%20of%20the%20MT-PRIORITY%20Parameter%20by%20the%20Receiving%20SMTP%20Server"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Handling of the MT-PRIORITY Parameter by the Receiving SMTP Server</span>
+
+   This specification inserts the following between steps 4 and 5 in
+   <a href="./rfc6710#section-4.1">Section 4.1 of [RFC6710]</a>:
+
+   4a.  If the sending SMTP client hasn't specified the MT-PRIORITY
+        parameter to the MAIL FROM command, but the message has a single
+        syntactically valid MT-Priority header field (see <a href="#section-4">Section 4</a>),
+        then the value of this header field is the message priority.
+
+   4b.  In the absence of both the MT-PRIORITY MAIL FROM parameter and
+        the MT-Priority header field, other message header fields, such
+        as Priority [<a href="./rfc2156" title='"MIXER (Mime Internet X.400 Enhanced Relay): Mapping between X.400 and RFC 822/MIME"'>RFC2156</a>] and X-Priority, MAY be used for
+        determining the priority under this "Priority Message Handling"
+        SMTP extension.  Note, however, that the Importance [<a href="./rfc2156" title='"MIXER (Mime Internet X.400 Enhanced Relay): Mapping between X.400 and RFC 822/MIME"'>RFC2156</a>]
+        header field MUST NOT be used for determining the priority under
+        this "Priority Message Handling" SMTP extension, as it has
+        different semantics: the Importance header field is aimed at the
+        user recipient and not at the nodes responsible for transferring
+        the message.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Relay%20of%20Messages%20to%20Other%20Conforming%20SMTP%2FLMTP%20Servers"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Relay of Messages to Other Conforming SMTP/LMTP Servers</span>
+
+   This specification inserts the following between steps 1 and 2 in
+   <a href="./rfc6710#section-4.2">Section 4.2 of [RFC6710]</a>.
+
+   1a.  Note that rule 1 also applies to messages that didn't have any
+        priority explicitly specified using the MT-PRIORITY MAIL FROM
+        parameter or the MT-Priority header field.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Relay%20of%20Messages%20to%20Non-Conforming%20SMTP%2FLMTP%20Servers"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Relay of Messages to Non-Conforming SMTP/LMTP Servers</span>
+
+   This specification appends the following after step 1 in <a href="./rfc6710#section-4.3">Section 4.3
+   of [RFC6710]</a>:
+
+   2.  The relaying MTA MUST first remove any and all existing
+       MT-Priority header fields from the message.  (Please see
+       <a href="#section-7">Section 7</a> for additional considerations related to removal of the
+       MT-Priority header field.)
+
+   3.  If the incoming message had an MT-PRIORITY parameter specified in
+       the MAIL FROM command *or* there was an MT-Priority header field
+       removed in step 2 above, then the relaying MTA MUST add its own
+       MT-Priority header field with the value determined by the
+       procedure in <a href="#section-3.1">Section 3.1</a>.  The syntax of the MT-Priority header
+       field is specified in <a href="#section-4">Section 4</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.4.%20%20Mailing%20Lists%20and%20Aliases"></a><a class="selflink" href="#section-3.4" id="section-3.4">3.4</a>.  Mailing Lists and Aliases</span>
+
+   This specification makes no changes to <a href="./rfc6710#section-4.4">Section 4.4 of [RFC6710]</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.5.%20%20Gatewaying%20a%20Message%20into%20a%20Foreign%20Environment"></a><a class="selflink" href="#section-3.5" id="section-3.5">3.5</a>.  Gatewaying a Message into a Foreign Environment</span>
+
+   This specification inserts the following between steps 1 and 2 in
+   <a href="./rfc6710#section-4.5">Section 4.5 of [RFC6710]</a>.
+
+   1a.  Note that if the destination environment doesn't support the
+        transport of an arbitrary header field, the requirement in
+        <a href="#section-3.3">Section 3.3</a> to add an MT-Priority header field doesn't apply.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.6.%20%20Interaction%20with%20the%20DSN%20SMTP%20Extension"></a><a class="selflink" href="#section-3.6" id="section-3.6">3.6</a>.  Interaction with the DSN SMTP Extension</span>
+
+   This specification makes no changes to <a href="./rfc6710#section-4.6">Section 4.6 of [RFC6710]</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Header%20Field%3A%20MT-Priority"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Header Field: MT-Priority</span>
+
+   Applicable protocol: mail [<a href="./rfc5322" title='"Internet Message Format"'>RFC5322</a>]
+   Status: standard
+   Author/change controller: Alexey Melnikov / IESG (iesg@ietf.org)
+      on behalf of the IETF
+   Specification document(s): <a href="./rfc6758">RFC 6758</a>
+
+   The MT-Priority header field conveys message transfer priority when
+   relaying a message through MTAs that don't support the MT-PRIORITY
+   SMTP extension.
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+   The ABNF for this header field is defined as follows:
+
+      priority-header-field = "MT-Priority:"
+                              [CFWS] priority-value [CFWS] CRLF
+
+   where "priority-value" is defined in [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>].
+
+   Example:
+   MT-Priority: -3
+
+   Example:
+   MT-Priority: 4 (ultra)
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Example"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Example</span>
+
+   Note that the following example of an SMTP transaction with 2
+   recipients is also making use of the STARTTLS [<a href="./rfc3207" title='"SMTP Service Extension for Secure SMTP over Transport Layer Security"'>RFC3207</a>] and Delivery
+   Status Notification (DSN) [<a href="./rfc3461" title='"Simple Mail Transfer Protocol (SMTP) Service Extension for Delivery Status Notifications (DSNs)"'>RFC3461</a>] SMTP extensions, even though
+   there is no requirement that these other extensions are to be
+   supported when the MT-PRIORITY SMTP extension is implemented.
+
+        S: 220 example.net SMTP server here
+        C: EHLO example.com
+        S: 250-example.net
+        S: 250-DSN
+        S: 250-STARTTLS
+        S: 250 MT-PRIORITY STANAG4406
+        C: STARTTLS
+        [...TLS negotiation...]
+        C: MAIL FROM:&lt;eljefe@example.com&gt; ENVID=QQ314159
+            MT-PRIORITY=3
+        S: 250 &lt;eljefe@example.com&gt; sender ok
+        C: RCPT TO:&lt;topbanana@example.net&gt;
+        S: 250 &lt;topbanana@example.net&gt; recipient ok
+        C: RCPT TO:&lt;Dana@Ivory.example.net&gt; NOTIFY=SUCCESS,FAILURE
+            ORCPT=<a href="./rfc822">rfc822</a>;Dana@Ivory.example.net
+        S: 250 &lt;Dana@Ivory.example.net&gt; recipient ok
+        C: DATA
+        S: 354 okay, send message
+        C:  (message goes here)
+        C: .
+        S: 250 message accepted
+        C: QUIT
+        S: 221 goodbye
+
+   Here, the receiving SMTP server supports the "STANAG4406" Priority
+   Assignment Policy [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>] with 6 priority levels, so it will use
+   the priority value 4 internally (the next supported priority higher
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+   or equal to 3) and will communicate the priority value 3 when
+   relaying it to the next hop (if necessary).  When relaying the
+   message to the next hop that doesn't support the MT-PRIORITY SMTP
+   extension, the transaction might look like this:
+
+        S: 220 example.org SMTP server here
+        C: EHLO example.net
+        S: 250-example.org
+        S: 250-DSN
+        S: 250-STARTTLS
+        S: 250 SIZE
+        C: STARTTLS
+        [...TLS negotiation...]
+        C: MAIL FROM:&lt;eljefe@example.com&gt; ENVID=QQ314159
+        S: 250 &lt;eljefe@example.com&gt; sender ok
+        C: RCPT TO:&lt;topbanana@example.net&gt;
+        S: 250 &lt;topbanana@example.net&gt; recipient ok
+        C: RCPT TO:&lt;Dana@Ivory.example.net&gt; NOTIFY=SUCCESS,FAILURE
+            ORCPT=<a href="./rfc822">rfc822</a>;Dana@Ivory.example.net
+        S: 250 &lt;Dana@Ivory.example.net&gt; recipient ok
+        C: DATA
+        S: 354 okay, send message
+        C: MT-Priority: 3
+        C:  (the rest of the message goes here)
+        C: .
+        S: 250 message accepted
+        C: QUIT
+        S: 221 goodbye
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  IANA Considerations</span>
+
+   IANA has added the following list of header field names to the
+   "Permanent Message Header Field Names" registry (in
+   &lt;<a href="http://www.iana.org/assignments/message-headers/perm-headers.html">http://www.iana.org/assignments/message-headers/perm-headers.html</a>&gt;):
+
+   Header field: MT-Priority
+   Applicable protocol: mail
+   Status: standard
+   Author/change controller: Alexey Melnikov / IESG (iesg@ietf.org)
+      on behalf of the IETF
+   Specification document(s): <a href="./rfc6758">RFC 6758</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Security Considerations</span>
+
+   This document allows a message priority to be tunneled through MTAs
+   that don't support the MT-PRIORITY SMTP extension by specifying how
+   it can be represented in the message itself (using the MT-Priority
+   header field).  Thus, it is important to ensure that an MTA receiving
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+   a message containing the MT-Priority header field can trust that it
+   was set by an authorized agent.  The use of technologies such as
+   DomainKeys Identified Mail (DKIM) [<a href="./rfc6376" title='"DomainKeys Identified Mail (DKIM) Signatures"'>RFC6376</a>] or S/MIME to sign the
+   MT-Priority header field value can enable a recipient to verify
+   whether the specified priority value was generated by a trusted
+   agent.  In particular, DKIM signing allows a recipient to verify that
+   the specified priority value was present when the message was signed,
+   and to verify who signed the message.  Note, however, that the DKIM
+   signer might not be the same agent that generated the MT-Priority
+   header field.
+
+   MSAs ought to only accept message transfer priorities (whether by
+   using the MT-PRIORITY parameter to the MAIL FROM command or the
+   MT-Priority header field in the message itself) from users (or only
+   certain groups of such users) who are authenticated and authorized in
+   some way that's acceptable to the MSA.  As part of this policy, they
+   can also restrict maximum priority values that different groups of
+   users can request and can override the priority values specified by
+   MUAs.  When relaying to non-MT-PRIORITY-capable SMTP/LMTP (Local Mail
+   Transfer Protocol) servers, such MSAs are required to replace any
+   MT-Priority header field values that don't satisfy this policy.  See
+   <a href="#section-7.1">Section 7.1</a> for more details on what the consequences of such changes
+   might be.
+
+   Similarly, MTAs ought to only accept message transfer priorities
+   (whether by using the MT-PRIORITY parameter to the MAIL FROM command
+   or the MT-Priority header field in the message itself) from senders
+   (or only certain groups of such senders) who are authenticated and
+   authorized in some way that's acceptable to the MTA.  As part of this
+   policy, they can also restrict maximum priority values that different
+   groups of senders can request and can override the priority values
+   specified by them.  When relaying to non-MT-PRIORITY-capable SMTP/
+   LMTP servers, such MTAs are required to replace any MT-Priority
+   header field values that don't satisfy this policy.  See <a href="#section-7.1">Section 7.1</a>
+   for more details on what the consequences of such changes might be.
+
+   In the absence of the policy enforcement mentioned above, an SMTP
+   server (whether an MSA or an MTA) implementing the MT-PRIORITY SMTP
+   extension might be susceptible to a denial-of-service attack.  For
+   example, malicious clients (MUAs/MSAs/MTAs) can try to abuse this
+   feature by always requesting priority 9.
+
+   To protect the MT-Priority header field from modification or
+   insertion, MUAs, MSAs, and MTAs inserting it into messages SHOULD use
+   a message header protection mechanism such as DKIM [<a href="./rfc6376" title='"DomainKeys Identified Mail (DKIM) Signatures"'>RFC6376</a>];
+   however, see <a href="#section-7.1">Section 7.1</a> for more information.
+
+
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Modification%20of%20the%20MT-Priority%20Header%20Field%20and%20DKIM"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Modification of the MT-Priority Header Field and DKIM</span>
+
+   An MSA/MTA that receives a message with an MT-Priority header field
+   protected by DKIM and that wants to change the message priority due
+   to its policy is forced to choose between
+
+   a.  breaking DKIM signatures (by replacing the MT-Priority header
+       value),
+
+   b.  leaving the message as is (and using the MT-PRIORITY MAIL FROM
+       parameter), relying on the fact that all downstream MTAs are
+       compliant with this specification, and
+
+   c.  rejecting the message.
+
+   None of these choices are perfect.  They work in a particular
+   situation, so these choices should be carefully considered during
+   implementation and deployment.
+
+   If the MSA/MTA decides to alter the message, it SHOULD re-sign the
+   message with DKIM.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20References"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Normative%20References"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC3461">RFC3461</a>]  Moore, K., "Simple Mail Transfer Protocol (SMTP) Service
+              Extension for Delivery Status Notifications (DSNs)",
+              <a href="./rfc3461">RFC 3461</a>, January 2003.
+
+   [<a id="ref-RFC5234">RFC5234</a>]  Crocker, D. and P. Overell, "Augmented BNF for Syntax
+              Specifications: ABNF", STD 68, <a href="./rfc5234">RFC 5234</a>, January 2008.
+
+   [<a id="ref-RFC5321">RFC5321</a>]  Klensin, J., "Simple Mail Transfer Protocol", <a href="./rfc5321">RFC 5321</a>,
+              October 2008.
+
+   [<a id="ref-RFC5322">RFC5322</a>]  Resnick, P., Ed., "Internet Message Format", <a href="./rfc5322">RFC 5322</a>,
+              October 2008.
+
+   [<a id="ref-RFC6409">RFC6409</a>]  Gellens, R. and J. Klensin, "Message Submission for Mail",
+              STD 72, <a href="./rfc6409">RFC 6409</a>, November 2011.
+
+   [<a id="ref-RFC6710">RFC6710</a>]  Melnikov, A. and K. Carlberg, "Simple Mail Transfer
+              Protocol Extension for Message Transfer Priorities",
+              <a href="./rfc6710">RFC 6710</a>, August 2012.
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.%20%20Informative%20References"></a><a class="selflink" href="#section-8.2" id="section-8.2">8.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC2156">RFC2156</a>]  Kille, S., "MIXER (Mime Internet X.400 Enhanced Relay):
+              Mapping between X.400 and <a href="./rfc822">RFC 822</a>/MIME", <a href="./rfc2156">RFC 2156</a>,
+              January 1998.
+
+   [<a id="ref-RFC3207">RFC3207</a>]  Hoffman, P., "SMTP Service Extension for Secure SMTP over
+              Transport Layer Security", <a href="./rfc3207">RFC 3207</a>, February 2002.
+
+   [<a id="ref-RFC6376">RFC6376</a>]  Crocker, D., Hansen, T., and M. Kucherawy, "DomainKeys
+              Identified Mail (DKIM) Signatures", <a href="./rfc6376">RFC 6376</a>,
+              September 2011.
+
+   [<a id="ref-SMTP-PRI-OLD">SMTP-PRI-OLD</a>]
+              Schmeing, M., Brendecke, J., and K. Carlberg, "SMTP
+              Service Extension for Priority Message Handling", Work
+              in Progress, August 2006.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Carlberg           Informational                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc6758">RFC 6758</a>        Tunneling of Message Transfer Priorities    October 2012</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Acknowledgements"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Acknowledgements</span>
+
+   This document copies lots of text from "SMTP Service Extension for
+   Priority Message Handling" [<a href="#ref-SMTP-PRI-OLD">SMTP-PRI-OLD</a>].  Therefore, the authors of
+   this document would like to acknowledge contributions made by the
+   authors of that document: Michael Schmeing and Jan-Wilhelm Brendecke.
+
+   Many thanks for input provided by Steve Kille, David Wilson, John
+   Klensin, Dave Crocker, Graeme Lunt, Alessandro Vesely, Barry Leiba,
+   Bill McQuillan, Murray Kucherawy, SM, Glenn Parsons, Pete Resnick,
+   Chris Newman, Ned Freed, Claudio Allocchio, Martin Thomson, and
+   Joseph Yee.
+
+   Special thanks to Barry Leiba for agreeing to shepherd this document.
+
+Authors' Addresses
+
+   Alexey Melnikov
+   Isode Ltd
+   5 Castle Business Village
+   36 Station Road
+   Hampton, Middlesex  TW12 2BX
+   UK
+
+   EMail: Alexey.Melnikov@isode.com
+
+
+   Ken Carlberg
+   G11
+   1601 Clarendon Blvd, #203
+   Arlington, VA  22209
+   USA
+
+   EMail: carlberg@g11.org.uk
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Melnikov &amp; Carlberg           Informational                    [Page 11]
+</pre>
+</body></html>

@@ -1,0 +1,502 @@
+<html><head></head><body><pre>Network Working Group                                        J. Schlyter
+Request for Comments: 4255                                       OpenSSH
+Category: Standards Track                                     W. Griffin
+                                                                  SPARTA
+                                                            January 2006
+
+
+   <span class="h1">Using DNS to Securely Publish Secure Shell (SSH) Key Fingerprints</span>
+
+Status of This Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2006).
+
+Abstract
+
+   This document describes a method of verifying Secure Shell (SSH) host
+   keys using Domain Name System Security (DNSSEC).  The document
+   defines a new DNS resource record that contains a standard SSH key
+   fingerprint.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-2">2</a>
+   <a href="#section-2">2</a>. SSH Host Key Verification .......................................<a href="#page-2">2</a>
+      <a href="#section-2.1">2.1</a>. Method .....................................................<a href="#page-2">2</a>
+      <a href="#section-2.2">2.2</a>. Implementation Notes .......................................<a href="#page-2">2</a>
+      <a href="#section-2.3">2.3</a>. Fingerprint Matching .......................................<a href="#page-3">3</a>
+      <a href="#section-2.4">2.4</a>. Authentication .............................................<a href="#page-3">3</a>
+   <a href="#section-3">3</a>. The SSHFP Resource Record .......................................<a href="#page-3">3</a>
+      <a href="#section-3.1">3.1</a>. The SSHFP RDATA Format .....................................<a href="#page-4">4</a>
+           <a href="#section-3.1.1">3.1.1</a>. Algorithm Number Specification ......................<a href="#page-4">4</a>
+           <a href="#section-3.1.2">3.1.2</a>. Fingerprint Type Specification ......................<a href="#page-4">4</a>
+           <a href="#section-3.1.3">3.1.3</a>. Fingerprint .........................................<a href="#page-5">5</a>
+      <a href="#section-3.2">3.2</a>. Presentation Format of the SSHFP RR ........................<a href="#page-5">5</a>
+   <a href="#section-4">4</a>. Security Considerations .........................................<a href="#page-5">5</a>
+   <a href="#section-5">5</a>. IANA Considerations .............................................<a href="#page-6">6</a>
+   <a href="#section-6">6</a>. Normative References ............................................<a href="#page-7">7</a>
+   <a href="#section-7">7</a>. Informational References ........................................<a href="#page-7">7</a>
+   <a href="#section-8">8</a>. Acknowledgements ................................................<a href="#page-8">8</a>
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The SSH [<a href="#ref-6" title='"The Secure Shell (SSH) Protocol Architecture"'>6</a>] protocol provides secure remote login and other secure
+   network services over an insecure network.  The security of the
+   connection relies on the server authenticating itself to the client
+   as well as the user authenticating itself to the server.
+
+   If a connection is established to a server whose public key is not
+   already known to the client, a fingerprint of the key is presented to
+   the user for verification.  If the user decides that the fingerprint
+   is correct and accepts the key, the key is saved locally and used for
+   verification for all following connections.  While some security-
+   conscious users verify the fingerprint out-of-band before accepting
+   the key, many users blindly accept the presented key.
+
+   The method described here can provide out-of-band verification by
+   looking up a fingerprint of the server public key in the DNS [<a href="#ref-1" title='"Domain names - concepts and facilities"'>1</a>][2]
+   and using DNSSEC [<a href="#ref-5" title='"DNS Security Introduction and Requirements"'>5</a>] to verify the lookup.
+
+   In order to distribute the fingerprint using DNS, this document
+   defines a new DNS resource record, "SSHFP", to carry the fingerprint.
+
+   Basic understanding of the DNS system [<a href="#ref-1" title='"Domain names - concepts and facilities"'>1</a>][2] and the DNS security
+   extensions [<a href="#ref-5" title='"DNS Security Introduction and Requirements"'>5</a>] is assumed by this document.
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="#ref-3" title='"Key words for use in RFCs to Indicate Requirement Levels"'>3</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20SSH%20Host%20Key%20Verification"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  SSH Host Key Verification</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Method"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Method</span>
+
+   Upon connection to an SSH server, the SSH client MAY look up the
+   SSHFP resource record(s) for the host it is connecting to.  If the
+   algorithm and fingerprint of the key received from the SSH server
+   match the algorithm and fingerprint of one of the SSHFP resource
+   record(s) returned from DNS, the client MAY accept the identity of
+   the server.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Implementation%20Notes"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Implementation Notes</span>
+
+   Client implementors SHOULD provide a configurable policy used to
+   select the order of methods used to verify a host key.  This document
+   defines one method: Fingerprint storage in DNS.  Another method
+   defined in the SSH Architecture [<a href="#ref-6" title='"The Secure Shell (SSH) Protocol Architecture"'>6</a>] uses local files to store keys
+   for comparison.  Other methods that could be defined in the future
+   might include storing fingerprints in LDAP or other databases.  A
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+   configurable policy will allow administrators to determine which
+   methods they want to use and in what order the methods should be
+   prioritized.  This will allow administrators to determine how much
+   trust they want to place in the different methods.
+
+   One specific scenario for having a configurable policy is where
+   clients do not use fully qualified host names to connect to servers.
+   In this scenario, the implementation SHOULD verify the host key
+   against a local database before verifying the key via the fingerprint
+   returned from DNS.  This would help prevent an attacker from
+   injecting a DNS search path into the local resolver and forcing the
+   client to connect to a different host.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Fingerprint%20Matching"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Fingerprint Matching</span>
+
+   The public key and the SSHFP resource record are matched together by
+   comparing algorithm number and fingerprint.
+
+      The public key algorithm and the SSHFP algorithm number MUST
+      match.
+
+      A message digest of the public key, using the message digest
+      algorithm specified in the SSHFP fingerprint type, MUST match the
+      SSHFP fingerprint.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20Authentication"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  Authentication</span>
+
+   A public key verified using this method MUST NOT be trusted if the
+   SSHFP resource record (RR) used for verification was not
+   authenticated by a trusted SIG RR.
+
+   Clients that do validate the DNSSEC signatures themselves SHOULD use
+   standard DNSSEC validation procedures.
+
+   Clients that do not validate the DNSSEC signatures themselves MUST
+   use a secure transport (e.g., TSIG [<a href="#ref-9" title='"Secret Key Transaction Authentication for DNS (TSIG)"'>9</a>], SIG(0) [<a href="#ref-10" title='"DNS Request and Transaction Signatures ( SIG(0)s )"'>10</a>], or IPsec [<a href="#ref-8" title='"IP Security Document Roadmap"'>8</a>])
+   between themselves and the entity performing the signature
+   validation.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20The%20SSHFP%20Resource%20Record"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  The SSHFP Resource Record</span>
+
+   The SSHFP resource record (RR) is used to store a fingerprint of an
+   SSH public host key that is associated with a Domain Name System
+   (DNS) name.
+
+   The RR type code for the SSHFP RR is 44.
+
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20The%20SSHFP%20RDATA%20Format"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  The SSHFP RDATA Format</span>
+
+   The RDATA for a SSHFP RR consists of an algorithm number, fingerprint
+   type and the fingerprint of the public host key.
+
+       1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |   algorithm   |    fp type    |                               /
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+                               /
+       /                                                               /
+       /                          fingerprint                          /
+       /                                                               /
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.1.%20%20Algorithm%20Number%20Specification"></a><a class="selflink" href="#section-3.1.1" id="section-3.1.1">3.1.1</a>.  Algorithm Number Specification</span>
+
+   This algorithm number octet describes the algorithm of the public
+   key.  The following values are assigned:
+
+          Value    Algorithm name
+          -----    --------------
+          0        reserved
+          1        RSA
+          2        DSS
+
+   Reserving other types requires IETF consensus [<a href="#ref-4" title="">4</a>].
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.2.%20%20Fingerprint%20Type%20Specification"></a><a class="selflink" href="#section-3.1.2" id="section-3.1.2">3.1.2</a>.  Fingerprint Type Specification</span>
+
+   The fingerprint type octet describes the message-digest algorithm
+   used to calculate the fingerprint of the public key.  The following
+   values are assigned:
+
+          Value    Fingerprint type
+          -----    ----------------
+          0        reserved
+          1        SHA-1
+
+   Reserving other types requires IETF consensus [<a href="#ref-4" title="">4</a>].
+
+   For interoperability reasons, as few fingerprint types as possible
+   should be reserved.  The only reason to reserve additional types is
+   to increase security.
+
+
+
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.3.%20%20Fingerprint"></a><a class="selflink" href="#section-3.1.3" id="section-3.1.3">3.1.3</a>.  Fingerprint</span>
+
+   The fingerprint is calculated over the public key blob as described
+   in [<a href="#ref-7" title='"The Secure Shell (SSH) Transport Layer Protocol"'>7</a>].
+
+   The message-digest algorithm is presumed to produce an opaque octet
+   string output, which is placed as-is in the RDATA fingerprint field.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Presentation%20Format%20of%20the%20SSHFP%20RR"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Presentation Format of the SSHFP RR</span>
+
+   The RDATA of the presentation format of the SSHFP resource record
+   consists of two numbers (algorithm and fingerprint type) followed by
+   the fingerprint itself, presented in hex, e.g.:
+
+       host.example.  SSHFP 2 1 123456789abcdef67890123456789abcdef67890
+
+   The use of mnemonics instead of numbers is not allowed.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Security%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Security Considerations</span>
+
+   Currently, the amount of trust a user can realistically place in a
+   server key is proportional to the amount of attention paid to
+   verifying that the public key presented actually corresponds to the
+   private key of the server.  If a user accepts a key without verifying
+   the fingerprint with something learned through a secured channel, the
+   connection is vulnerable to a man-in-the-middle attack.
+
+   The overall security of using SSHFP for SSH host key verification is
+   dependent on the security policies of the SSH host administrator and
+   DNS zone administrator (in transferring the fingerprint), detailed
+   aspects of how verification is done in the SSH implementation, and in
+   the client's diligence in accessing the DNS in a secure manner.
+
+   One such aspect is in which order fingerprints are looked up (e.g.,
+   first checking local file and then SSHFP).  We note that, in addition
+   to protecting the first-time transfer of host keys, SSHFP can
+   optionally be used for stronger host key protection.
+
+      If SSHFP is checked first, new SSH host keys may be distributed by
+      replacing the corresponding SSHFP in DNS.
+
+      If SSH host key verification can be configured to require SSHFP,
+      SSH host key revocation can be implemented by removing the
+      corresponding SSHFP from DNS.
+
+
+
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+   As stated in <a href="#section-2.2">Section 2.2</a>, we recommend that SSH implementors provide
+   a policy mechanism to control the order of methods used for host key
+   verification.  One specific scenario for having a configurable policy
+   is where clients use unqualified host names to connect to servers.
+   In this case, we recommend that SSH implementations check the host
+   key against a local database before verifying the key via the
+   fingerprint returned from DNS.  This would help prevent an attacker
+   from injecting a DNS search path into the local resolver and forcing
+   the client to connect to a different host.
+
+   A different approach to solve the DNS search path issue would be for
+   clients to use a trusted DNS search path, i.e., one not acquired
+   through DHCP or other autoconfiguration mechanisms.  Since there is
+   no way with current DNS lookup APIs to tell whether a search path is
+   from a trusted source, the entire client system would need to be
+   configured with this trusted DNS search path.
+
+   Another dependency is on the implementation of DNSSEC itself.  As
+   stated in <a href="#section-2.4">Section 2.4</a>, we mandate the use of secure methods for
+   lookup and that SSHFP RRs are authenticated by trusted SIG RRs.  This
+   is especially important if SSHFP is to be used as a basis for host
+   key rollover and/or revocation, as described above.
+
+   Since DNSSEC only protects the integrity of the host key fingerprint
+   after it is signed by the DNS zone administrator, the fingerprint
+   must be transferred securely from the SSH host administrator to the
+   DNS zone administrator.  This could be done manually between the
+   administrators or automatically using secure DNS dynamic update [<a href="#ref-11" title='"Secure Domain Name System (DNS) Dynamic Update"'>11</a>]
+   between the SSH server and the nameserver.  We note that this is no
+   different from other key enrollment situations, e.g., a client
+   sending a certificate request to a certificate authority for signing.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  IANA Considerations</span>
+
+   IANA has allocated the RR type code 44 for SSHFP from the standard RR
+   type space.
+
+   IANA has opened a new registry for the SSHFP RR type for public key
+   algorithms.  The defined types are:
+
+      0 is reserved
+      1 is RSA
+      2 is DSA
+
+   Adding new reservations requires IETF consensus [<a href="#ref-4" title="">4</a>].
+
+
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+   IANA has opened a new registry for the SSHFP RR type for fingerprint
+   types.  The defined types are:
+
+      0 is reserved
+      1 is SHA-1
+
+   Adding new reservations requires IETF consensus [<a href="#ref-4" title="">4</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Normative%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Normative References</span>
+
+   [<a id="ref-1">1</a>]   Mockapetris, P., "Domain names - concepts and facilities", STD
+         13, <a href="./rfc1034">RFC 1034</a>, November 1987.
+
+   [<a id="ref-2">2</a>]   Mockapetris, P., "Domain names - implementation and
+         specification", STD 13, <a href="./rfc1035">RFC 1035</a>, November 1987.
+
+   [<a id="ref-3">3</a>]   Bradner, S., "Key words for use in RFCs to Indicate Requirement
+         Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-4">4</a>]   Narten, T. and H. Alvestrand, "Guidelines for Writing an IANA
+         Considerations Section in RFCs", <a href="https://www.rfc-editor.org/bcp/bcp26">BCP 26</a>, <a href="./rfc2434">RFC 2434</a>, October
+         1998.
+
+   [<a id="ref-5">5</a>]   Arends, R., Austein, R., Larson, M., Massey, D., and S. Rose,
+         "DNS Security Introduction and Requirements", <a href="./rfc4033">RFC 4033</a>, March
+         2005.
+
+         Arends, R., Austein, R., Larson, M., Massey, D., and S. Rose,
+         "Resource Records for the DNS Security Extensions", <a href="./rfc4034">RFC 4034</a>,
+         March 2005.
+
+         Arends, R., Austein, R., Larson, M., Massey, D., and S. Rose,
+         "Protocol Modifications for the DNS Security Extensions", <a href="./rfc4035">RFC</a>
+         <a href="./rfc4035">4035</a>, March 2005.
+
+   [<a id="ref-6">6</a>]   Ylonen, T. and C. Lonvick, Ed., "The Secure Shell (SSH)
+         Protocol Architecture", <a href="./rfc4251">RFC 4251</a>, January 2006.
+
+   [<a id="ref-7">7</a>]   Ylonen, T. and C. Lonvick, Ed., "The Secure Shell (SSH)
+         Transport Layer Protocol", <a href="./rfc4253">RFC 4253</a>, January 2006.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Informational%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Informational References</span>
+
+   [<a id="ref-8">8</a>]   Thayer, R., Doraswamy, N., and R. Glenn, "IP Security Document
+         Roadmap", <a href="./rfc2411">RFC 2411</a>, November 1998.
+
+
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+   [<a id="ref-9">9</a>]   Vixie, P., Gudmundsson, O., Eastlake 3rd, D., and B.
+         Wellington, "Secret Key Transaction Authentication for DNS
+         (TSIG)", <a href="./rfc2845">RFC 2845</a>, May 2000.
+
+   [<a id="ref-10">10</a>]  Eastlake 3rd, D., "DNS Request and Transaction Signatures
+         ( SIG(0)s )", <a href="./rfc2931">RFC 2931</a>, September 2000.
+
+   [<a id="ref-11">11</a>]  Wellington, B., "Secure Domain Name System (DNS) Dynamic
+         Update", <a href="./rfc3007">RFC 3007</a>, November 2000.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Acknowledgements"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Acknowledgements</span>
+
+   The authors gratefully acknowledge, in no particular order, the
+   contributions of the following persons:
+
+      Martin Fredriksson
+
+      Olafur Gudmundsson
+
+      Edward Lewis
+
+      Bill Sommerfeld
+
+Authors' Addresses
+
+   Jakob Schlyter
+   OpenSSH
+   812 23rd Avenue SE
+   Calgary, Alberta  T2G 1N8
+   Canada
+
+   EMail: jakob@openssh.com
+   URI:   <a href="http://www.openssh.com/">http://www.openssh.com/</a>
+
+
+   Wesley Griffin
+   SPARTA
+   7075 Samuel Morse Drive
+   Columbia, MD  21046
+   USA
+
+   EMail: wgriffin@sparta.com
+   URI:   <a href="http://www.sparta.com/">http://www.sparta.com/</a>
+
+
+
+
+
+
+
+
+<span class="grey">Schlyter &amp; Griffin          Standards Track                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc4255">RFC 4255</a>                DNS and SSH Fingerprints            January 2006</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The Internet Society (2006).
+
+   This document is subject to the rights, licenses and restrictions
+   contained in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a>, and except as set forth therein, the authors
+   retain all their rights.
+
+   This document and the information contained herein are provided on an
+   "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+   OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY AND THE INTERNET
+   ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE
+   INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+   WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Intellectual Property
+
+   The IETF takes no position regarding the validity or scope of any
+   Intellectual Property Rights or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this document or the extent to which any license under such rights
+   might or might not be available; nor does it represent that it has
+   made any independent effort to identify any such rights.  Information
+   on the procedures with respect to rights in RFC documents can be
+   found in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and <a href="https://www.rfc-editor.org/bcp/bcp79">BCP 79</a>.
+
+   Copies of IPR disclosures made to the IETF Secretariat and any
+   assurances of licenses to be made available, or the result of an
+   attempt made to obtain a general license or permission for the use of
+   such proprietary rights by implementers or users of this
+   specification can be obtained from the IETF on-line IPR repository at
+   <a href="http://www.ietf.org/ipr">http://www.ietf.org/ipr</a>.
+
+   The IETF invites any interested party to bring to its attention any
+   copyrights, patents or patent applications, or other proprietary
+   rights that may cover technology that may be required to implement
+   this standard.  Please address the information to the IETF at
+   ietf-ipr@ietf.org.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is provided by the IETF
+   Administrative Support Activity (IASA).
+
+
+
+
+
+
+
+Schlyter &amp; Griffin          Standards Track                     [Page 9]
+</pre>
+</body></html>

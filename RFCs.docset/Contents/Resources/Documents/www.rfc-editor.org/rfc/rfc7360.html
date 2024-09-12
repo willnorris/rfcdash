@@ -1,0 +1,1510 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                          A. DeKok
+Request for Comments: 7360                                    FreeRADIUS
+Category: Experimental                                    September 2014
+ISSN: 2070-1721
+
+
+                <span class="h1">Datagram Transport Layer Security (DTLS)</span>
+                    <span class="h1">as a Transport Layer for RADIUS</span>
+
+Abstract
+
+   The RADIUS protocol defined in <a href="./rfc2865">RFC 2865</a> has limited support for
+   authentication and encryption of RADIUS packets.  The protocol
+   transports data in the clear, although some parts of the packets can
+   have obfuscated content.  Packets may be replayed verbatim by an
+   attacker, and client-server authentication is based on fixed shared
+   secrets.  This document specifies how the Datagram Transport Layer
+   Security (DTLS) protocol may be used as a fix for these problems.  It
+   also describes how implementations of this proposal can coexist with
+   current RADIUS systems.
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for examination, experimental implementation, and
+   evaluation.
+
+   This document defines an Experimental Protocol for the Internet
+   community.  This document is a product of the Internet Engineering
+   Task Force (IETF).  It represents the consensus of the IETF
+   community.  It has received public review and has been approved for
+   publication by the Internet Engineering Steering Group (IESG).  Not
+   all documents approved by the IESG are a candidate for any level of
+   Internet Standard; see <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc7360">http://www.rfc-editor.org/info/rfc7360</a>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2014 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-4">4</a>
+      <a href="#section-1.1">1.1</a>. Terminology ................................................<a href="#page-5">5</a>
+      <a href="#section-1.2">1.2</a>. Requirements Language ......................................<a href="#page-5">5</a>
+      <a href="#section-1.3">1.3</a>. Document Status ............................................<a href="#page-5">5</a>
+   <a href="#section-2">2</a>. Building on Existing Foundations ................................<a href="#page-6">6</a>
+      <a href="#section-2.1">2.1</a>. Changes to RADIUS ..........................................<a href="#page-7">7</a>
+      <a href="#section-2.2">2.2</a>. Similarities with RADIUS/TLS ...............................<a href="#page-8">8</a>
+           <a href="#section-2.2.1">2.2.1</a>. Changes from RADIUS/TLS to RADIUS/DTLS ..............<a href="#page-8">8</a>
+   <a href="#section-3">3</a>. Interaction with RADIUS/UDP .....................................<a href="#page-9">9</a>
+      <a href="#section-3.1">3.1</a>. DTLS Port and Packet Types ................................<a href="#page-10">10</a>
+      <a href="#section-3.2">3.2</a>. Server Behavior ...........................................<a href="#page-10">10</a>
+   <a href="#section-4">4</a>. Client Behavior ................................................<a href="#page-11">11</a>
+   <a href="#section-5">5</a>. Session Management .............................................<a href="#page-12">12</a>
+      <a href="#section-5.1">5.1</a>. Server Session Management .................................<a href="#page-12">12</a>
+           <a href="#section-5.1.1">5.1.1</a>. Session Opening and Closing ........................<a href="#page-13">13</a>
+      <a href="#section-5.2">5.2</a>. Client Session Management .................................<a href="#page-15">15</a>
+   <a href="#section-6">6</a>. Implementation Guidelines ......................................<a href="#page-16">16</a>
+      <a href="#section-6.1">6.1</a>. Client Implementations ....................................<a href="#page-17">17</a>
+      <a href="#section-6.2">6.2</a>. Server Implementations ....................................<a href="#page-18">18</a>
+   <a href="#section-7">7</a>. Diameter Considerations ........................................<a href="#page-18">18</a>
+   <a href="#section-8">8</a>. IANA Considerations ............................................<a href="#page-18">18</a>
+   <a href="#section-9">9</a>. Implementation Status ..........................................<a href="#page-18">18</a>
+      <a href="#section-9.1">9.1</a>. Radsecproxy ...............................................<a href="#page-19">19</a>
+      <a href="#section-9.2">9.2</a>. jradius ...................................................<a href="#page-19">19</a>
+   <a href="#section-10">10</a>. Security Considerations .......................................<a href="#page-19">19</a>
+      <a href="#section-10.1">10.1</a>. Crypto-Agility ...........................................<a href="#page-20">20</a>
+      <a href="#section-10.2">10.2</a>. Legacy RADIUS Security ...................................<a href="#page-21">21</a>
+      <a href="#section-10.3">10.3</a>. Resource Exhaustion ......................................<a href="#page-22">22</a>
+      <a href="#section-10.4">10.4</a>. Client-Server Authentication with DTLS ...................<a href="#page-22">22</a>
+      <a href="#section-10.5">10.5</a>. Network Address Translation ..............................<a href="#page-24">24</a>
+      <a href="#section-10.6">10.6</a>. Wildcard Clients .........................................<a href="#page-24">24</a>
+      <a href="#section-10.7">10.7</a>. Session Closing ..........................................<a href="#page-25">25</a>
+      <a href="#section-10.8">10.8</a>. Client Subsystems ........................................<a href="#page-25">25</a>
+   <a href="#section-11">11</a>. References ....................................................<a href="#page-26">26</a>
+      <a href="#section-11.1">11.1</a>. Normative References .....................................<a href="#page-26">26</a>
+      <a href="#section-11.2">11.2</a>. Informative References ...................................<a href="#page-27">27</a>
+   Acknowledgments ...................................................<a href="#page-27">27</a>
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The RADIUS protocol as described in [<a href="./rfc2865" title='"Remote Authentication Dial In User Service (RADIUS)"'>RFC2865</a>], [<a href="./rfc2866" title='"RADIUS Accounting"'>RFC2866</a>], [<a href="./rfc5176" title='"Dynamic Authorization Extensions to Remote Authentication Dial In User Service (RADIUS)"'>RFC5176</a>],
+   and others has traditionally used methods based on MD5 [<a href="./rfc1321" title='"The MD5 Message-Digest Algorithm"'>RFC1321</a>] for
+   per-packet authentication and integrity checks.  However, the MD5
+   algorithm has known weaknesses such as [<a href="#ref-MD5Attack" title='"The Status of MD5 After a Recent Attack"'>MD5Attack</a>] and [<a href="#ref-MD5Break" title='"How to Break MD5 and Other Hash Functions"'>MD5Break</a>].
+   As a result, some specifications, such as [<a href="./rfc5176" title='"Dynamic Authorization Extensions to Remote Authentication Dial In User Service (RADIUS)"'>RFC5176</a>], have recommended
+   using IPsec to secure RADIUS traffic.
+
+   While RADIUS over IPsec has been widely deployed, there are
+   difficulties with this approach.  The simplest point against IPsec is
+   that there is no straightforward way for an application to control or
+   monitor the network security policies.  That is, the requirement that
+   the RADIUS traffic be encrypted and/or authenticated is implicit in
+   the network configuration, and it cannot be enforced by the RADIUS
+   application.
+
+   This specification takes a different approach.  We define a method
+   for using DTLS [<a href="./rfc6347" title='"Datagram Transport Layer Security Version 1.2"'>RFC6347</a>] as a RADIUS transport protocol.  This
+   approach has the benefit that the RADIUS application can directly
+   monitor and control the security policies associated with the traffic
+   that it processes.
+
+   Another benefit is that RADIUS over DTLS continues to be a UDP-based
+   protocol.  The change from RADIUS/UDP is largely to add DTLS support,
+   and make any necessary related changes to RADIUS.  This allows
+   implementations to remain UDP based, without changing to a TCP
+   architecture.
+
+   This specification does not, however, solve all of the problems
+   associated with RADIUS/UDP.  The DTLS protocol does not add reliable
+   or in-order transport to RADIUS.  DTLS also does not support
+   fragmentation of application-layer messages, or of the DTLS messages
+   themselves.  This specification therefore shares with traditional
+   RADIUS the issues of order, reliability, and fragmentation.  These
+   issues are dealt with in RADIUS/TCP [<a href="./rfc6613" title='"RADIUS over TCP"'>RFC6613</a>] and RADIUS/TLS
+   [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>].
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Terminology"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Terminology</span>
+
+   This document uses the following terms:
+
+   RADIUS/DTLS
+      This term is a shorthand for "RADIUS over DTLS".
+
+   RADIUS/DTLS client
+      This term refers both to RADIUS clients as defined in [<a href="./rfc2865" title='"Remote Authentication Dial In User Service (RADIUS)"'>RFC2865</a>]
+      and to Dynamic Authorization clients as defined in [<a href="./rfc5176" title='"Dynamic Authorization Extensions to Remote Authentication Dial In User Service (RADIUS)"'>RFC5176</a>] that
+      implement RADIUS/DTLS.
+
+   RADIUS/DTLS server
+      This term refers both to RADIUS servers as defined in [<a href="./rfc2865" title='"Remote Authentication Dial In User Service (RADIUS)"'>RFC2865</a>]
+      and to Dynamic Authorization servers as defined in [<a href="./rfc5176" title='"Dynamic Authorization Extensions to Remote Authentication Dial In User Service (RADIUS)"'>RFC5176</a>] that
+      implement RADIUS/DTLS.
+
+   RADIUS/UDP
+      RADIUS over UDP, as defined in [<a href="./rfc2865" title='"Remote Authentication Dial In User Service (RADIUS)"'>RFC2865</a>].
+
+   RADIUS/TLS
+      RADIUS over TLS, as defined in [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>].
+
+   silently discard
+      This means that the implementation discards the packet without
+      further processing.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.2.%20%20Requirements%20Language"></a><a class="selflink" href="#section-1.2" id="section-1.2">1.2</a>.  Requirements Language</span>
+
+   In this document, several words are used to signify the requirements
+   of the specification.  The key words "MUST", "MUST NOT", "REQUIRED",
+   "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT
+   RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+   interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.3.%20%20Document%20Status"></a><a class="selflink" href="#section-1.3" id="section-1.3">1.3</a>.  Document Status</span>
+
+   This document is an Experimental RFC.
+
+   It contains one of several approaches to address known cryptographic
+   weaknesses of the RADIUS protocol, such as described in [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>].
+   This specification does not fulfill all recommendations for an
+   Authentication, Authorization, and Accounting (AAA) transport profile
+   as per [<a href="./rfc3539" title='"Authentication, Authorization and Accounting (AAA) Transport Profile"'>RFC3539</a>]; however, unlike [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>], it is based on UDP and
+   therefore does not have head-of-line blocking issues.
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   If this specification is indeed selected for advancement to Standards
+   Track, certificate verification options (<a href="./rfc6614#section-2.3">[RFC6614], Section 2.3</a>,
+   point 2) will need to be refined.
+
+   Another experimental characteristic of this specification is the
+   question of key management between RADIUS/DTLS peers.  RADIUS/UDP
+   only allowed for manual key management, i.e., distribution of a
+   shared secret between a client and a server.  RADIUS/DTLS allows
+   manual distribution of long-term proofs of peer identity, by using
+   TLS-PSK ciphersuites.  RADIUS/DTLS also allows the use of X.509
+   certificates in a PKIX infrastructure.  It remains to be seen if one
+   of these methods will prevail or if both will find their place in
+   real-life deployments.  The authors can imagine pre-shared keys
+   (PSKs) to be popular in small-scale deployments (Small Office, Home
+   Office (SOHO) or isolated enterprise deployments) where scalability
+   is not an issue and the deployment of a Certification Authority (CA)
+   is considered too much of a hassle; however, the authors can also
+   imagine large roaming consortia to make use of PKIX.  Readers of this
+   specification are encouraged to read the discussion of key management
+   issues within [<a href="./rfc6421" title='"Crypto-Agility Requirements for Remote Authentication Dial-In User Service (RADIUS)"'>RFC6421</a>] as well as [<a href="./rfc4107" title='"Guidelines for Cryptographic Key Management"'>RFC4107</a>].
+
+   It has yet to be decided whether this approach is to be chosen for
+   Standards Track.  One key aspect to judge whether the approach is
+   usable on a large scale is by observing the uptake, usability, and
+   operational behavior of the protocol in large-scale, real-life
+   deployments.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Building%20on%20Existing%20Foundations"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Building on Existing Foundations</span>
+
+   Adding DTLS as a RADIUS transport protocol requires a number of
+   changes to systems implementing standard RADIUS.  This section
+   outlines those changes, and defines new behaviors necessary to
+   implement DTLS.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Changes%20to%20RADIUS"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Changes to RADIUS</span>
+
+   The RADIUS packet format is unchanged from [<a href="./rfc2865" title='"Remote Authentication Dial In User Service (RADIUS)"'>RFC2865</a>], [<a href="./rfc2866" title='"RADIUS Accounting"'>RFC2866</a>], and
+   [<a href="./rfc5176" title='"Dynamic Authorization Extensions to Remote Authentication Dial In User Service (RADIUS)"'>RFC5176</a>].  Specifically, all of the following portions of RADIUS
+   MUST be unchanged when using RADIUS/DTLS:
+
+      * Packet format
+      * Permitted codes
+      * Request Authenticator calculation
+      * Response Authenticator calculation
+      * Minimum packet length
+      * Maximum packet length
+      * Attribute format
+      * Vendor-Specific Attribute (VSA) format
+      * Permitted data types
+      * Calculations of dynamic attributes such as CHAP-Challenge, or
+        Message-Authenticator.
+      * Calculation of "obfuscated" attributes such as User-Password and
+        Tunnel-Password.
+
+   In short, the application creates a RADIUS packet via the usual
+   methods, and then instead of sending it over a UDP socket, sends the
+   packet to a DTLS layer for encapsulation.  DTLS then acts as a
+   transport layer for RADIUS: hence, the names "RADIUS/UDP" and
+   "RADIUS/DTLS".
+
+   The requirement that RADIUS remain largely unchanged ensures the
+   simplest possible implementation and widest interoperability of this
+   specification.
+
+   We note that the DTLS encapsulation of RADIUS means that RADIUS
+   packets have an additional overhead due to DTLS.  Implementations
+   MUST support sending and receiving encapsulated RADIUS packets of
+   4096 octets in length, with a corresponding increase in the maximum
+   size of the encapsulated DTLS packets.  This larger packet size may
+   cause the packet to be larger than the Path MTU (PMTU), where a
+   RADIUS/UDP packet may be smaller.  See <a href="#section-5.2">Section 5.2</a>, below, for more
+   discussion.
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   The only changes made from RADIUS/UDP to RADIUS/DTLS are the
+   following two items:
+
+   (1) The Length checks defined in <a href="./rfc2865#section-3">[RFC2865], Section 3</a>, MUST use the
+       length of the decrypted DTLS data instead of the UDP packet
+       length.  They MUST treat any decrypted DTLS data octets outside
+       the range of the Length field as padding and ignore it on
+       reception.
+
+   (2) The shared secret used to compute the MD5 integrity checks and
+       the attribute encryption MUST be "radius/dtls".
+
+   All other aspects of RADIUS are unchanged.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Similarities%20with%20RADIUS%2FTLS"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Similarities with RADIUS/TLS</span>
+
+   While this specification can be thought of as RADIUS/TLS over UDP
+   instead of the Transmission Control Protocol (TCP), there are some
+   differences between the two methods.  The bulk of [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>] applies
+   to this specification, so we do not repeat it here.
+
+   This section explains the differences between RADIUS/TLS and
+   RADIUS/DTLS, as semantic "patches" to [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>].  The changes are as
+   follows:
+
+      * We replace references to "TCP" with "UDP"
+
+      * We replace references to "RADIUS/TLS" with "RADIUS/DTLS"
+
+      * We replace references to "TLS" with "DTLS"
+
+   Those changes are sufficient to cover the majority of the differences
+   between the two specifications.  The next section reviews some more
+   detailed changes from [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>], giving additional commentary only
+   where necessary.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.1.%20%20Changes%20from%20RADIUS%2FTLS%20to%20RADIUS%2FDTLS"></a><a class="selflink" href="#section-2.2.1" id="section-2.2.1">2.2.1</a>.  Changes from RADIUS/TLS to RADIUS/DTLS</span>
+
+   This section describes how particular sections of [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>] apply to
+   RADIUS/DTLS.
+
+   <a href="#section-2.1">Section 2.1</a> applies to RADIUS/DTLS, with the exception that the
+   RADIUS/DTLS port is UDP/2083.
+
+   <a href="#section-2.2">Section 2.2</a> applies to RADIUS/DTLS.  Servers and clients need to be
+   pre-configured to use RADIUS/DTLS for a given endpoint.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   Most of <a href="#section-2.3">Section 2.3</a> applies also to RADIUS/DTLS.  Item (1) should be
+   interpreted as applying to DTLS session initiation, instead of TCP
+   connection establishment.  Item (2) applies, except for the
+   recommendation that implementations "SHOULD" support
+   TLS_RSA_WITH_RC4_128_SHA.  This recommendation is a historical
+   artifact of RADIUS/TLS, and it does not apply to RADIUS/DTLS.  Item
+   (3) applies to RADIUS/DTLS.  Item (4) applies, except that the fixed
+   shared secret is "radius/dtls", as described above.
+
+   <a href="#section-2.4">Section 2.4</a> applies to RADIUS/DTLS.  Client identities SHOULD be
+   determined from DTLS parameters, instead of relying solely on the
+   source IP address of the packet.
+
+   <a href="#section-2.5">Section 2.5</a> does not apply to RADIUS/DTLS.  The relationship between
+   RADIUS packet codes and UDP ports in RADIUS/DTLS is unchanged from
+   RADIUS/UDP.
+
+   Sections <a href="#section-3.1">3.1</a>, <a href="#section-3.2">3.2</a>, and <a href="#section-3.3">3.3</a> apply to RADIUS/DTLS.
+
+   <a href="#section-3.4">Section 3.4</a> item (1) does not apply to RADIUS/DTLS.  Each RADIUS
+   packet is encapsulated in one DTLS packet, and there is no "stream"
+   of RADIUS packets inside of a TLS session.  Implementors MUST enforce
+   the requirements of <a href="./rfc2865#section-3">[RFC2865], Section 3</a>, for the RADIUS Length
+   field, using the length of the decrypted DTLS data for the checks.
+   This check replaces the RADIUS method of using the Length field from
+   the UDP packet.
+
+   <a href="#section-3.4">Section 3.4</a> items (2), (3), (4), and (5) apply to RADIUS/DTLS.
+
+   <a href="#section-4">Section 4</a> does not apply to RADIUS/DTLS.  Protocol compatibility
+   considerations are defined in this document.
+
+   <a href="#section-6">Section 6</a> applies to RADIUS/DTLS.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Interaction%20with%20RADIUS%2FUDP"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Interaction with RADIUS/UDP</span>
+
+   Transitioning to DTLS is a process that needs to be done carefully.
+   A poorly handled transition is complex for administrators and
+   potentially subject to security downgrade attacks.  It is not
+   sufficient to just disable RADIUS/UDP and enable RADIUS/DTLS.  RADIUS
+   has no provisions for protocol negotiation, so simply disabling
+   RADIUS/UDP would result in timeouts, lost traffic, and network
+   instabilities.
+
+   The end result of this specification is that nearly all RADIUS/UDP
+   implementations should transition to using a secure alternative.  In
+   some cases, RADIUS/UDP may remain where IPsec is used as a transport,
+   or where implementation and/or business reasons preclude a change.
+
+
+
+<span class="grey">DeKok                         Experimental                      [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   However, we do not recommend long-term use of RADIUS/UDP outside of
+   isolated and secure networks.
+
+   This section describes how clients and servers should use
+   RADIUS/DTLS, and how it interacts with RADIUS/UDP.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20DTLS%20Port%20and%20Packet%20Types"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  DTLS Port and Packet Types</span>
+
+   The default destination port number for RADIUS/DTLS is UDP/2083.
+   There are no separate ports for authentication, accounting, and
+   dynamic authorization changes.  The source port is arbitrary.  The
+   text in <a href="./rfc6614#section-3.4">[RFC6614], Section 3.4</a>, describes issues surrounding the use
+   of one port for multiple packet types.  We recognize that
+   implementations may allow the use of RADIUS/DTLS over non-standard
+   ports.  In that case, the references to UDP/2083 in this document
+   should be read as applying to any port used for transport of
+   RADIUS/DTLS traffic.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Server%20Behavior"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Server Behavior</span>
+
+   When a server receives packets on UDP/2083, all packets MUST be
+   treated as being DTLS.  RADIUS/UDP packets MUST NOT be accepted on
+   this port.
+
+   Servers MUST NOT accept DTLS packets on the old RADIUS/UDP ports.
+   Early versions of this specification permitted this behavior.  It is
+   forbidden here, as it depended on behavior in DTLS that may change
+   without notice.
+
+   Servers MUST authenticate clients.  RADIUS is designed to be used by
+   mutually trusted systems.  Allowing anonymous clients would ensure
+   privacy for RADIUS/DTLS traffic, but would negate all other security
+   aspects of the protocol.
+
+   As RADIUS has no provisions for capability signaling, there is no way
+   for a server to indicate to a client that it should transition to
+   using DTLS.  This action has to be taken by the administrators of the
+   two systems, using a method other than RADIUS.  This method will
+   likely be out of band, or manual configuration will need to be used.
+
+   Some servers maintain a list of allowed clients per destination port.
+   Others maintain a global list of clients that are permitted to send
+   packets to any port.  Where a client can send packets to multiple
+   ports, the server MUST maintain a "DTLS Required" flag per client.
+
+   This flag indicates whether or not the client is required to use
+   DTLS.  When set, the flag indicates that the only traffic accepted
+   from the client is over UDP/2083.  When packets are received from a
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   client on non-DTLS ports, for which DTLS is required, the server MUST
+   silently discard these packets, as there is no RADIUS/UDP shared
+   secret available.
+
+   This flag will often be set by an administrator.  However, if a
+   server receives DTLS traffic from a client, it SHOULD notify the
+   administrator that DTLS is available for that client.  It MAY mark
+   the client as "DTLS Required".
+
+   It is RECOMMENDED that servers support the following Perfect Forward
+   Secrecy (PFS) ciphersuites:
+
+      o  TLS_DHE_RSA_WITH_AES_128_GCM_SHA256
+
+      o  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+
+   Allowing RADIUS/UDP and RADIUS/DTLS from the same client exposes the
+   traffic to downbidding attacks and is NOT RECOMMENDED.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Client%20Behavior"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Client Behavior</span>
+
+   When a client sends packets to the assigned RADIUS/DTLS port, all
+   packets MUST be DTLS.  RADIUS/UDP packets MUST NOT be sent to this
+   port.
+
+   Clients MUST authenticate themselves to servers via credentials that
+   are unique to each client.
+
+   It is RECOMMENDED that clients support the following PFS
+   ciphersuites:
+
+      o  TLS_DHE_RSA_WITH_AES_128_GCM_SHA256
+
+      o  TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+
+   RADIUS/DTLS clients SHOULD NOT probe servers to see if they support
+   DTLS transport.  Instead, clients SHOULD use DTLS as a transport
+   layer only when administratively configured.  If a client is
+   configured to use DTLS and the server appears to be unresponsive, the
+   client MUST NOT fall back to using RADIUS/UDP.  Instead, the client
+   should treat the server as being down.
+
+   RADIUS clients often had multiple independent RADIUS implementations
+   and/or processes that originate packets.  This practice was simple to
+   implement, but the result is that each independent subsystem must
+   independently discover network issues or server failures.  It is
+   therefore RECOMMENDED that clients with multiple internal RADIUS
+   sources use a local proxy as described in <a href="#section-6.1">Section 6.1</a>, below.
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   Clients may implement "pools" of servers for fail-over or load-
+   balancing.  These pools SHOULD NOT mix RADIUS/UDP and RADIUS/DTLS
+   servers.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Session%20Management"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Session Management</span>
+
+   Where [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>] can rely on the TCP state machine to perform session
+   tracking, this specification cannot.  As a result, implementations of
+   this specification may need to perform session management of the DTLS
+   session in the application layer.  This section describes logically
+   how this tracking is done.  Implementations may choose to use the
+   method described here, or another, equivalent method.
+
+   We note that <a href="./rfc5080#section-2.2.2">[RFC5080], Section 2.2.2</a>, already mandates a duplicate
+   detection cache.  The session tracking described below can be seen as
+   an extension of that cache, where entries contain DTLS sessions
+   instead of RADIUS/UDP packets.
+
+   <a href="./rfc5080#section-2.2.2">[RFC5080], Section 2.2.2</a>, describes how duplicate RADIUS/UDP requests
+   result in the retransmission of a previously cached RADIUS/UDP
+   response.  Due to DTLS sequence window requirements, a server MUST
+   NOT retransmit a previously sent DTLS packet.  Instead, it should
+   cache the RADIUS response packet, and re-process it through DTLS to
+   create a new RADIUS/DTLS packet, every time it is necessary to
+   retransmit a RADIUS response.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Server%20Session%20Management"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Server Session Management</span>
+
+   A RADIUS/DTLS server MUST track ongoing DTLS sessions for each, based
+   on the following 4-tuple:
+
+      * source IP address
+      * source port
+      * destination IP address
+      * destination port
+
+   Note that this 4-tuple is independent of IP address version (IPv4 or
+   IPv6).
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   Each 4-tuple points to a unique session entry, which usually contains
+   the following information:
+
+   DTLS Session
+      Any information required to maintain and manage the DTLS session.
+
+   Last Traffic
+      A variable containing a timestamp that indicates when this session
+      last received valid traffic.  If "Last Traffic" is not used, this
+      variable may not exist.
+
+   DTLS Data
+      An implementation-specific variable that may contain information
+      about the active DTLS session.  This variable may be empty or
+      nonexistent.
+
+      This data will typically contain information such as idle
+      timeouts, session lifetimes, and other implementation-specific
+      data.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.1.%20%20Session%20Opening%20and%20Closing"></a><a class="selflink" href="#section-5.1.1" id="section-5.1.1">5.1.1</a>.  Session Opening and Closing</span>
+
+   Session tracking is subject to Denial-of-Service (DoS) attacks due to
+   the ability of an attacker to forge UDP traffic.  RADIUS/DTLS servers
+   SHOULD use the stateless cookie tracking technique described in
+   <a href="./rfc6347#section-4.2.1">[RFC6347], Section 4.2.1</a>.  DTLS sessions SHOULD NOT be tracked until
+   a ClientHello packet has been received with an appropriate Cookie
+   value.  Server implementation SHOULD have a way of tracking DTLS
+   sessions that are partially set up.  Servers MUST limit both the
+   number and impact on resources of partial sessions.
+
+   Sessions (both 4-tuple and entry) MUST be deleted when a TLS Closure
+   Alert (<a href="./rfc5246#section-7.2.1">[RFC5246], Section 7.2.1</a>) or a fatal TLS Error Alert
+   (<a href="./rfc5246#section-7.2.2">[RFC5246], Section 7.2.2</a>) is received.  When a session is deleted
+   due to it failing security requirements, the DTLS session MUST be
+   closed, any TLS session resumption parameters for that session MUST
+   be discarded, and all tracking information MUST be deleted.
+
+   Sessions MUST also be deleted when a RADIUS packet fails validation
+   due to a packet being malformed, or when it has an invalid Message-
+   Authenticator or invalid Request Authenticator.  There are other
+   cases when the specifications require that a packet received via a
+   DTLS session be "silently discarded".  In those cases,
+   implementations MAY delete the underlying session as described above.
+   There are few reasons to communicate with a Network Access Server
+   (NAS) that is not implementing RADIUS.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   A session MUST be deleted when non-RADIUS traffic is received over
+   it.  This specification is for RADIUS, and there is no reason to
+   allow non-RADIUS traffic over a RADIUS/DTLS session.  A session MUST
+   be deleted when RADIUS traffic fails to pass security checks.  There
+   is no reason to permit insecure networks.  A session SHOULD NOT be
+   deleted when a well-formed, but "unexpected", RADIUS packet is
+   received over it.  Future specifications may extend RADIUS/DTLS, and
+   we do not want to forbid those specifications.
+
+   The goal of the above requirements is to ensure security, while
+   maintaining flexibility.  Any security-related issue causes the
+   connection to be closed.  After the security restrictions have been
+   applied, any unexpected traffic may be safely ignored, as it cannot
+   cause a security issue.  There is no need to close the session for
+   unexpected but valid traffic, and the session can safely remain open.
+
+   Once a DTLS session is established, a RADIUS/DTLS server SHOULD use
+   DTLS Heartbeats [<a href="./rfc6520" title='"Transport Layer Security (TLS) and Datagram Transport Layer Security (DTLS) Heartbeat Extension"'>RFC6520</a>] to determine connectivity between the two
+   servers.  A server SHOULD also use watchdog packets from the client
+   to determine that the session is still active.
+
+   As UDP does not guarantee delivery of messages, RADIUS/DTLS servers
+   that do not implement an application-layer watchdog MUST also
+   maintain a "Last Traffic" timestamp per DTLS session.  The
+   granularity of this timestamp is not critical and could be limited to
+   one-second intervals.  The timestamp SHOULD be updated on reception
+   of a valid RADIUS/DTLS packet, or a DTLS Heartbeat, but no more than
+   once per interval.  The timestamp MUST NOT be updated in other
+   situations.
+
+   When a session has not received a packet for a period of time, it is
+   labeled "idle".  The server SHOULD delete idle DTLS sessions after an
+   "idle timeout".  The server MAY cache the TLS session parameters, in
+   order to provide for fast session resumption.
+
+   This session "idle timeout" SHOULD be exposed to the administrator as
+   a configurable setting.  It SHOULD NOT be set to less than 60 seconds
+   and SHOULD NOT be set to more than 600 seconds (10 minutes).  The
+   minimum useful value for this timer is determined by the application-
+   layer watchdog mechanism defined in the following section.
+
+   RADIUS/DTLS servers SHOULD also monitor the total number of open
+   sessions.  They SHOULD have a "maximum sessions" setting exposed to
+   administrators as a configurable parameter.  When this maximum is
+   reached and a new session is started, the server MUST either drop an
+   old session in order to open the new one or not create a new session.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   RADIUS/DTLS servers SHOULD implement session resumption, preferably
+   stateless session resumption as given in [<a href="./rfc5077" title='"Transport Layer Security (TLS) Session Resumption without Server-Side State"'>RFC5077</a>].  This practice
+   lowers the time and effort required to start a DTLS session with a
+   client and increases network responsiveness.
+
+   Since UDP is stateless, the potential exists for the client to
+   initiate a new DTLS session using a particular 4-tuple, before the
+   server has closed the old session.  For security reasons, the server
+   MUST keep the old session active until either it has received secure
+   notification from the client that the session is closed or the server
+   decides to close the session based on idle timeouts.  Taking any
+   other action would permit unauthenticated clients to perform a DoS
+   attack, by reusing a 4-tuple and thus causing the server to close an
+   active (and authenticated) DTLS session.
+
+   As a result, servers MUST ignore any attempts to reuse an existing
+   4-tuple from an active session.  This requirement can likely be
+   reached by simply processing the packet through the existing session,
+   as with any other packet received via that 4-tuple.  Non-compliant,
+   or unexpected packets will be ignored by the DTLS layer.
+
+   The above requirement is mitigated by the suggestion in <a href="#section-6.1">Section 6.1</a>,
+   below, that the client use a local proxy for all RADIUS traffic.
+   That proxy can then track the ports that it uses and ensure that
+   reuse of 4-tuples is avoided.  The exact process by which this
+   tracking is done is outside of the scope of this document.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Client%20Session%20Management"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Client Session Management</span>
+
+   Clients SHOULD use PMTU discovery [<a href="./rfc6520" title='"Transport Layer Security (TLS) and Datagram Transport Layer Security (DTLS) Heartbeat Extension"'>RFC6520</a>] to determine the PMTU
+   between the client and server, prior to sending any RADIUS traffic.
+   Once a DTLS session is established, a RADIUS/DTLS client SHOULD use
+   DTLS Heartbeats [<a href="./rfc6520" title='"Transport Layer Security (TLS) and Datagram Transport Layer Security (DTLS) Heartbeat Extension"'>RFC6520</a>] to determine connectivity between the two
+   systems.  RADIUS/DTLS clients SHOULD also use the application-layer
+   watchdog algorithm defined in [<a href="./rfc3539" title='"Authentication, Authorization and Accounting (AAA) Transport Profile"'>RFC3539</a>] to determine server
+   responsiveness.  The Status-Server packet defined in [<a href="./rfc5997" title='"Use of Status-Server Packets in the Remote Authentication Dial In User Service (RADIUS) Protocol"'>RFC5997</a>] SHOULD
+   be used as the "watchdog packet" in any application-layer watchdog
+   algorithm.
+
+   RADIUS/DTLS clients SHOULD proactively close sessions when they have
+   been idle for a period of time.  Clients SHOULD close a session when
+   the DTLS Heartbeat algorithm indicates that the session is no longer
+   active.  Clients SHOULD close a session when no traffic other than
+   watchdog packets and (possibly) watchdog responses has been sent for
+   three watchdog timeouts.  This behavior ensures that clients do not
+   waste resources on the server by causing it to track idle sessions.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   When a client fails to implement both DTLS Heartbeats and watchdog
+   packets, it has no way of knowing that a DTLS session has been
+   closed.  Therefore, there is the possibility that the server closes
+   the session without the client knowing.  When that happens, the
+   client may later transmit packets in a session, and those packets
+   will be ignored by the server.  The client is then forced to time out
+   those packets and then the session, leading to delays and network
+   instabilities.
+
+   For these reasons, it is RECOMMENDED that all DTLS sessions be
+   configured to use DTLS Heartbeats and/or watchdog packets.
+
+   DTLS sessions MUST also be deleted when a RADIUS packet fails
+   validation due to a packet being malformed, or when it has an invalid
+   Message-Authenticator or invalid Response Authenticator.  There are
+   other cases when the specifications require that a packet received
+   via a DTLS session be "silently discarded".  In those cases,
+   implementations MAY delete the underlying DTLS session.
+
+   RADIUS/DTLS clients should not send both RADIUS/UDP and RADIUS/DTLS
+   packets to different servers from the same source socket.  This
+   practice causes increased complexity in the client application and
+   increases the potential for security breaches due to implementation
+   issues.
+
+   RADIUS/DTLS clients SHOULD implement session resumption, preferably
+   stateless session resumption as given in [<a href="./rfc5077" title='"Transport Layer Security (TLS) Session Resumption without Server-Side State"'>RFC5077</a>].  This practice
+   lowers the time and effort required to start a DTLS session with a
+   server and increases network responsiveness.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Implementation%20Guidelines"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Implementation Guidelines</span>
+
+   The text above describes the protocol.  In this section, we give
+   additional implementation guidelines.  These guidelines are not part
+   of the protocol, but they may help implementors create simple,
+   secure, and interoperable implementations.
+
+   Where a TLS-PSK method is used, implementations MUST support keys of
+   at least 16 octets in length.  Implementations SHOULD support key
+   lengths of 32 octets and SHOULD allow for longer keys.  The key data
+   MUST be capable of being any value (0 through 255, inclusive).
+   Implementations MUST NOT limit themselves to using textual keys.  It
+   is RECOMMENDED that the administration interface allow for the keys
+   to be entered as human-readable strings in hex format.
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   When creating keys for use with PSK ciphersuites, it is RECOMMENDED
+   that keys be derived from a Cryptographically Secure Pseudorandom
+   Number Generator (CSPRNG) instead of administrators inventing keys on
+   their own.  If managing keys is too complicated, a certificate-based
+   TLS method SHOULD be used instead.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Client%20Implementations"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Client Implementations</span>
+
+   RADIUS/DTLS clients should use connected sockets where possible.  Use
+   of connected sockets means that the underlying kernel tracks the
+   sessions, so that the client subsystem does not need to manage
+   multiple sessions on one socket.
+
+   RADIUS/DTLS clients should use a single source (IP + port) when
+   sending packets to a particular RADIUS/DTLS server.  Doing so
+   minimizes the number of DTLS session setups.  It also ensures that
+   information about the home server state is discovered only once.
+
+   In practice, this means that RADIUS/DTLS clients with multiple
+   internal RADIUS sources should use a local proxy that arbitrates all
+   RADIUS traffic between the client and all servers.  The proxy should
+   accept traffic only from the authorized subsystems on the client
+   machine and should proxy that traffic to known servers.  Each
+   authorized subsystem should include an attribute that uniquely
+   identifies that subsystem to the proxy, so that the proxy can apply
+   origin-specific proxy rules and security policies.  We suggest using
+   NAS-Identifier for this purpose.
+
+   The local proxy should be able to interact with multiple servers at
+   the same time.  There is no requirement that each server have its own
+   unique proxy on the client, as that would be inefficient.
+
+   The suggestion to use a local proxy means that there is only one
+   process that discovers network and/or connectivity issues with a
+   server.  If each client subsystem communicated directly with a
+   server, issues with that server would have to be discovered
+   independently by each subsystem.  The side effect would be increased
+   delays in re-routing traffic, error reporting, and network
+   instabilities.
+
+   Each client subsystem can include a subsystem-specific NAS-Identifier
+   in each request.  The format of this attribute is implementation-
+   specific.  The proxy should verify that the request originated from
+   the local system, ideally via a loopback address.  The proxy MUST
+   then rewrite any subsystem-specific NAS-Identifier to a NAS-
+   Identifier that identifies the client as a whole, or, remove the NAS-
+   Identifier entirely and replace it with NAS-IP-Address or NAS-
+   IPv6-Address.
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   In traditional RADIUS, the cost to set up a new "session" between a
+   client and server was minimal.  The client subsystem could simply
+   open a port, send a packet, wait for the response, and then close the
+   port.  With RADIUS/DTLS, the connection setup is significantly more
+   expensive.  In addition, there may be a requirement to use DTLS in
+   order to communicate with a server, as RADIUS/UDP may not be
+   supported by that server.  The knowledge of what protocol to use is
+   best managed by a dedicated RADIUS subsystem, rather than by each
+   individual subsystem on the client.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Server%20Implementations"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Server Implementations</span>
+
+   RADIUS/DTLS servers should not use connected sockets to read DTLS
+   packets from a client.  This recommendation exists because a
+   connected UDP socket will accept packets only from one source IP
+   address and port.  This limitation would prevent the server from
+   accepting packets from multiple clients on the same port.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Diameter%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Diameter Considerations</span>
+
+   This specification defines a transport layer for RADIUS.  It makes no
+   other changes to the RADIUS protocol.  As a result, there are no
+   Diameter considerations.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  IANA Considerations</span>
+
+   No new RADIUS attributes or packet codes are defined.  IANA has
+   updated the "Service Name and Transport Protocol Port Number
+   Registry".  The entries corresponding to port service name "radsec",
+   port number "2083", and transport protocol "UDP" have been updated as
+   follows:
+
+      o  Assignee: IESG
+
+      o  Contact: IETF Chair
+
+      o  Reference: This document
+
+      o  Assignment Notes: The UDP port 2083 was already previously
+         assigned by IANA for "RadSec", an early implementation of
+         RADIUS/TLS, prior to issuance of this RFC.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Implementation%20Status"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Implementation Status</span>
+
+   This section records the status of known implementations of
+   RADIUS/DTLS at the time of writing, and is based on a proposal
+   described in [<a href="./rfc6982" title='"Improving Awareness of Running Code: The Implementation Status Section"'>RFC6982</a>].
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   The description of implementations in this section is intended to
+   assist the IETF in its decision processes in progressing Internet-
+   Drafts to RFCs.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Radsecproxy"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Radsecproxy</span>
+
+   Organization: Radsecproxy
+
+   URL:       <a href="https://software.uninett.no/radsecproxy/">https://software.uninett.no/radsecproxy/</a>
+
+   Maturity:  Widely used software based on early versions of this
+              document.
+              The use of the DTLS functionality is not clear.
+
+   Coverage:  The bulk of this specification is implemented, based on
+              earlier versions of this document.  Exact revisions that
+              were implemented are unknown.
+
+   Licensing: Freely distributable with acknowledgment.
+
+   Implementation experience: No comments from implementors.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20jradius"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  jradius</span>
+
+   Organization: Coova
+
+   URL:       <a href="http://www.coova.org/JRadius/RadSec">http://www.coova.org/JRadius/RadSec</a>
+
+   Maturity:  Production software based on early versions of this
+              document.
+              The use of the DTLS functionality is not clear.
+
+   Coverage:  The bulk of this specification is implemented, based on
+              earlier versions of this document.  Exact revisions that
+              were implemented are unknown.
+
+   Licensing: Freely distributable with requirement to redistribute
+              source.
+
+   Implementation experience: No comments from implementors.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20Security%20Considerations"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  Security Considerations</span>
+
+   The bulk of this specification is devoted to discussing security
+   considerations related to RADIUS.  However, we discuss a few
+   additional issues here.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   This specification relies on the existing DTLS, RADIUS/UDP, and
+   RADIUS/TLS specifications.  As a result, all security considerations
+   for DTLS apply to the DTLS portion of RADIUS/DTLS.  Similarly, the
+   TLS and RADIUS security issues discussed in [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>] also apply to
+   this specification.  Most of the security considerations for RADIUS
+   apply to the RADIUS portion of the specification.
+
+   However, many security considerations raised in the RADIUS documents
+   are related to RADIUS encryption and authorization.  Those issues are
+   largely mitigated when DTLS is used as a transport method.  The
+   issues that are not mitigated by this specification are related to
+   the RADIUS packet format and handling, which is unchanged in this
+   specification.
+
+   This specification also suggests that implementations use a session
+   tracking table.  This table is an extension of the duplicate
+   detection cache mandated in <a href="./rfc5080#section-2.2.2">[RFC5080], Section 2.2.2</a>.  The changes
+   given here are that DTLS-specific information is tracked for each
+   table entry.  <a href="#section-5.1.1">Section 5.1.1</a>, above, describes steps to mitigate any
+   DoS issues that result from tracking additional information.
+
+   The fixed shared secret given above in <a href="#section-2.2.1">Section 2.2.1</a> is acceptable
+   only when DTLS is used with a non-null encryption method.  When a
+   DTLS session uses a null encryption method due to misconfiguration or
+   implementation error, all of the RADIUS traffic will be readable by
+   an observer.  Therefore, implementations MUST NOT use null encryption
+   methods for RADIUS/DTLS.
+
+   For systems that perform protocol-based firewalling and/or filtering,
+   it is RECOMMENDED that they be configured to permit only DTLS over
+   the RADIUS/DTLS port.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.1.%20%20Crypto-Agility"></a><a class="selflink" href="#section-10.1" id="section-10.1">10.1</a>.  Crypto-Agility</span>
+
+   <a href="./rfc6421#section-4.2">Section 4.2 of [RFC6421]</a> makes a number of recommendations about
+   security properties of new RADIUS proposals.  All of those
+   recommendations are satisfied by using DTLS as the transport layer.
+
+   <a href="./rfc6421#section-4.3">Section 4.3 of [RFC6421]</a> makes a number of recommendations about
+   backwards compatibility with RADIUS.  <a href="#section-3">Section 3</a>, above, addresses
+   these concerns in detail.
+
+   <a href="./rfc6421#section-4.4">Section 4.4 of [RFC6421]</a> recommends that change control be ceded to
+   the IETF, and that interoperability is possible.  Both requirements
+   are satisfied.
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   <a href="./rfc6421#section-4.5">Section 4.5 of [RFC6421]</a> requires that the new security methods apply
+   to all packet types.  This requirement is satisfied by allowing DTLS
+   to be used for all RADIUS traffic.  In addition, <a href="#section-3">Section 3</a>, above,
+   addresses concerns about documenting the transition from legacy
+   RADIUS to crypto-agile RADIUS.
+
+   <a href="./rfc6421#section-4.6">Section 4.6 of [RFC6421]</a> requires automated key management.  This
+   requirement is satisfied by using DTLS key management.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.2.%20%20Legacy%20RADIUS%20Security"></a><a class="selflink" href="#section-10.2" id="section-10.2">10.2</a>.  Legacy RADIUS Security</span>
+
+   We reiterate here the poor security of the legacy RADIUS protocol.
+   We suggest that RADIUS clients and servers implement either this
+   specification or [<a href="./rfc6614" title='"Transport Layer Security (TLS) Encryption for RADIUS"'>RFC6614</a>].  New attacks on MD5 have appeared over
+   the past few years, and there is a distinct possibility that MD5 may
+   be completely broken in the near future.  Such a break would mean
+   that RADIUS/UDP was completely insecure.
+
+   The existence of fast and cheap attacks on MD5 could result in a loss
+   of all network security that depends on RADIUS.  Attackers could
+   obtain user passwords and possibly gain complete network access.  We
+   cannot overstate the disastrous consequences of a successful attack
+   on RADIUS.
+
+   We also caution implementors (especially client implementors) about
+   using RADIUS/DTLS.  It may be tempting to use the shared secret as
+   the basis for a TLS-PSK method and to leave the user interface
+   otherwise unchanged.  This practice MUST NOT be used.  The
+   administrator MUST be given the option to use DTLS.  Any shared
+   secret used for RADIUS/UDP MUST NOT be used for DTLS.  Reusing a
+   shared secret between RADIUS/UDP and RADIUS/DTLS would negate all of
+   the benefits found by using DTLS.
+
+   RADIUS/DTLS client implementors MUST expose a configuration that
+   allows the administrator to choose the ciphersuite.  Where
+   certificates are used, RADIUS/DTLS client implementors MUST expose a
+   configuration that allows an administrator to configure all
+   certificates necessary for certificate-based authentication.  These
+   certificates include client, server, and root certificates.
+
+   TLS-PSK methods are susceptible to dictionary attacks.  <a href="#section-6">Section 6</a>,
+   above, recommends deriving TLS-PSK keys from a Cryptographically
+   Secure Pseudorandom Number Generator (CSPRNG), which makes dictionary
+   attacks significantly more difficult.  Servers SHOULD track failed
+   client connections by TLS-PSK ID and block TLS-PSK IDs that seem to
+   be attempting brute-force searches of the keyspace.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   The historic RADIUS practice of using shared secrets (here, PSKs)
+   that are minor variations of words is NOT RECOMMENDED, as it would
+   negate all of the security of DTLS.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.3.%20%20Resource%20Exhaustion"></a><a class="selflink" href="#section-10.3" id="section-10.3">10.3</a>.  Resource Exhaustion</span>
+
+   The use of DTLS allows DoS attacks and resource-exhaustion attacks
+   that were not possible in RADIUS/UDP.  These attacks are similar to
+   those described in <a href="./rfc6614#section-6">[RFC6614], Section 6</a>, for TCP.
+
+   Session tracking, as described in <a href="#section-5.1">Section 5.1</a>, can result in resource
+   exhaustion.  Therefore, servers MUST limit the absolute number of
+   sessions that they track.  When the total number of sessions tracked
+   is going to exceed the configured limit, servers MAY free up
+   resources by closing the session that has been idle for the longest
+   time.  Doing so may free up idle resources that then allow the server
+   to accept a new session.
+
+   Servers MUST limit the number of partially open DTLS sessions.  These
+   limits SHOULD be exposed to the administrator as configurable
+   settings.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.4.%20%20Client-Server%20Authentication%20with%20DTLS"></a><a class="selflink" href="#section-10.4" id="section-10.4">10.4</a>.  Client-Server Authentication with DTLS</span>
+
+   We expect that the initial deployment of DTLS will follow the
+   RADIUS/UDP model of statically configured client-server
+   relationships.  The specification for dynamic discovery of RADIUS
+   servers is under development, so we will not address that here.
+
+   Static configuration of client-server relationships for RADIUS/UDP
+   means that a client has a fixed IP address for a server and a shared
+   secret used to authenticate traffic sent to that address.  The server
+   in turn has a fixed IP address for a client and a shared secret used
+   to authenticate traffic from that address.  This model needs to be
+   extended for RADIUS/DTLS.
+
+   Instead of a shared secret, TLS credentials MUST be used by each
+   party to authenticate the other.  The issue of identity is more
+   problematic.  As with RADIUS/UDP, IP addresses may be used as a key
+   to determine the authentication credentials that a client will
+   present to a server or which credentials a server will accept from a
+   client.  This is the fixed IP address model of RADIUS/UDP, with the
+   shared secret replaced by TLS credentials.
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   There are, however, additional considerations with RADIUS/DTLS.  When
+   a client is configured with a hostname for a server, the server may
+   present to the client a certificate containing a hostname.  The
+   client MUST then verify that the hostnames match.  Any mismatch is a
+   security violation, and the connection MUST be closed.
+
+   A RADIUS/DTLS server MAY be configured with a "wildcard" IP address
+   match for clients, instead of a unique fixed IP address for each
+   client.  In that case, clients MUST be individually configured with a
+   unique certificate.  When the server receives a connection from a
+   client, it MUST determine client identity from the client
+   certificate, and MUST authenticate (or not) the client based on that
+   certificate.  See <a href="./rfc6614#section-2.4">[RFC6614], Section 2.4</a>, for a discussion of how to
+   match a certificate to a client identity.
+
+   However, servers SHOULD use IP address filtering to minimize the
+   possibility of attacks.  That is, they SHOULD permit clients only
+   from a limited IP address range or ranges.  They SHOULD silently
+   discard all traffic from outside of those ranges.
+
+   Since the client-server relationship is static, the authentication
+   credentials for that relationship must also be statically configured.
+   That is, a client connecting to a DTLS server SHOULD be pre-
+   configured with the server's credentials (e.g., PSK or certificate).
+   If the server fails to present the correct credentials, the DTLS
+   session MUST be closed.  Each server SHOULD be pre-configured with
+   sufficient information to authenticate connecting clients.
+
+   The requirement for clients to be individually configured with a
+   unique certificate can be met by using a private CA for certificates
+   used in RADIUS/DTLS environments.  If a client were configured to use
+   a public CA, then it could accept as valid any server that has a
+   certificate signed by that CA.  While the traffic would be secure
+   from third-party observers, the server would, however, have
+   unrestricted access to all of the RADIUS traffic, including all user
+   credentials and passwords.
+
+   Therefore, clients SHOULD NOT be pre-configured with a list of known
+   public CAs by the vendor or manufacturer.  Instead, the clients
+   SHOULD start off with an empty CA list.  The addition of a CA SHOULD
+   be done only when manually configured by an administrator.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 23]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-24"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   This scenario is the opposite of web browsers, where they are pre-
+   configured with many known CAs.  The goal there is security from
+   third-party observers, but also the ability to communicate with any
+   unknown site that presents a signed certificate.  In contrast, the
+   goal of RADIUS/DTLS is both security from third-party observers and
+   the ability to communicate with only a small set of well-known
+   servers.
+
+   This requirement does not prevent clients from using hostnames
+   instead of IP addresses for locating a particular server.  Instead,
+   it means that the credentials for that server should be pre-
+   configured on the client, and associated with that hostname.  This
+   requirement does suggest that in the absence of a specification for
+   dynamic discovery, clients SHOULD use only those servers that have
+   been manually configured by an administrator.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.5.%20%20Network%20Address%20Translation"></a><a class="selflink" href="#section-10.5" id="section-10.5">10.5</a>.  Network Address Translation</span>
+
+   Network Address Translation (NAT) is fundamentally incompatible with
+   RADIUS/UDP.  RADIUS/UDP uses the source IP address to determine the
+   shared secret for the client, and NAT hides many clients behind one
+   source IP address.  As a result, RADIUS/UDP clients cannot be located
+   behind a NAT gateway.
+
+   In addition, port reuse on a NAT gateway means that packets from
+   different clients may appear to come from the same source port on the
+   NAT.  That is, a RADIUS server may receive a RADIUS/DTLS packet from
+   one source IP/port combination, followed by the reception of a
+   RADIUS/UDP packet from that same source IP/port combination.  If this
+   behavior is allowed, then the server would have an inconsistent view
+   of the client's security profile, allowing an attacker to choose the
+   most insecure method.
+
+   If more than one client is located behind a NAT gateway, then every
+   client behind the NAT MUST use a secure transport such as TLS or
+   DTLS.  As discussed below, a method for uniquely identifying each
+   client MUST be used.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.6.%20%20Wildcard%20Clients"></a><a class="selflink" href="#section-10.6" id="section-10.6">10.6</a>.  Wildcard Clients</span>
+
+   Some RADIUS server implementations allow for "wildcard" clients --
+   that is, clients with an IPv4 netmask of other than 32 or an IPv6
+   netmask of other than 128.  That practice is not recommended for
+   RADIUS/UDP, as it means multiple clients will use the same shared
+   secret.
+
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 24]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-25"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   The use of RADIUS/DTLS can allow for the safe usage of wildcards.
+   When RADIUS/DTLS is used with wildcards, clients MUST be uniquely
+   identified using TLS parameters, and any certificate or PSK used MUST
+   be unique to each client.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.7.%20%20Session%20Closing"></a><a class="selflink" href="#section-10.7" id="section-10.7">10.7</a>.  Session Closing</span>
+
+   <a href="#section-5.1.1">Section 5.1.1</a>, above, requires that DTLS sessions be closed when the
+   transported RADIUS packets are malformed or fail the authenticator
+   checks.  The reason is that the session is expected to be used for
+   transport of RADIUS packets only.
+
+   Any non-RADIUS traffic on that session means the other party is
+   misbehaving and is a potential security risk.  Similarly, any RADIUS
+   traffic failing authentication vector or Message-Authenticator
+   validation means that two parties do not have a common shared secret,
+   and the session is therefore unauthenticated and insecure.
+
+   We wish to avoid the situation where a third party can send well-
+   formed RADIUS packets that cause a DTLS session to close.  Therefore,
+   in other situations, the session SHOULD remain open in the face of
+   non-conformant packets.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.8.%20%20Client%20Subsystems"></a><a class="selflink" href="#section-10.8" id="section-10.8">10.8</a>.  Client Subsystems</span>
+
+   Many traditional clients treat RADIUS as subsystem-specific.  That
+   is, each subsystem on the client has its own RADIUS implementation
+   and configuration.  These independent implementations work for simple
+   systems, but break down for RADIUS when multiple servers, fail-over,
+   and load-balancing are required.  They have even worse issues when
+   DTLS is enabled.
+
+   As noted in <a href="#section-6.1">Section 6.1</a>, above, clients SHOULD use a local proxy that
+   arbitrates all RADIUS traffic between the client and all servers.
+   This proxy will encapsulate all knowledge about servers, including
+   security policies, fail-over, and load-balancing.  All client
+   subsystems SHOULD communicate with this local proxy, ideally over a
+   loopback address.  The requirements on using strong shared secrets
+   still apply.
+
+   The benefit of this configuration is that there is one place in the
+   client that arbitrates all RADIUS traffic.  Subsystems that do not
+   implement DTLS can remain unaware of DTLS.  DTLS sessions opened by
+   the proxy can remain open for long periods of time, even when client
+   subsystems are restarted.  The proxy can do RADIUS/UDP to some
+   servers and RADIUS/DTLS to others.
+
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 25]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-26"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+   Delegation of responsibilities and separation of tasks are important
+   security principles.  By moving all RADIUS/DTLS knowledge to a DTLS-
+   aware proxy, security analysis becomes simpler, and enforcement of
+   correct security becomes easier.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20References"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.1.%20%20Normative%20References"></a><a class="selflink" href="#section-11.1" id="section-11.1">11.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC2865">RFC2865</a>]   Rigney, C., Willens, S., Rubens, A., and W. Simpson,
+               "Remote Authentication Dial In User Service (RADIUS)",
+               <a href="./rfc2865">RFC 2865</a>, June 2000.
+
+   [<a id="ref-RFC3539">RFC3539</a>]   Aboba, B. and J. Wood, "Authentication, Authorization and
+               Accounting (AAA) Transport Profile", <a href="./rfc3539">RFC 3539</a>, June 2003.
+
+   [<a id="ref-RFC5077">RFC5077</a>]   Salowey, J., Zhou, H., Eronen, P., and H. Tschofenig,
+               "Transport Layer Security (TLS) Session Resumption
+               without Server-Side State", <a href="./rfc5077">RFC 5077</a>, January 2008.
+
+   [<a id="ref-RFC5080">RFC5080</a>]   Nelson, D. and A. DeKok, "Common Remote Authentication
+               Dial In User Service (RADIUS) Implementation Issues and
+               Suggested Fixes", <a href="./rfc5080">RFC 5080</a>, December 2007.
+
+   [<a id="ref-RFC5246">RFC5246</a>]   Dierks, T. and E. Rescorla, "The Transport Layer Security
+               (TLS) Protocol Version 1.2", <a href="./rfc5246">RFC 5246</a>, August 2008.
+
+   [<a id="ref-RFC5997">RFC5997</a>]   DeKok, A., "Use of Status-Server Packets in the Remote
+               Authentication Dial In User Service (RADIUS) Protocol",
+               <a href="./rfc5997">RFC 5997</a>, August 2010.
+
+   [<a id="ref-RFC6347">RFC6347</a>]   Rescorla, E. and N. Modadugu, "Datagram Transport Layer
+               Security Version 1.2", <a href="./rfc6347">RFC 6347</a>, January 2012.
+
+   [<a id="ref-RFC6520">RFC6520</a>]   Seggelmann, R., Tuexen, M., and M. Williams, "Transport
+               Layer Security (TLS) and Datagram Transport Layer
+               Security (DTLS) Heartbeat Extension", <a href="./rfc6520">RFC 6520</a>, February
+               2012.
+
+   [<a id="ref-RFC6613">RFC6613</a>]   DeKok, A., "RADIUS over TCP", <a href="./rfc6613">RFC 6613</a>, May 2012.
+
+   [<a id="ref-RFC6614">RFC6614</a>]   Winter, S., McCauley, M., Venaas, S., and K. Wierenga,
+               "Transport Layer Security (TLS) Encryption for RADIUS",
+               <a href="./rfc6614">RFC 6614</a>, May 2012.
+
+
+
+
+<span class="grey">DeKok                         Experimental                     [Page 26]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-27"></span>
+<span class="grey"><a href="./rfc7360">RFC 7360</a>          DTLS as a Transport Layer for RADIUS    September 2014</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.2.%20%20Informative%20References"></a><a class="selflink" href="#section-11.2" id="section-11.2">11.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC1321">RFC1321</a>]   Rivest, R., "The MD5 Message-Digest Algorithm", <a href="./rfc1321">RFC 1321</a>,
+               April 1992.
+
+   [<a id="ref-RFC2866">RFC2866</a>]   Rigney, C., "RADIUS Accounting", <a href="./rfc2866">RFC 2866</a>, June 2000.
+
+   [<a id="ref-RFC4107">RFC4107</a>]   Bellovin, S. and R. Housley, "Guidelines for
+               Cryptographic Key Management", <a href="https://www.rfc-editor.org/bcp/bcp107">BCP 107</a>, <a href="./rfc4107">RFC 4107</a>, June
+               2005.
+
+   [<a id="ref-RFC5176">RFC5176</a>]   Chiba, M., Dommety, G., Eklund, M., Mitton, D., and B.
+               Aboba, "Dynamic Authorization Extensions to Remote
+               Authentication Dial In User Service (RADIUS)", <a href="./rfc5176">RFC 5176</a>,
+               January 2008.
+
+   [<a id="ref-RFC6421">RFC6421</a>]   Nelson, D., Ed., "Crypto-Agility Requirements for Remote
+               Authentication Dial-In User Service (RADIUS)", <a href="./rfc6421">RFC 6421</a>,
+               November 2011.
+
+   [<a id="ref-RFC6982">RFC6982</a>]   Sheffer, Y. and A. Farrel, "Improving Awareness of
+               Running Code: The Implementation Status Section", <a href="./rfc6982">RFC</a>
+               <a href="./rfc6982">6982</a>, July 2013.
+
+   [<a id="ref-MD5Attack">MD5Attack</a>] Dobbertin, H., "The Status of MD5 After a Recent Attack",
+               CryptoBytes Vol.2 No.2, Summer 1996.
+
+   [<a id="ref-MD5Break">MD5Break</a>]  Wang, X. and H. Yu, "How to Break MD5 and Other Hash
+               Functions", EUROCRYPT '05 Proceedings of the 24th annual
+               international conference on Theory and Applications of
+               Cryptographic Techniques, pp. 19-35, ISBN 3-540-25910-4,
+               2005.
+
+Acknowledgments
+
+   Parts of the text in <a href="#section-3">Section 3</a> defining the Request and Response
+   Authenticators were taken with minor edits from <a href="./rfc2865#section-3">[RFC2865], Section 3</a>.
+
+Author's Address
+
+   Alan DeKok
+   The FreeRADIUS Server Project
+   URI: <a href="http://freeradius.org">http://freeradius.org</a>
+   EMail: aland@freeradius.org
+
+
+
+
+
+
+
+DeKok                         Experimental                     [Page 27]
+</pre>
+</body></html>

@@ -1,0 +1,1622 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                         G. Huston
+Request for Comments: 8360                                 G. Michaelson
+Category: Standards Track                                          APNIC
+ISSN: 2070-1721                                              C. Martinez
+                                                                  LACNIC
+                                                          T. Bruijnzeels
+                                                                RIPE NCC
+                                                               A. Newton
+                                                                    ARIN
+                                                                 D. Shaw
+                                                                 AFRINIC
+                                                              April 2018
+
+
+   <span class="h1">Resource Public Key Infrastructure (RPKI) Validation Reconsidered</span>
+
+Abstract
+
+   This document specifies an alternative to the certificate validation
+   procedure specified in <a href="./rfc6487">RFC 6487</a> that reduces aspects of operational
+   fragility in the management of certificates in the Resource Public
+   Key Infrastructure (RPKI), while retaining essential security
+   features.
+
+   The procedure specified in <a href="./rfc6487">RFC 6487</a> requires that Resource
+   Certificates are rejected entirely if they are found to overclaim any
+   resources not contained on the issuing certificate, whereas the
+   validation process defined here allows an issuing Certification
+   Authority (CA) to chose to communicate that such Resource
+   Certificates should be accepted for the intersection of their
+   resources and the issuing certificate.
+
+   It should be noted that the validation process defined here considers
+   validation under a single trust anchor (TA) only.  In particular,
+   concerns regarding overclaims where multiple configured TAs claim
+   overlapping resources are considered out of scope for this document.
+
+   This choice is signaled by a set of alternative Object Identifiers
+   (OIDs) per "X.509 Extensions for IP Addresses and AS Identifiers"
+   (<a href="./rfc3779">RFC 3779</a>) and "Certificate Policy (CP) for the Resource Public Key
+   Infrastructure (RPKI)" (<a href="./rfc6484">RFC 6484</a>).  It should be noted that in case
+   these OIDs are not used for any certificate under a trust anchor, the
+   validation procedure defined here has the same outcome as the
+   procedure defined in <a href="./rfc6487">RFC 6487</a>.
+
+   Furthermore, this document provides an alternative to Route Origin
+   Authorization (ROA) (<a href="./rfc6482">RFC 6482</a>) and BGPsec Router Certificate (BGPsec
+   PKI Profiles -- publication requested) validation.
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8360">https://www.rfc-editor.org/info/rfc8360</a>.
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Overview  . . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-1.1">1.1</a>.  Requirements Notation . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-2">2</a>.  Certificate Validation in the RPKI  . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-3">3</a>.  Operational Considerations  . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+   <a href="#section-4">4</a>.  An Amended RPKI Certification Validation Process  . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-4.1">4.1</a>.  Verified Resource Sets  . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-4.2">4.2</a>.  Differences with Existing Standards . . . . . . . . . . .   <a href="#page-7">7</a>
+       4.2.1.  Certificate Policy (CP) for Use with Validation
+               Reconsidered in the RPKI  . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+       4.2.2.  An Alternative to X.509 Extensions for IP Addresses
+               and AS Identifiers (<a href="./rfc3779">RFC 3779</a>) . . . . . . . . . . . .   <a href="#page-8">8</a>
+       <a href="#section-4.2.3">4.2.3</a>.  Addendum to <a href="./rfc6268">RFC 6268</a>  . . . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+       4.2.4.  An Alternative to the Profile for X.509 PKIX Resource
+               Certificates  . . . . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+       <a href="#section-4.2.5">4.2.5</a>.  An Alternative ROA Validation . . . . . . . . . . . .  <a href="#page-18">18</a>
+       4.2.6.  An Alternative to BGPsec Router Certificate
+               Validation  . . . . . . . . . . . . . . . . . . . . .  <a href="#page-18">18</a>
+   <a href="#section-5">5</a>.  Validation Examples . . . . . . . . . . . . . . . . . . . . .  <a href="#page-19">19</a>
+     <a href="#section-5.1">5.1</a>.  Example 1 -- An RPKI Tree Using the Old OIDs Only . . . .  <a href="#page-19">19</a>
+     <a href="#section-5.2">5.2</a>.  Example 2 -- An RPKI Tree Using the New OIDs Only . . . .  <a href="#page-21">21</a>
+     5.3.  Example 3 -- An RPKI Tree Using a Mix of Old and New OIDs  23
+   <a href="#section-6">6</a>.  Deployment Considerations . . . . . . . . . . . . . . . . . .  <a href="#page-25">25</a>
+   <a href="#section-7">7</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .  <a href="#page-26">26</a>
+   <a href="#section-8">8</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .  <a href="#page-26">26</a>
+   <a href="#section-9">9</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-27">27</a>
+     <a href="#section-9.1">9.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .  <a href="#page-27">27</a>
+     <a href="#section-9.2">9.2</a>.  Informative References  . . . . . . . . . . . . . . . . .  <a href="#page-28">28</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-28">28</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-28">28</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Overview"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Overview</span>
+
+   This document specifies an alternative to the certificate validation
+   procedure specified in <a href="./rfc6487">RFC 6487</a>.  Where the procedure specified in
+   <a href="./rfc6487">RFC 6487</a> will require that Resource Certificates be rejected entirely
+   if they are found to overclaim any resources not contained on the
+   issuing certificate, the procedure defined here dictates that these
+   Resource Certificates be accepted for the intersection of their
+   resources and the issuing certificate only.
+
+   The outcome of both procedures is the same as long as no overclaims
+   occur.  Furthermore, the new procedure can never lead to the
+   acceptance of resources that are not validly held on the path of
+   issuing certificates.
+
+   However, the procedure defined here will limit the impact in case
+   resources are no longer validly held on the path of issuing
+   certificates to attestations, such as Route Origin Authorizations
+   [<a href="./rfc6482" title='"A Profile for Route Origin Authorizations (ROAs)"'>RFC6482</a>] that refer to these resources only.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Certificate%20Validation%20in%20the%20RPKI"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Certificate Validation in the RPKI</span>
+
+   As currently defined in <a href="./rfc6487#section-7.2">Section 7.2 of [RFC6487]</a>, validation of PKIX
+   certificates that conform to the RPKI profile relies on the use of a
+   path validation process where each certificate in the validation path
+   is required to meet the certificate validation criteria.
+
+   These criteria require, in particular, that the Internet Number
+   Resources (INRs) of each certificate in the validation path are
+   "encompassed" by INRs on the issuing certificate.  The first
+   certificate in the path is required to be a trust anchor, and its
+   resources are considered valid by definition.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   For example, in the following sequence:
+
+   Certificate 1 (trust anchor):
+   Issuer TA,
+   Subject TA,
+   Resources 192.0.2.0/24, 198.51.100.0/24,
+         2001:db8::/32, AS64496-AS64500
+
+   Certificate 2:
+   Issuer TA,
+   Subject CA1,
+   Resources 192.0.2.0/24, 198.51.100.0/24, 2001:db8::/32
+
+   Certificate 3:
+   Issuer CA1,
+   Subject CA2,
+   Resources 192.0.2.0/24, 198.51.100.0/24, 2001:db8::/32
+
+   ROA 1:
+   Embedded Certificate 4 (EE certificate):
+   Issuer CA2,
+   Subject R1,
+   Resources 192.0.2.0/24
+
+   Prefix 192.0.2.0/24, Max Length 24, ASN 64496
+
+   All certificates in this scenario are considered valid since the INRs
+   of each certificate are encompassed by those of the issuing
+   certificate.  ROA1 is valid because the specified prefix is
+   encompassed by the embedded end entity (EE) certificate, as required
+   by [<a href="./rfc6482" title='"A Profile for Route Origin Authorizations (ROAs)"'>RFC6482</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Operational%20Considerations"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Operational Considerations</span>
+
+   The allocations recorded in the RPKI change as a result of resource
+   transfers.  For example, the CAs involved in transfer might choose to
+   modify CA certificates in an order that causes some of these
+   certificates to "overclaim" temporarily.  A certificate is said to
+   "overclaim" if it includes INRs not contained in the INRs of the CA
+   that issued the certificate in question.
+
+   It may also happen that a child CA does not voluntarily request a
+   shrunk Resource Certificate when resources are being transferred or
+   reclaimed by the parent.  Furthermore, operational errors that may
+   occur during management of RPKI databases also may create CA
+   certificates that, temporarily, no longer encompass all of the INRs
+   of subordinate certificates.
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   Consider the following sequence:
+
+   Certificate 1 (trust anchor):
+   Issuer TA,
+   Subject TA,
+   Resources 192.0.2.0/24, 198.51.100.0/24,
+        2001:db8::/32, AS64496-AS64500
+
+   Certificate 2:
+   Issuer TA,
+   Subject CA1,
+   Resources 192.0.2.0/24, 2001:db8::/32
+
+   Certificate 3 (invalid):
+   Issuer CA1,
+   Subject CA2,
+   Resources 192.0.2.0/24, 198.51.100.0/24, 2001:db8::/32
+
+   ROA 1 (invalid):
+   Embedded Certificate 4 (EE certificate, invalid):
+   Issuer CA2,
+   Subject R1,
+   Resources 192.0.2.0/24
+
+   Prefix 192.0.2.0/24, Max Length 24, ASN 64496
+
+   Here, Certificate 2 from the previous example was reissued by TA to
+   CA1, and the prefix 198.51.100.0/24 was removed.  However, CA1 failed
+   to reissue a new Certificate 3 to CA2.  As a result, Certificate 3 is
+   now overclaiming and considered invalid; by recursion, the embedded
+   Certificate 4 used for ROA1 is also invalid.  And ROA1 is invalid
+   because the specified prefix contained in the ROA is no longer
+   encompassed by a valid embedded EE certificate, as required by
+   [<a href="./rfc6482" title='"A Profile for Route Origin Authorizations (ROAs)"'>RFC6482</a>].
+
+   However, it should be noted that ROA1 does not make use of any of the
+   address resources that were removed from CA1's certificate; thus, it
+   would be desirable if ROA1 could still be viewed as valid.
+   Technically, CA1 should reissue a Certificate 3 to CA2 without
+   198.51.100.0/24, and then ROA1 would be considered valid according to
+   [<a href="./rfc6482" title='"A Profile for Route Origin Authorizations (ROAs)"'>RFC6482</a>].  But as long as CA1 does not take this action, ROA1
+   remains invalid.  It would be preferable if ROA1 could be considered
+   valid, since the assertion it makes was not affected by the reduced
+   scope of CA1's certificate.
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20An%20Amended%20RPKI%20Certification%20Validation%20Process"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  An Amended RPKI Certification Validation Process</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Verified%20Resource%20Sets"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Verified Resource Sets</span>
+
+   The problem described above can be considered a low probability
+   problem today.  However, the potential impact on routing security
+   would be high if an overclaiming occurred near the apex of the RPKI
+   hierarchy, as this would invalidate the entirety of the subtree
+   located below this point.
+
+   The changes specified here to the validation procedure in [<a href="./rfc6487" title='"A Profile for X.509 PKIX Resource Certificates"'>RFC6487</a>]
+   do not change the probability of this problem, but they do limit the
+   impact to just the overclaimed resources.  This revised validation
+   algorithm is intended to avoid causing CA certificates to be treated
+   as completely invalid as a result of overclaims.  However, these
+   changes are designed to not degrade the security offered by the RPKI.
+   Specifically, ROAs and router certificates will be treated as valid
+   only if all of the resources contained in them are encompassed by all
+   superior certificates along a path to a trust anchor.
+
+   The way this is achieved conceptually is by maintaining a Verified
+   Resource Set (VRS) for each certificate that is separate from the
+   INRs found in the resource extension [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>] in the certificate.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Differences%20with%20Existing%20Standards"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Differences with Existing Standards</span>
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.1.%20%20Certificate%20Policy%20%28CP%29%20for%20Use%20with%20Validation%20Reconsidered%20in"></a><a class="selflink" href="#section-4.2.1" id="section-4.2.1">4.2.1</a>.  Certificate Policy (CP) for Use with Validation Reconsidered in</span>
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/the%20RPKI"></a>        the RPKI</span>
+
+   Note that <a href="./rfc6484#section-1.2">Section 1.2 of [RFC6484]</a> defines the "Certificate Policy
+   (CP) for the Resource PKI (RPKI)" with the following OID:
+
+   id-cp-ipAddr-asNumber OBJECT IDENTIFIER ::= { iso(1)
+           identified-organization(3) dod(6) internet(1)
+           security(5) mechanisms(5) pkix(7) cp(14) 2 }
+
+   Per this document, a new OID for an alternative "Certificate Policy
+   (CP) for use with validation reconsidered in the Resource PKI (RPKI)"
+   has been assigned as follows:
+
+   id-cp-ipAddr-asNumber-v2 OBJECT IDENTIFIER ::= { iso(1)
+           identified-organization(3) dod(6) internet(1)
+           security(5) mechanisms(5) pkix(7) cp(14) 3 }
+
+   This alternative Certificate Policy is the same as the Certificate
+   Policy described in [<a href="./rfc6484" title='"Certificate Policy (CP) for the Resource Public Key Infrastructure (RPKI)"'>RFC6484</a>], except that it is used to drive the
+   decision in Step 8 of the validation procedure described in
+   <a href="#section-4.2.4.4">Section 4.2.4.4</a>.
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.%20%20An%20Alternative%20to%20X.509%20Extensions%20for%20IP%20Addresses%20and%20AS"></a><a class="selflink" href="#section-4.2.2" id="section-4.2.2">4.2.2</a>.  An Alternative to X.509 Extensions for IP Addresses and AS</span>
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/Identifiers%20%28RFC%203779%29"></a>        Identifiers (<a href="./rfc3779">RFC 3779</a>)</span>
+
+   This document defines an alternative to [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>].  All
+   specifications and procedures described in [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>] apply, with the
+   notable exceptions described in the following subsections.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.1.%20%20OID%20for%20id-pe-ipAddrBlocks-v2"></a><a class="selflink" href="#section-4.2.2.1" id="section-4.2.2.1">4.2.2.1</a>.  OID for id-pe-ipAddrBlocks-v2</span>
+
+   Per this document, an OID has been assigned for the extension
+   id-pe-ipAddrBlocks-v2 (id-pe 28).  This OID MUST only be used in
+   conjunction with the alternative Certificate Policy OID defined in
+   <a href="#section-4.2.1">Section 4.2.1</a>.
+
+   The following is an amended specification to be used as an
+   alternative to the specification in <a href="./rfc3779#section-2.2.1">Section 2.2.1 of [RFC3779]</a>.
+
+   The OID for this extension is id-pe-ipAddrBlocks-v2.
+
+   id-pe-ipAddrBlocks-v2  OBJECT IDENTIFIER ::= { id-pe 28 }
+
+   where [<a href="./rfc5280" title='"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"'>RFC5280</a>] defines:
+
+   id-pkix  OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
+          dod(6) internet(1) security(5) mechanisms(5) pkix(7) }
+
+   id-pe    OBJECT IDENTIFIER ::= { id-pkix 1 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.2.%20%20Syntax%20for%20id-pe-ipAddrBlocks-v2"></a><a class="selflink" href="#section-4.2.2.2" id="section-4.2.2.2">4.2.2.2</a>.  Syntax for id-pe-ipAddrBlocks-v2</span>
+
+   id-pe-ipAddrBlocks-v2      OBJECT IDENTIFIER ::= { id-pe 28 }
+
+   IPAddrBlocks        ::= SEQUENCE OF IPAddressFamily
+
+   IPAddressFamily     ::= SEQUENCE {    -- AFI &amp; optional SAFI --
+   addressFamily        OCTET STRING (SIZE (2..3)),
+   ipAddressChoice      IPAddressChoice }
+
+   IPAddressChoice     ::= CHOICE {
+   inherit              NULL, -- inherit from issuer --
+   addressesOrRanges    SEQUENCE OF IPAddressOrRange }
+
+   IPAddressOrRange    ::= CHOICE {
+   addressPrefix        IPAddress,
+   addressRange         IPAddressRange }
+
+   IPAddressRange      ::= SEQUENCE {
+   min                  IPAddress,
+   max                  IPAddress }
+
+   IPAddress           ::= BIT STRING
+
+   Note that the descriptions of objects referenced in the syntax above
+   are defined in Sections <a href="#section-2.2.3.1">2.2.3.1</a> through <a href="#section-2.2.3.9">2.2.3.9</a> of [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>].
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.3.%20%20OID%20for%20id-pe-autonomousSysIds-v2"></a><a class="selflink" href="#section-4.2.2.3" id="section-4.2.2.3">4.2.2.3</a>.  OID for id-pe-autonomousSysIds-v2</span>
+
+   Per this document, an OID has been assigned for the extension id-pe-
+   autonomousSysIds-v2 (id-pe 29).  This OID MUST only be used in
+   conjunction with the alternative Certificate Policy OID defined in
+   <a href="#section-4.2.1">Section 4.2.1</a>.
+
+   The following is an amended specification to be used as an
+   alternative to the specification in <a href="./rfc3779#section-3.2.1">Section 3.2.1 of [RFC3779]</a>.
+
+   The OID for this extension is id-pe-autonomousSysIds-v2.
+
+   id-pe-autonomousSysIds-v2  OBJECT IDENTIFIER ::= { id-pe 29 }
+
+   where [<a href="./rfc5280" title='"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"'>RFC5280</a>] defines:
+
+   id-pkix  OBJECT IDENTIFIER ::= { iso(1) identified-organization(3)
+          dod(6) internet(1) security(5) mechanisms(5) pkix(7) }
+
+   id-pe    OBJECT IDENTIFIER ::= { id-pkix 1 }
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.4.%20%20Syntax%20for%20id-pe-autonomousSysIds-v2"></a><a class="selflink" href="#section-4.2.2.4" id="section-4.2.2.4">4.2.2.4</a>.  Syntax for id-pe-autonomousSysIds-v2</span>
+
+   id-pe-autonomousSysIds-v2  OBJECT IDENTIFIER ::= { id-pe 29 }
+
+   ASIdentifiers       ::= SEQUENCE {
+   asnum               [0] EXPLICIT ASIdentifierChoice OPTIONAL,
+   rdi                 [1] EXPLICIT ASIdentifierChoice OPTIONAL}
+
+   ASIdentifierChoice  ::= CHOICE {
+   inherit              NULL, -- inherit from issuer --
+   asIdsOrRanges        SEQUENCE OF ASIdOrRange }
+
+   ASIdOrRange         ::= CHOICE {
+   id                  ASId,
+   range               ASRange }
+
+   ASRange             ::= SEQUENCE {
+   min                 ASId,
+   max                 ASId }
+
+   ASId                ::= INTEGER
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.5.%20%20Amended%20IP%20Address%20Delegation%20Extension%20Certification%20Path"></a><a class="selflink" href="#section-4.2.2.5" id="section-4.2.2.5">4.2.2.5</a>.  Amended IP Address Delegation Extension Certification Path</span>
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/Validation"></a>          Validation</span>
+
+   Certificate path validation is performed as specified in
+   <a href="#section-4.2.4.4">Section 4.2.4.4</a>.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.6.%20%20Amended%20Autonomous%20System%20Identifier%20Delegation%20Extension"></a><a class="selflink" href="#section-4.2.2.6" id="section-4.2.2.6">4.2.2.6</a>.  Amended Autonomous System Identifier Delegation Extension</span>
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/Certification%20Path%20Validation"></a>          Certification Path Validation</span>
+
+   Certificate path validation is performed as specified in
+   <a href="#section-4.2.4.4">Section 4.2.4.4</a>.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.2.7.%20%20Amended%20ASN.1%20Module"></a><a class="selflink" href="#section-4.2.2.7" id="section-4.2.2.7">4.2.2.7</a>.  Amended ASN.1 Module</span>
+
+   Per this document, an OID has been assigned for
+   id-mod-ip-addr-and-as-ident-v2, as follows:
+
+   IPAddrAndASCertExtn-v2 { iso(1) identified-organization(3) dod(6)
+      internet(1) security(5) mechanisms(5) pkix(7) mod(0)
+      id-mod-ip-addr-and-as-ident-v2(90) }
+
+   The following is an amended specification to be used as an
+   alternative to the specification in <a href="./rfc3779#appendix-A">Appendix A of [RFC3779]</a>.
+
+   This normative appendix describes the extensions for IP address and
+   AS identifier delegation used by conforming PKI components in ASN.1
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   syntax.
+
+   IPAddrAndASCertExtn-v2 { iso(1) identified-organization(3) dod(6)
+      internet(1) security(5) mechanisms(5) pkix(7) mod(0)
+      id-mod-ip-addr-and-as-ident-v2(90) }
+
+   DEFINITIONS EXPLICIT TAGS ::=
+
+   BEGIN
+
+   -- EXPORTS ALL --
+
+   IMPORTS
+
+   -- PKIX specific OIDs and arcs --
+
+   id-pe FROM PKIX1Explicit88 { iso(1) identified-organization(3)
+        dod(6) internet(1) security(5) mechanisms(5) pkix(7)
+        id-mod(0) id-pkix1-explicit(18) }
+
+   -- IP Address Block and AS Identifiers Syntax --
+
+   IPAddrBlocks, ASIdentifiers FROM  IPAddrAndASCertExtn { iso(1)
+      identified-organization(3) dod(6) internet(1) security(5)
+      mechanisms(5) pkix(7) mod(0) id-mod-ip-addr-and-as-ident(30) }
+   ;
+
+   -- Validation Reconsidered IP Address Delegation Extension OID --
+
+   id-pe-ipAddrBlocks-v2  OBJECT IDENTIFIER ::= { id-pe 28 }
+
+   -- Validation Reconsidered IP Address Delegation Extension Syntax --
+   -- Syntax is imported from <a href="./rfc3779">RFC 3779</a> --
+
+   -- Validation Reconsidered Autonomous System Identifier --
+   --     Delegation Extension OID                         --
+
+   id-pe-autonomousSysIds-v2  OBJECT IDENTIFIER ::= { id-pe 29 }
+
+   -- Validation Reconsidered Autonomous System Identifier --
+   --     Delegation Extension Syntax                      --
+
+   -- Syntax is imported from <a href="./rfc3779">RFC 3779</a> --
+
+   END
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.3.%20%20Addendum%20to%20RFC%206268"></a><a class="selflink" href="#section-4.2.3" id="section-4.2.3">4.2.3</a>.  Addendum to <a href="./rfc6268">RFC 6268</a></span>
+
+   Per this document, an OID has been assigned for
+   id-mod-ip-addr-and-as-ident-2v2 as follows:
+
+   IPAddrAndASCertExtn-2010v2 { iso(1) identified-organization(3) dod(6)
+            internet(1) security(5) mechanisms(5) pkix(7) mod(0)
+            id-mod-ip-addr-and-as-ident-2v2(91) }
+
+   [<a id="ref-RFC6268">RFC6268</a>] is an informational RFC that updates some auxiliary ASN.1
+   modules to conform to the 2008 version of ASN.1; the 1988 ASN.1
+   modules in <a href="#section-4.2.2.7">Section 4.2.2.7</a> remain the normative version.
+
+   The following is an additional module conforming to the 2008 version
+   of ASN.1 to be used with the extensions defined in Sections <a href="#section-4.2.2.1">4.2.2.1</a>
+   and 4.2.2.3.
+
+  IPAddrAndASCertExtn-2010v2 { iso(1) identified-organization(3) dod(6)
+           internet(1) security(5) mechanisms(5) pkix(7) mod(0)
+           id-mod-ip-addr-and-as-ident-2v2(91) }
+
+    DEFINITIONS EXPLICIT TAGS ::=
+
+    BEGIN
+
+       EXPORTS ALL;
+       IMPORTS
+
+       -- PKIX specific OIDs and arcs --
+
+       id-pe
+       FROM PKIX1Explicit-2009
+         { iso(1) identified-organization(3) dod(6) internet(1)
+           security(5) mechanisms(5) pkix(7) id-mod(0)
+           id-mod-pkix1-explicit-02(51)}
+
+       EXTENSION
+       FROM PKIX-CommonTypes-2009
+         { iso(1) identified-organization(3) dod(6) internet(1)
+           security(5) mechanisms(5) pkix(7) id-mod(0)
+           id-mod-pkixCommon-02(57)}
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+    -- IP Address Block and AS Identifiers Syntax --
+
+       IPAddrBlocks, ASIdentifiers
+       FROM IPAddrAndASCertExtn-2010
+          { iso(1) identified-organization(3) dod(6)
+            internet(1) security(5) mechanisms(5) pkix(7) mod(0)
+            id-mod-ip-addr-and-as-ident-2(72) }
+       ;
+
+       --
+       -- Extensions contain the set of extensions defined in this
+       -- module
+       --
+       -- These are intended to be placed in public key certificates
+       -- and thus should be added to the CertExtensions extension
+       -- set in PKIXImplicit-2009 defined for <a href="./rfc5280">RFC 5280</a>
+       --
+
+       Extensions EXTENSION ::= {
+          ext-pe-ipAddrBlocks-v2 | ext-pe-autonomousSysIds-v2
+       }
+
+       -- Validation Reconsidered IP Address Delegation Extension OID --
+
+       ext-pe-ipAddrBlocks-v2 EXTENSION ::= {
+         SYNTAX IPAddrBlocks
+         IDENTIFIED BY id-pe-ipAddrBlocks-v2
+       }
+
+       id-pe-ipAddrBlocks-v2  OBJECT IDENTIFIER ::= { id-pe 28 }
+
+       -- Validation Reconsidered IP Address Delegation --
+       --      Extension Syntax                         --
+
+       -- Syntax is imported from <a href="./rfc6268">RFC 6268</a> --
+
+       -- Validation Reconsidered Autonomous System Identifier --
+       --      Delegation Extension OID                        --
+
+       ext-pe-autonomousSysIds-v2 EXTENSION ::= {
+         SYNTAX ASIdentifiers
+         IDENTIFIED BY id-pe-autonomousSysIds-v2
+       }
+
+       id-pe-autonomousSysIds OBJECT IDENTIFIER ::= { id-pe 29 }
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+    -- Validation Reconsidered Autonomous System Identifier --
+    --      Delegation Extension Syntax                     --
+
+    -- Syntax is imported from <a href="./rfc6268">RFC 6268</a> --
+
+    END
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.4.%20%20An%20Alternative%20to%20the%20Profile%20for%20X.509%20PKIX%20Resource"></a><a class="selflink" href="#section-4.2.4" id="section-4.2.4">4.2.4</a>.  An Alternative to the Profile for X.509 PKIX Resource</span>
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/Certificates"></a>        Certificates</span>
+
+   This document defines an alternative profile for X.509 PKIX Resource
+   Certificates.  This profile follows all definitions and procedures
+   described in [<a href="./rfc6487" title='"A Profile for X.509 PKIX Resource Certificates"'>RFC6487</a>] with the following notable exceptions.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.4.1.%20%20Amended%20Certificate%20Policies"></a><a class="selflink" href="#section-4.2.4.1" id="section-4.2.4.1">4.2.4.1</a>.  Amended Certificate Policies</span>
+
+   The following is an amended specification to be used in this profile,
+   in place of <a href="./rfc6487#section-4.8.9">Section 4.8.9 of [RFC6487]</a>.
+
+   This extension MUST be present and MUST be marked critical.  It MUST
+   include exactly one policy of type id-cp-ipAddr-asNumber-v2, as
+   specified in the updated RPKI CP in <a href="#section-4.2.1">Section 4.2.1</a>.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.4.2.%20%20Amended%20IP%20Resources"></a><a class="selflink" href="#section-4.2.4.2" id="section-4.2.4.2">4.2.4.2</a>.  Amended IP Resources</span>
+
+   The following is an amended specification to be used in this profile,
+   in place of <a href="./rfc6487#section-4.8.10">Section 4.8.10 of [RFC6487]</a>.
+
+   Either the IP resources extension or the AS resources extension, or
+   both, MUST be present in all RPKI certificates and MUST be marked
+   critical.
+
+   This extension contains the list of IP address resources as per
+   <a href="#section-4.2.2.1">Section 4.2.2.1</a>.  The value may specify the "inherit" element for a
+   particular Address Family Identifier (AFI) value.  In the context of
+   Resource Certificates describing public number resources for use in
+   the public Internet, the Subsequent AFI (SAFI) value MUST NOT be
+   used.
+
+   This extension MUST either specify a non-empty set of IP address
+   records or use the "inherit" setting to indicate that the IP address
+   resource set of this certificate is inherited from that of the
+   certificate's issuer.
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.4.3.%20%20Amended%20AS%20Resources"></a><a class="selflink" href="#section-4.2.4.3" id="section-4.2.4.3">4.2.4.3</a>.  Amended AS Resources</span>
+
+   The following is an amended specification to be used in this profile,
+   in place of <a href="./rfc6487#section-4.8.11">Section 4.8.11 of [RFC6487]</a>.
+
+   Either the AS resources extension or the IP resources extension, or
+   both, MUST be present in all RPKI certificates and MUST be marked
+   critical.
+
+   This extension contains the list of AS number resources as per
+   <a href="#section-4.2.2.3">Section 4.2.2.3</a>, or it may specify the "inherit" element.  Routing
+   Domain Identifier (RDI) values are NOT supported in this profile and
+   MUST NOT be used.
+
+   This extension MUST either specify a non-empty set of AS number
+   records or use the "inherit" setting to indicate that the AS number
+   resource set of this certificate is inherited from that of the
+   certificate's issuer.
+
+<span class="h5"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.4.4.%20%20Amended%20Resource%20Certificate%20Path%20Validation"></a><a class="selflink" href="#section-4.2.4.4" id="section-4.2.4.4">4.2.4.4</a>.  Amended Resource Certificate Path Validation</span>
+
+   The following is an amended specification for path validation to be
+   used in place of <a href="./rfc6487#section-7.2">Section 7.2 of [RFC6487]</a>, which allows for the
+   validation of both certificates following the profile defined in
+   [<a href="./rfc6487" title='"A Profile for X.509 PKIX Resource Certificates"'>RFC6487</a>], as well as certificates following the profile described
+   above.
+
+   The following algorithm is employed to validate CA and EE resource
+   certificates.  It is modeled on the path validation algorithm from
+   [<a href="./rfc5280" title='"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"'>RFC5280</a>] but is modified to make use of the IP Address Delegation
+   and AS Identifier Delegation extensions from [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>].
+
+   There are two inputs to the validation algorithm:
+
+   1.  a trust anchor
+
+   2.  a certificate to be validated
+
+   The algorithm is initialized with two new variables for use in the
+   RPKI: Verified Resource Set-IP (VRS-IP) and Verified Resource Set-AS
+   (VRS-AS).  These sets are used to track the set of INRs (IP address
+   space and AS numbers) that are considered valid for each CA
+   certificate.  The VRS-IP and VRS-AS sets are initially set to the IP
+   Address Delegation and AS Identifier Delegation values, respectively,
+   from the trust anchor used to perform validation.
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   This path validation algorithm verifies, among other things, that a
+   prospective certification path (a sequence of n certificates)
+   satisfies the following conditions:
+
+   a.  for all 'x' in {1, ..., n-1}, the subject of certificate 'x' is
+       the issuer of certificate ('x' + 1);
+
+   b.  certificate '1' is issued by a trust anchor;
+
+   c.  certificate 'n' is the certificate to be validated; and
+
+   d.  for all 'x' in {1, ..., n}, certificate 'x' is valid.
+
+   Certificate validation requires verifying that all of the following
+   conditions hold, in addition to the certification path validation
+   criteria specified in <a href="./rfc5280#section-6">Section 6 of [RFC5280]</a>.
+
+   1.  The signature of certificate x (x&gt;1) is verified using the public
+       key of the issuer's certificate (x-1), using the signature
+       algorithm specified for that public key (in certificate x-1).
+
+   2.  The current time lies within the interval defined by the
+       NotBefore and NotAfter values in the Validity field of
+       certificate x.
+
+   3.  The Version, Issuer, and Subject fields of certificate x satisfy
+       the constraints established in Sections <a href="#section-4.1">4.1</a> to <a href="#section-4.7">4.7</a> of <a href="./rfc6487">RFC 6487</a>.
+
+   4.  If certificate x uses the Certificate Policy defined in
+       <a href="./rfc6487#section-4.8.9">Section 4.8.9 of [RFC6487]</a>, then the certificate MUST contain all
+       extensions defined in <a href="./rfc6487#section-4.8">Section 4.8 of [RFC6487]</a> that must be
+       present.  The value(s) for each of these extensions MUST satisfy
+       the constraints established for each extension in the respective
+       sections.  Any extension not thus identified MUST NOT appear in
+       certificate x.
+
+   5.  If certificate x uses the Certificate Policy defined in
+       <a href="#section-4.2.4.1">Section 4.2.4.1</a>, then all extensions defined in <a href="./rfc6487#section-4.8">Section 4.8 of
+       [RFC6487]</a>, except Sections <a href="#section-4.8.9">4.8.9</a>, <a href="#section-4.8.10">4.8.10</a>, and <a href="#section-4.8.11">4.8.11</a> MUST be
+       present.  The certificate MUST contain an extension as defined in
+       Sections <a href="#section-4.2.4.2">4.2.4.2</a> or <a href="#section-4.2.4.3">4.2.4.3</a>, or both.  The value(s) for each of
+       these extensions MUST satisfy the constraints established for
+       each extension in the respective sections.  Any extension not
+       thus identified MUST NOT appear in certificate x.
+
+   6.  Certificate x MUST NOT have been revoked, i.e., it MUST NOT
+       appear on a Certificate Revocation List (CRL) issued by the CA
+       represented by certificate x-1.
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   7.  Compute the VRS-IP and VRS-AS set values as indicated below:
+
+       *  If the IP Address Delegation extension is present in
+          certificate x and x=1, set the VRS-IP to the resources found
+          in this extension.
+
+       *  If the IP Address Delegation extension is present in
+          certificate x and x&gt;1, set the VRS-IP to the intersection of
+          the resources between this extension and the value of the
+          VRS-IP computed for certificate x-1.
+
+       *  If the IP Address Delegation extension is absent in
+          certificate x, set the VRS-IP to NULL.
+
+       *  If the IP Address Delegation extension is present in
+          certificate x and x=1, set the VRS-IP to the resources found
+          in this extension.
+
+       *  If the AS Identifier Delegation extension is present in
+          certificate x and x&gt;1, set the VRS-AS to the intersection of
+          the resources between this extension and the value of the
+          VRS-AS computed for certificate x-1.
+
+       *  If the AS Identifier Delegation extension is absent in
+          certificate x, set the VRS-AS to NULL.
+
+   8.  If there is any difference in resources in the VRS-IP and the IP
+       Address Delegation extension on certificate x, or the VRS-AS and
+       the AS Identifier Delegation extension on certificate x, then:
+
+       *  If certificate x uses the Certificate Policy defined in
+          <a href="#section-4.2.4.1">Section 4.2.4.1</a>, a warning listing the overclaiming resources
+          for certificate x SHOULD be issued.
+
+       *  If certificate x uses the Certificate Policy defined in
+          <a href="./rfc6487#section-4.8.9">Section 4.8.9 of [RFC6487]</a>, then certificate x MUST be
+          rejected.
+
+   These rules allow a CA certificate to contain resources that are not
+   present in (all of) the certificates along the path from the trust
+   anchor to the CA certificate.  If none of the resources in the CA
+   certificate are present in all certificates along the path, no
+   subordinate certificates could be valid.  However, the certificate is
+   not immediately rejected as this may be a transient condition.  Not
+   immediately rejecting the certificate does not result in a security
+   problem because the associated VRS sets accurately reflect the
+   resources validly associated with the certificate in question.
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.5.%20%20An%20Alternative%20ROA%20Validation"></a><a class="selflink" href="#section-4.2.5" id="section-4.2.5">4.2.5</a>.  An Alternative ROA Validation</span>
+
+   <a href="./rfc6482#section-4">Section 4 of [RFC6482]</a> currently has the following text on the
+   validation of resources on a ROA:
+
+      The IP address delegation extension [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>] is present in the
+      end-entity (EE) certificate (contained within the ROA), and each
+      IP address prefix(es) in the ROA is contained within the set of IP
+      addresses specified by the EE certificate's IP address delegation
+      extension.
+
+   If the end entity certificate uses the Certificate Policy defined in
+   <a href="#section-4.2.4.1">Section 4.2.4.1</a>, then the following approach must be used instead.
+
+      The amended IP Address Delegation extension described in
+      <a href="#section-4.2.4.2">Section 4.2.4.2</a> is present in the end entity (EE) certificate
+      (contained within the ROA), and each IP address prefix(es) in the
+      ROA is contained within the VRS-IP set that is specified as an
+      outcome of EE certificate validation described in <a href="#section-4.2.4.4">Section 4.2.4.4</a>.
+
+   Note that this ensures that ROAs can be valid only if all IP address
+   prefixes in the ROA are encompassed by the VRS-IP of all certificates
+   along the path to the trust anchor used to verify it.
+
+   Operators MAY issue separate ROAs for each IP address prefix, so that
+   the loss of one or more IP address prefixes from the VRS-IP of any
+   certificate along the path to the trust anchor would not invalidate
+   authorizations for other IP address prefixes.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.6.%20%20An%20Alternative%20to%20BGPsec%20Router%20Certificate%20Validation"></a><a class="selflink" href="#section-4.2.6" id="section-4.2.6">4.2.6</a>.  An Alternative to BGPsec Router Certificate Validation</span>
+
+   If a BGPsec Router Certificate [<a href="./rfc8209" title='"A Profile for BGPsec Router Certificates, Certificate Revocation Lists, and Certification Requests"'>RFC8209</a>] uses the Certificate Policy
+   defined in <a href="#section-4.2.4.1">Section 4.2.4.1</a>, then in addition to the BGPsec Router
+   Certificate Validation defined in <a href="./rfc8209#section-3.3">Section 3.3 of [RFC8209]</a>, the
+   following constraint MUST be met:
+
+   o  The VRS-AS of BGPsec Router Certificates MUST encompass all
+      Autonomous System Numbers (ASNs) in the AS Resource Identifier
+      Delegation extension.
+
+   Operators MAY issue separate BGPsec Router Certificates for different
+   ASNs, so that the loss of an ASN from the VRS-AS of any certificate
+   along the path to the trust anchor would not invalidate router keys
+   for other ASNs.
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Validation%20Examples"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Validation Examples</span>
+
+   In this section, we will demonstrate the outcome of RPKI validation
+   performed using the algorithm and procedures described in Sections
+   4.2.4.4, 4.2.5, and 4.2.6, under three deployment scenarios:
+
+   o  An RPKI tree consisting of certificates using the old OIDs only
+
+   o  An RPKI tree consisting of certificates using the new OIDs only
+
+   o  An RPKI tree consisting of a mix of certificates using either the
+      old or the new OIDs
+
+   In this context, we refer to a certificate as using the 'old' OIDs,
+   if the certificate uses a combination of the OIDs defined in
+   <a href="./rfc6484#section-1.2">Section 1.2 of [RFC6484]</a>, <a href="./rfc3779#section-2.2.1">Section 2.2.1 of [RFC3779]</a>, and/or
+   <a href="./rfc3779#section-3.2.1">Section 3.2.1 of [RFC3779]</a>.  We refer to a certificate as using the
+   'new' OIDS, if the certificate uses a combination of OIDs defined in
+   Sections <a href="#section-4.2.4.1">4.2.4.1</a>, <a href="#section-4.2.2.1">4.2.2.1</a>, and/or <a href="#section-4.2.2.3">Section 4.2.2.3</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Example%201%20--%20An%20RPKI%20Tree%20Using%20the%20Old%20OIDs%20Only"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Example 1 -- An RPKI Tree Using the Old OIDs Only</span>
+
+   Consider the following example:
+
+     Certificate 1 (trust anchor):
+      Issuer: TA,
+      Subject: TA,
+      OIDs: OLD,
+      Resources: 0/0, ::0, AS0-4294967295 (all resources)
+
+       Verified Resource Set: 0/0, ::0, AS0-4294967295 (all resources)
+       Warnings: none
+
+     Certificate 2:
+      Issuer: TA,
+      Subject: CA1,
+      OIDs: OLD,
+      Resources: 192.0.2.0/24, 2001:db8::/32, AS64496
+
+       Verified Resource Set: 192.0.2.0/24,
+                              2001:db8::/32, AS64496
+       Warnings: none
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+     Certificate 3 (invalid):
+      Issuer: CA1,
+      Subject: CA2,
+      OIDs: OLD,
+      Resources: 192.0.2.0/24, 198.51.100.0/24, AS64496
+
+       Verified Resource Set: 192.0.2.0/24, AS64496
+
+       Certificate 3 is considered invalid because resources
+       contains 198.51.100.0/24, which is not found in the
+       Verified Resource Set.
+
+     ROA 1 (invalid):
+      Embedded Certificate 4 (EE certificate invalid):
+       Issuer: CA2,
+       Subject: R1,
+       OIDs: OLD,
+       Resources: 192.0.2.0/24
+         Prefix 192.0.2.0/24, Max Length 24, ASN 64496
+
+       ROA1 is considered invalid because Certificate 3 is invalid.
+
+     ROA 2 (invalid):
+      Embedded Certificate 5 (EE certificate invalid):
+       Issuer: CA2,
+       Subject: R2,
+       OIDs: OLD,
+       Resources: 198.51.100.0/24
+        Prefix 198.51.100.0/24, Max Length 24, ASN 64496
+
+       ROA2 is considered invalid because Certificate 3 is invalid.
+
+     BGPsec Certificate 1 (invalid):
+      Issuer: CA2,
+      Subject: ROUTER-64496,
+      OIDs: NEW,
+      Resources: AS64496
+
+       BGPsec Certificate 1 is invalid because Certificate 3 is invalid.
+
+     BGPsec Certificate 2 (invalid):
+      Issuer: CA2,
+      Subject: ALL-ROUTERS,
+      OIDs: NEW,
+      Resources: AS64496-AS64497
+
+       BGPsec Certificate 2 is invalid because Certificate 3 is invalid.
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Example%202%20--%20An%20RPKI%20Tree%20Using%20the%20New%20OIDs%20Only"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Example 2 -- An RPKI Tree Using the New OIDs Only</span>
+
+   Consider the following example under the amended approach:
+
+     Certificate 1 (trust anchor):
+      Issuer: TA,
+      Subject: TA,
+      OIDs: NEW,
+      Resources: 0/0, ::0, AS0-4294967295 (all resources)
+
+       Verified Resource Set: 0/0, ::0, AS0-4294967295 (all resources)
+       Warnings: none
+
+     Certificate 2:
+      Issuer: TA,
+      Subject: CA1,
+      OIDs: NEW,
+      Resources: 192.0.2.0/24, 2001:db8::/32, AS64496
+
+       Verified Resource Set: 192.0.2.0/24,
+                              2001:db8::/32, AS64496
+       Warnings: none
+
+     Certificate 3:
+      Issuer: CA1,
+      Subject: CA2,
+      OIDs: NEW,
+      Resources: 192.0.2.0/24, 198.51.100.0/24, AS64496
+
+       Verified Resource Set: 192.0.2.0/24, AS64496
+       Warnings: overclaim for 198.51.100.0/24
+
+     ROA 1 (valid):
+      Embedded Certificate 4 (EE certificate):
+       Issuer: CA2,
+       Subject: R1,
+       OIDs: NEW,
+       Resources: 192.0.2.0/24
+        Prefix 192.0.2.0/24, Max Length 24, ASN 64496
+
+        Verified Resource Set: 192.0.2.0/24
+        Warnings: none
+
+       ROA1 is considered valid because the prefix matches the Verified
+       Resource Set on the embedded EE certificate.
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+     ROA 2 (invalid):
+      Embedded Certificate 5 (EE certificate invalid):
+       Issuer: CA2,
+       Subject: R2,
+       OIDs: NEW,
+       Resources: 198.51.100.0/24
+         Prefix 198.51.100.0/24, Max Length 24, ASN 64496
+
+         Verified Resource Set: none (empty set)
+         Warnings: 198.51.100.0/24
+
+       ROA2 is considered invalid because the ROA prefix 198.51.100.0/24
+       is not contained in the Verified Resource Set.
+
+     BGPsec Certificate 1 (valid):
+      Issuer: CA2,
+      Subject: ROUTER-64496,
+      OIDs: NEW,
+      Resources: AS64496
+
+       Verified Resource Set: AS64496
+       Warnings: none
+
+     BGPsec Certificate 2 (invalid):
+      Issuer: CA2,
+      Subject: ALL-ROUTERS,
+      OIDs: NEW,
+      Resources: AS64496-AS64497
+
+        Verified Resource Set: AS64496
+
+       BGPsec Certificate 2 is invalid because not all of its resources
+       are contained in the Verified Resource Set.
+
+       Note that this problem can be mitigated by issuing separate
+       certificates for each AS number.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.%20%20Example%203%20--%20An%20RPKI%20Tree%20Using%20a%20Mix%20of%20Old%20and%20New%20OIDs"></a><a class="selflink" href="#section-5.3" id="section-5.3">5.3</a>.  Example 3 -- An RPKI Tree Using a Mix of Old and New OIDs</span>
+
+   In the following example, new OIDs are used only for CA certificates
+   where the issuing CA anticipates that an overclaim could occur and
+   has a desire to limit the impact of this to just the overclaimed
+   resources in question:
+
+   Certificate 1 (trust anchor):
+    Issuer: TA,
+    Subject: TA,
+    OIDs: OLD,
+    Resources: 0/0, ::0, AS0-4294967295 (all resources)
+
+     Verified Resource Set: 0/0, ::0, AS0-4294967295 (all resources)
+     Warnings: none
+
+     Note that a trust anchor certificate cannot be found to
+     overclaim.  So, using the new OIDs here would not change
+     anything with regards to the validity of this certificate.
+
+   Certificate 2:
+    Issuer: TA,
+    Subject: CA1,
+    OIDs: OLD,
+    Resources: 192.0.2.0/24, 2001:db8::/32, AS64496
+
+     Verified Resource Set: 192.0.2.0/24,
+                            2001:db8::/32, AS64496
+     Warnings: none
+
+     Note that since the TA certificate claims all resources, it
+     is impossible to issue a certificate below it that could be
+     found to be overclaiming.  Therefore, there is no benefit
+     in using the new OIDs for Certificate 2.
+
+   Certificate 3:
+    Issuer: CA1,
+    Subject: CA2,
+    OIDs: NEW,
+    Resources: 192.0.2.0/24, 198.51.100.0/24, AS64496
+
+     Verified Resource Set: 192.0.2.0/24, AS64496
+     Warnings: overclaim for 198.51.100.0/24
+
+     Note that CA1 anticipated that it might invalid Certificate 3
+     issued to CA2, if its own resources on Certificate 2 were
+     modified and old OIDs were used on Certificate 3.
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 23]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-24"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   ROA 1 (valid):
+    Embedded Certificate 4 (EE certificate):
+     Issuer: CA2,
+     Subject: R1,
+     OIDs: OLD,
+     Resources: 192.0.2.0/24
+      Prefix 192.0.2.0/24, Max Length 24, ASN 64496
+
+      Verified Resource Set: 192.0.2.0/24
+      Warnings: none
+
+     ROA1 is considered valid because the prefix matches the Verified
+     Resource Set on the embedded EE certificate.
+
+   ROA 2 (invalid):
+    Embedded Certificate 5 (EE certificate invalid):
+     Issuer: CA2,
+     Subject: R2,
+     OIDs: OLD,
+     Resources: 198.51.100.0/24
+       Prefix 198.51.100.0/24, Max Length 24, ASN 64496
+
+       Verified Resource Set: none (empty set)
+
+     ROA2 is considered invalid because resources on its EE
+     certificate contains 198.51.100.0/24, which is not contained
+     in its Verified Resource Set.
+
+     Note that if new OIDs were used here (as in example 2), ROA 2
+     would be considered invalid because the prefix is not
+     contained in the Verified Resource Set.
+
+     So, if there is no difference in the validity outcome, one could
+     argue that using old OIDs here is clearest, because any
+     overclaim of ROA prefixes MUST result in it being considered
+     invalid (as described in <a href="#section-4.2.5">Section 4.2.5</a>).
+
+   BGPsec Certificate 1 (valid):
+    Issuer: CA2,
+    Subject: ROUTER-64496,
+    OIDs: OLD,
+    Resources: AS64496
+
+     Verified Resource Set: AS64496
+     Warnings: none
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 24]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-25"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   BGPsec Certificate 2 (invalid):
+    Issuer: CA2,
+    Subject: ALL-ROUTERS,
+    OIDs: OLD,
+    Resources: AS64496-AS64497
+
+      Verified Resource Set: AS64496
+
+     BGPsec Certificate 2 is considered invalid because resources
+     contains AS64497, which is not contained in its Verified Resource
+     Set.
+
+     Note that if new OIDs were used here (as in example 2), BGPsec
+     Certificate 2 would be considered invalid because the prefix is not
+     contained in the Verified Resource Set.
+
+     So, if there is no difference in the validity outcome, one could
+     argue that using old OIDs here is the clearest, because any
+     overclaim on this certificate MUST result in it being considered
+     invalid (as described in <a href="#section-4.2.6">Section 4.2.6</a>).
+
+     Also note that, as in example 2, this problem can be mitigated by
+     issuing separate certificates for each AS number.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Deployment%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Deployment Considerations</span>
+
+   This document defines an alternative RPKI validation algorithm, but
+   it does not dictate how this algorithm will be deployed.  This should
+   be discussed as a separate effort.  That said, the following
+   observations may help this discussion.
+
+   Because this document introduces new OIDs and an alternative to the
+   profile for X.509 PKIX Resource Certificates described in [<a href="./rfc6487" title='"A Profile for X.509 PKIX Resource Certificates"'>RFC6487</a>],
+   the use of such certificates in the global RPKI will lead to the
+   rejection of such certificates by Relying Party tools that do not
+   (yet) implement the alternative profile described in this document.
+
+   For this reason, it is important that such tools are updated before
+   Certification Authorities start to use this specification.
+
+   However, because the OIDs are defined in each RPKI certificate, there
+   is no strict requirement for all Certification Authorities, or even
+   for all the certificates they issue, to migrate to the new OIDs at
+   the same time.  The example in <a href="#section-5.3">Section 5.3</a> illustrates a possible
+   deployment where the new OIDs are used only in CA certificates where
+   an accidental overclaim may occur.
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 25]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-26"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Security Considerations</span>
+
+   The authors believe that the revised validation algorithm introduces
+   no new security vulnerabilities into the RPKI, because it cannot lead
+   to any ROA and/or router certificates to be accepted if they contain
+   resources that are not held by the issuer.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  IANA Considerations</span>
+
+   IANA has added the following to the "SMI Security for PKIX
+   Certificate Policies" registry:
+
+         Decimal  Description                       References
+
+           3     id-cp-ipAddr-asNumber-v2           <a href="#section-4.2.1">Section 4.2.1</a>
+
+   IANA has added the following to the "SMI Security for PKIX
+   Certificate Extension" registry:
+
+         Decimal  Description                       References
+
+           28     id-pe-ipAddrBlocks-v2             <a href="#section-4.2.2.1">Section 4.2.2.1</a>
+           29     id-pe-autonomousSysIds-v2         <a href="#section-4.2.2.3">Section 4.2.2.3</a>
+
+   IANA has added the following to the "SMI Security for PKIX Module
+   Identifier" registry:
+
+         Decimal  Description                       References
+
+           90   id-mod-ip-addr-and-as-ident-v2      <a href="#section-4.2.2.7">Section 4.2.2.7</a>
+           91   id-mod-ip-addr-and-as-ident-2v2     <a href="#section-4.2.3">Section 4.2.3</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 26]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-27"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20References"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Normative%20References"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3779">RFC3779</a>]  Lynn, C., Kent, S., and K. Seo, "X.509 Extensions for IP
+              Addresses and AS Identifiers", <a href="./rfc3779">RFC 3779</a>,
+              DOI 10.17487/RFC3779, June 2004,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3779">https://www.rfc-editor.org/info/rfc3779</a>&gt;.
+
+   [<a id="ref-RFC5280">RFC5280</a>]  Cooper, D., Santesson, S., Farrell, S., Boeyen, S.,
+              Housley, R., and W. Polk, "Internet X.509 Public Key
+              Infrastructure Certificate and Certificate Revocation List
+              (CRL) Profile", <a href="./rfc5280">RFC 5280</a>, DOI 10.17487/RFC5280, May 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5280">https://www.rfc-editor.org/info/rfc5280</a>&gt;.
+
+   [<a id="ref-RFC6482">RFC6482</a>]  Lepinski, M., Kent, S., and D. Kong, "A Profile for Route
+              Origin Authorizations (ROAs)", <a href="./rfc6482">RFC 6482</a>,
+              DOI 10.17487/RFC6482, February 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6482">https://www.rfc-editor.org/info/rfc6482</a>&gt;.
+
+   [<a id="ref-RFC6484">RFC6484</a>]  Kent, S., Kong, D., Seo, K., and R. Watro, "Certificate
+              Policy (CP) for the Resource Public Key Infrastructure
+              (RPKI)", <a href="https://www.rfc-editor.org/bcp/bcp173">BCP 173</a>, <a href="./rfc6484">RFC 6484</a>, DOI 10.17487/RFC6484, February
+              2012, &lt;<a href="https://www.rfc-editor.org/info/rfc6484">https://www.rfc-editor.org/info/rfc6484</a>&gt;.
+
+   [<a id="ref-RFC6487">RFC6487</a>]  Huston, G., Michaelson, G., and R. Loomans, "A Profile for
+              X.509 PKIX Resource Certificates", <a href="./rfc6487">RFC 6487</a>,
+              DOI 10.17487/RFC6487, February 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6487">https://www.rfc-editor.org/info/rfc6487</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+   [<a id="ref-RFC8209">RFC8209</a>]  Reynolds, M., Turner, S., and S. Kent, "A Profile for
+              BGPsec Router Certificates, Certificate Revocation Lists,
+              and Certification Requests", <a href="./rfc8209">RFC 8209</a>,
+              DOI 10.17487/RFC8209, September 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8209">https://www.rfc-editor.org/info/rfc8209</a>&gt;.
+
+
+
+
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 27]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-28"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20Informative%20References"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC6268">RFC6268</a>]  Schaad, J. and S. Turner, "Additional New ASN.1 Modules
+              for the Cryptographic Message Syntax (CMS) and the Public
+              Key Infrastructure Using X.509 (PKIX)", <a href="./rfc6268">RFC 6268</a>,
+              DOI 10.17487/RFC6268, July 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6268">https://www.rfc-editor.org/info/rfc6268</a>&gt;.
+
+Acknowledgements
+
+   The authors would like to thank Stephen Kent for reviewing and
+   contributing to this document.  We would like to thank Rob Austein
+   for suggesting that separate OIDs should be used to make the behavior
+   of Relying Party tools deterministic, and we would like to thank Russ
+   Housley, Sean Turner, and Tom Petch for their contributions on OID
+   and ASN.1 updates.  Finally, we would like to thank Tom Harrison for
+   a general review of this document.
+
+Authors' Addresses
+
+   Geoff Huston
+   Asia Pacific Network Information Centre
+   6 Cordelia St
+   South Brisbane, QLD  4101
+   Australia
+
+   Phone: +61 7 3858 3100
+   Email: gih@apnic.net
+
+
+   George Michaelson
+   Asia Pacific Network Information Centre
+   6 Cordelia St
+   South Brisbane, QLD  4101
+   Australia
+
+   Phone: +61 7 3858 3100
+   Email: ggm@apnic.net
+
+
+   Carlos M. Martinez
+   Latin American and Caribbean Internet Address Registry
+   Rambla Mexico 6125
+   Montevideo  11400
+   Uruguay
+
+   Phone: +598 2604 2222
+   Email: carlos@lacnic.net
+
+
+
+<span class="grey">Huston, et al.               Standards Track                   [Page 28]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-29"></span>
+<span class="grey"><a href="./rfc8360">RFC 8360</a>                     RPKI Validation                  April 2018</span>
+
+
+   Tim Bruijnzeels
+   RIPE Network Coordination Centre
+   Singel 258
+   Amsterdam  1016 AB
+   The Netherlands
+
+   Email: tim@ripe.net
+
+
+   Andrew Lee Newton
+   American Registry for Internet Numbers
+   3635 Concorde Parkway
+   Chantilly, VA  20151
+   United States of America
+
+   Email: andy@arin.net
+
+
+   Daniel Shaw
+   African Network Information Centre (AFRINIC)
+   11th Floor, Standard Chartered Tower
+   Cybercity, Ebene
+   Mauritius
+
+   Phone: +230 403 51 00
+   Email: daniel@afrinic.net
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Huston, et al.               Standards Track                   [Page 29]
+</pre>
+</body></html>

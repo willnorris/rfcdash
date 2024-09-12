@@ -1,0 +1,446 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                       N. Williams
+Request for Comments: 7464                                  Cryptonector
+Category: Standards Track                                  February 2015
+ISSN: 2070-1721
+
+
+            <span class="h1">JavaScript Object Notation (JSON) Text Sequences</span>
+
+Abstract
+
+   This document describes the JavaScript Object Notation (JSON) text
+   sequence format and associated media type "application/json-seq".  A
+   JSON text sequence consists of any number of JSON texts, all encoded
+   in UTF-8, each prefixed by an ASCII Record Separator (0x1E), and each
+   ending with an ASCII Line Feed character (0x0A).
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc7464">http://www.rfc-editor.org/info/rfc7464</a>.
+
+Copyright Notice
+
+   Copyright (c) 2015 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction and Motivation .....................................<a href="#page-2">2</a>
+      <a href="#section-1.1">1.1</a>. Conventions Used in This Document ..........................<a href="#page-2">2</a>
+   <a href="#section-2">2</a>. JSON Text Sequence Format .......................................<a href="#page-3">3</a>
+      <a href="#section-2.1">2.1</a>. JSON Text Sequence Parsing .................................<a href="#page-3">3</a>
+      <a href="#section-2.2">2.2</a>. JSON Text Sequence Encoding ................................<a href="#page-4">4</a>
+      <a href="#section-2.3">2.3</a>. Incomplete/Invalid JSON Texts Need Not Be Fatal ............<a href="#page-4">4</a>
+      <a href="#section-2.4">2.4</a>. Top-Level Values: numbers, true, false, and null ...........<a href="#page-5">5</a>
+   <a href="#section-3">3</a>. Security Considerations .........................................<a href="#page-6">6</a>
+   <a href="#section-4">4</a>. IANA Considerations .............................................<a href="#page-6">6</a>
+   <a href="#section-5">5</a>. Normative References ............................................<a href="#page-7">7</a>
+   Acknowledgements ...................................................<a href="#page-8">8</a>
+   Author's Address ...................................................<a href="#page-8">8</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction%20and%20Motivation"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction and Motivation</span>
+
+   The JavaScript Object Notation (JSON) [<a href="./rfc7159" title='"The JavaScript Object Notation (JSON) Data Interchange Format"'>RFC7159</a>] is a very handy
+   serialization format.  However, when serializing a large sequence of
+   values as an array, or a possibly indeterminate-length or never-
+   ending sequence of values, JSON becomes difficult to work with.
+
+   Consider a sequence of one million values, each possibly one kilobyte
+   when encoded -- roughly one gigabyte.  It is often desirable to
+   process such a dataset in an incremental manner without having to
+   first read all of it before beginning to produce results.
+   Traditionally, the way to do this with JSON is to use a "streaming"
+   parser, but these are not widely available, widely used, or easy to
+   use.
+
+   This document describes the concept and format of "JSON text
+   sequences", which are specifically not JSON texts themselves but are
+   composed of (possible) JSON texts.  JSON text sequences can be parsed
+   (and produced) incrementally without having to have a streaming
+   parser (nor streaming encoder).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Conventions%20Used%20in%20This%20Document"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Conventions Used in This Document</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+
+
+
+
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20JSON%20Text%20Sequence%20Format"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  JSON Text Sequence Format</span>
+
+   Two different sets of ABNF rules are provided for the definition of
+   JSON text sequences: one for parsers and one for encoders.  Having
+   two different sets of rules permits recovery by parsers from
+   sequences where some of the elements are truncated for whatever
+   reason.  The syntax for parsers is specified in terms of octet
+   strings that are then interpreted as JSON texts, if possible.  The
+   syntax for encoders, on the other hand, assumes that sequence
+   elements are not truncated.
+
+   JSON text sequences MUST use UTF-8 encoding; other encodings of JSON
+   (i.e., UTF-16 and UTF-32) MUST NOT be used.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20JSON%20Text%20Sequence%20Parsing"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  JSON Text Sequence Parsing</span>
+
+   The ABNF [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>] for the JSON text sequence parser is as given in
+   Figure 1.
+
+      input-JSON-sequence = *(1*RS possible-JSON)
+      RS = %x1E; "record separator" (RS), see <a href="./rfc20">RFC 20</a>
+               ; Also known as: Unicode Character INFORMATION SEPARATOR
+               ;                TWO (U+001E)
+      possible-JSON = 1*(not-RS); attempt to parse as UTF-8-encoded
+                                ; JSON text (see <a href="./rfc7159">RFC 7159</a>)
+      not-RS = %x00-1d / %x1f-ff; any octets other than RS
+
+                     Figure 1: JSON Text Sequence ABNF
+
+   In prose: a series of octet strings, each containing any octet other
+   than a record separator (RS) (0x1E) [<a href="./rfc20" title='"ASCII format for network interchange"'>RFC20</a>].  All octet strings are
+   preceded by an RS byte.  Each octet string in the sequence is to be
+   parsed as a JSON text in the UTF-8 encoding [<a href="./rfc3629" title='"UTF-8, a transformation format of ISO 10646"'>RFC3629</a>].
+
+   If parsing of such an octet string as a UTF-8-encoded JSON text
+   fails, the parser SHOULD nonetheless continue parsing the remainder
+   of the sequence.  The parser can report such failures to
+   applications, which might then choose to terminate parsing of a
+   sequence.  Multiple consecutive RS octets do not denote empty
+   sequence elements between them and can be ignored.
+
+   This document does not define a mechanism for reliably identifying
+   text sequence by position (for example, when sending individual
+   elements of an array as unique text sequences).  For applications
+   where truncation is a possibility, this means that intended sequence
+   elements can be truncated and can even be missing entirely;
+   therefore, a reference to an nth element would be unreliable.
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+   There is no end of sequence indicator.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20JSON%20Text%20Sequence%20Encoding"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  JSON Text Sequence Encoding</span>
+
+   The ABNF for the JSON text sequence encoder is given in Figure 2.
+
+      JSON-sequence = *(RS JSON-text LF)
+      RS = %x1E; see <a href="./rfc20">RFC 20</a>
+               ; Also known as: Unicode Character INFORMATION SEPARATOR
+               ;                TWO (U+001E)
+      LF = %x0A; "line feed" (LF), see <a href="./rfc20">RFC 20</a>
+      JSON-text = &lt;given by <a href="./rfc7159">RFC 7159</a>, using UTF-8 encoding&gt;
+
+                     Figure 2: JSON Text Sequence ABNF
+
+   In prose: any number of JSON texts, each encoded in UTF-8 [<a href="./rfc3629" title='"UTF-8, a transformation format of ISO 10646"'>RFC3629</a>],
+   each preceded by one ASCII RS character, and each followed by a line
+   feed (LF).  Since RS is an ASCII control character, it may only
+   appear in JSON strings in escaped form (see [<a href="./rfc7159" title='"The JavaScript Object Notation (JSON) Data Interchange Format"'>RFC7159</a>]), and since RS
+   may not appear in JSON texts in any other form, RS unambiguously
+   delimits the start of any element in the sequence.  RS is sufficient
+   to unambiguously delimit all top-level JSON value types other than
+   numbers.  Following each JSON text in the sequence with an LF allows
+   detection of truncated JSON texts consisting of a number at the top-
+   level; see <a href="#section-2.4">Section 2.4</a>.
+
+   JSON text sequence encoders are expected to ensure that the sequence
+   elements are properly formed.  When the JSON text sequence encoder
+   does the JSON text encoding, the sequence elements will naturally be
+   properly formed.  When the JSON text sequence encoder accepts
+   already-encoded JSON texts, the JSON text sequence encoder ought to
+   parse them before adding them to a sequence.
+
+   Note that on some systems it"s possible to input RS by typing
+   "ctrl-^"; on some system or applications, the correct sequence may be
+   "ctrl-v ctrl-^".  This is helpful when constructing a sequence
+   manually with a text editor.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Incomplete%2FInvalid%20JSON%20Texts%20Need%20Not%20Be%20Fatal"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Incomplete/Invalid JSON Texts Need Not Be Fatal</span>
+
+   Per <a href="#section-2.1">Section 2.1</a>, JSON text sequence parsers should not abort when an
+   octet string contains a malformed JSON text.  Instead, the JSON text
+   sequence parser should skip to the next RS.  Such a situation may
+   arise in contexts where, for example, data that is appended to log
+   files to log files is truncated by the filesystem (e.g., due to a
+   crash or administrative process termination).
+
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+   Incremental JSON text parsers may be used, though of course failure
+   to parse a given text may result after first producing some
+   incremental parse results.
+
+   Sequence parsers should have an option to warn about truncated JSON
+   texts.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20Top-Level%20Values%3A%20numbers%2C%20true%2C%20false%2C%20and%20null"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  Top-Level Values: numbers, true, false, and null</span>
+
+   While objects, arrays, and strings are self-delimited in JSON texts,
+   numbers and the values 'true', 'false', and 'null' are not.  Only
+   whitespace can delimit the latter four kinds of values.
+
+   JSON text sequences use 0x0A as a "canary" octet to detect
+   truncation.
+
+   Parsers MUST check that any JSON texts that are a top-level number,
+   or that might be 'true', 'false', or 'null', include JSON whitespace
+   (at least one byte matching the "ws" ABNF rule from [<a href="./rfc7159" title='"The JavaScript Object Notation (JSON) Data Interchange Format"'>RFC7159</a>]) after
+   that value; otherwise, the JSON-text may have been truncated.  Note
+   that the LF following each JSON text matches the "ws" ABNF rule.
+
+   Parsers MUST drop JSON-text sequence elements consisting of non-self-
+   delimited top-level values that may have been truncated (that are not
+   delimited by whitespace).  Parsers can report such texts as warnings
+   (including, optionally, the parsed text and/or the original octet
+   string).
+
+   For example, '&lt;RS&gt;123&lt;RS&gt;' might have been intended to carry the top-
+   level number 1234, but it got truncated.  Similarly, '&lt;RS&gt;true&lt;RS&gt;'
+   might have been intended to carry the invalid text 'trueish'.
+   '&lt;RS&gt;truefalse&lt;RS&gt;' is not two top-level values, 'true', and 'false';
+   it is simply not a valid JSON text.
+
+   Implementations may produce a value when parsing '&lt;RS&gt;"foo"&lt;RS&gt;'
+   because their JSON text parser might be able to consume bytes
+   incrementally; since the JSON text in this case is a self-delimiting
+   top-level value, the parser can produce the result without consuming
+   an additional byte.  Such implementations ought to skip to the next
+   RS byte, possibly reporting any intervening non-whitespace bytes.
+
+   Detection of truncation of non-self-delimited sequence elements
+   (numbers, true, false, and null) is only possible when the sequence
+   encoder produces or receives complete JSON texts.  Implementations
+   where the sequence encoder is not also in charge of encoding the
+   individual JSON texts should ensure that those JSON texts are
+   complete.
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Security%20Considerations"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Security Considerations</span>
+
+   All the security considerations of JSON [<a href="./rfc7159" title='"The JavaScript Object Notation (JSON) Data Interchange Format"'>RFC7159</a>] apply.  This format
+   provides no cryptographic integrity protection of any kind.
+
+   As usual, parsers must operate on input that is assumed to be
+   untrusted.  This means that parsers must fail gracefully in the face
+   of malicious inputs.
+
+   Note that incremental JSON text parsers can produce partial results
+   and later indicate failure to parse the remainder of a text.  A
+   sequence parser that uses an incremental JSON text parser might treat
+   a sequence like '&lt;RS&gt;"foo"&lt;LF&gt;456&lt;LF&gt;&lt;RS&gt;' as a sequence of one
+   element ("foo"), while a sequence parser that uses a non-incremental
+   JSON text parser might treat the same sequence as being empty.  This
+   effect, and texts that fail to parse and are ignored, can be used to
+   smuggle data past sequence parsers that don't warn about JSON text
+   failures.
+
+   Repeated parsing and re-encoding of a JSON text sequence can result
+   in the addition (or stripping) of trailing LF bytes from (to)
+   individual sequence element JSON texts.  This can break signature
+   validation.  JSON has no canonical form for JSON texts, therefore
+   neither does the JSON text sequence format.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  IANA Considerations</span>
+
+   The MIME media type for JSON text sequences is application/json-seq.
+
+   Type name: application
+
+   Subtype name: json-seq
+
+   Required parameters: N/A
+
+   Optional parameters: N/A
+
+   Encoding considerations: binary
+
+   Security considerations: See <a href="./rfc7464#section-3">RFC 7464, Section 3</a>.
+
+   Interoperability considerations: Described herein.
+
+   Published specification: <a href="./rfc7464">RFC 7464</a>.
+
+
+
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+   Applications that use this media type:
+
+      &lt;<a href="https://stedolan.github.io/jq">https://stedolan.github.io/jq</a>&gt;
+      &lt;<a href="https://github.com/mapbox/cligj">https://github.com/mapbox/cligj</a>&gt;
+      &lt;<a href="https://github.com/hildjj/json-text-sequence">https://github.com/hildjj/json-text-sequence</a>&gt;
+
+   Fragment identifier considerations: N/A
+
+   Additional information:
+
+   o  Deprecated alias names for this type: N/A
+
+   o  Magic number(s): N/A
+
+   o  File extension(s): N/A
+
+   o  Macintosh file type code(s): N/A
+
+   Person &amp; email address to contact for further information:
+
+      json@ietf.org
+
+   Intended usage: COMMON
+
+   Author: Nicolas Williams (nico@cryptonector.com)
+
+   Change controller: IETF
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Normative%20References"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Normative References</span>
+
+   [<a id="ref-RFC20">RFC20</a>]    Cerf, V., "ASCII format for network interchange", STD 80,
+              <a href="./rfc20">RFC 20</a>, October 1969,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc20">http://www.rfc-editor.org/info/rfc20</a>&gt;.
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc2119">http://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3629">RFC3629</a>]  Yergeau, F., "UTF-8, a transformation format of ISO
+              10646", STD 63, <a href="./rfc3629">RFC 3629</a>, November 2003,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc3629">http://www.rfc-editor.org/info/rfc3629</a>&gt;.
+
+   [<a id="ref-RFC5234">RFC5234</a>]  Crocker, D., Ed. and P. Overell, "Augmented BNF for Syntax
+              Specifications: ABNF", STD 68, <a href="./rfc5234">RFC 5234</a>, January 2008,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc5234">http://www.rfc-editor.org/info/rfc5234</a>&gt;.
+
+
+
+
+
+
+<span class="grey">Williams                     Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc7464">RFC 7464</a>                   JSON Text Sequences             February 2015</span>
+
+
+   [<a id="ref-RFC7159">RFC7159</a>]  Bray, T., Ed., "The JavaScript Object Notation (JSON) Data
+              Interchange Format", <a href="./rfc7159">RFC 7159</a>, March 2014,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc7159">http://www.rfc-editor.org/info/rfc7159</a>&gt;.
+
+Acknowledgements
+
+   Phillip Hallam-Baker proposed the use of JSON text sequences for
+   logfiles and pointed out the need for resynchronization.  Stephen
+   Dolan created &lt;<a href="https://github.com/stedolan/jq">https://github.com/stedolan/jq</a>&gt;, which uses something
+   like JSON text sequences (with LF as the separator between texts on
+   output, and requiring only such whitespace as needed to disambiguate
+   on input).  Carsten Bormann suggested the use of ASCII RS, and Joe
+   Hildebrand suggested the use of LF in addition to RS for
+   disambiguating top-level number values.  Paul Hoffman shepherded the
+   document.  Many others contributed reviews and comments on the JSON
+   Working Group mailing list.
+
+Author's Address
+
+   Nicolas Williams
+   Cryptonector, LLC
+
+   EMail: nico@cryptonector.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Williams                     Standards Track                    [Page 8]
+</pre>
+</body></html>

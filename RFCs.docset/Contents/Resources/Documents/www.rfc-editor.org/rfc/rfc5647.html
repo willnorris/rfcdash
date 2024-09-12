@@ -1,0 +1,558 @@
+<html><head></head><body><pre>Network Working Group                                            K. Igoe
+Request for Comments: 5647                                    J. Solinas
+Category: Informational                         National Security Agency
+                                                             August 2009
+
+
+                      <span class="h1">AES Galois Counter Mode for</span>
+               <span class="h1">the Secure Shell Transport Layer Protocol</span>
+
+Abstract
+
+   Secure shell (SSH) is a secure remote-login protocol.  SSH provides
+   for algorithms that provide authentication, key agreement,
+   confidentiality, and data-integrity services.  The purpose of this
+   document is to show how the AES Galois Counter Mode can be used to
+   provide both confidentiality and data integrity to the SSH Transport
+   Layer Protocol.
+
+Status of This Memo
+
+   This memo provides information for the Internet community.  It does
+   not specify an Internet standard of any kind.  Distribution of this
+   memo is unlimited.
+
+Copyright Notice
+
+   Copyright (c) 2009 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents in effect on the date of
+   publication of this document (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>).
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-2">2</a>
+   <a href="#section-2">2</a>. Requirements Terminology ........................................<a href="#page-2">2</a>
+   <a href="#section-3">3</a>. Applicability Statement .........................................<a href="#page-3">3</a>
+   <a href="#section-4">4</a>. Properties of Galois Counter Mode ...............................<a href="#page-3">3</a>
+      <a href="#section-4.1">4.1</a>. AES GCM Authenticated Encryption ...........................<a href="#page-3">3</a>
+      <a href="#section-4.2">4.2</a>. AES GCM Authenticated Decryption ...........................<a href="#page-3">3</a>
+   <a href="#section-5">5</a>. Review of Secure Shell ..........................................<a href="#page-4">4</a>
+      <a href="#section-5.1">5.1</a>. Key Exchange ...............................................<a href="#page-4">4</a>
+      <a href="#section-5.2">5.2</a>. Secure Shell Binary Packets ................................<a href="#page-5">5</a>
+   <a href="#section-6">6</a>. AES GCM Algorithms for Secure Shell .............................<a href="#page-6">6</a>
+      <a href="#section-6.1">6.1</a>. AEAD_AES_128_GCM ...........................................<a href="#page-6">6</a>
+      <a href="#section-6.2">6.2</a>. AEAD_AES_256_GCM ...........................................<a href="#page-6">6</a>
+      <a href="#section-6.3">6.3</a>. Size of the Authentication Tag .............................<a href="#page-6">6</a>
+   <a href="#section-7">7</a>. Processing Binary Packets in AES-GCM Secure Shell ...............<a href="#page-7">7</a>
+      <a href="#section-7.1">7.1</a>. IV and Counter Management ..................................<a href="#page-7">7</a>
+      <a href="#section-7.2">7.2</a>. Formation of the Binary Packet .............................<a href="#page-7">7</a>
+      <a href="#section-7.3">7.3</a>. Treatment of the Packet Length Field .......................<a href="#page-8">8</a>
+   <a href="#section-8">8</a>. Security Considerations .........................................<a href="#page-8">8</a>
+      <a href="#section-8.1">8.1</a>. Use of the Packet Sequence Number in the AT ................<a href="#page-8">8</a>
+      <a href="#section-8.2">8.2</a>. Non-Encryption of Packet Length ............................<a href="#page-8">8</a>
+   <a href="#section-9">9</a>. IANA Considerations .............................................<a href="#page-9">9</a>
+   <a href="#section-10">10</a>. References ....................................................<a href="#page-10">10</a>
+      <a href="#section-10.1">10.1</a>. Normative References .....................................<a href="#page-10">10</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   Galois Counter Mode (GCM) is a block-cipher mode of operation that
+   provides both confidentiality and data-integrity services.  GCM uses
+   counter mode to encrypt the data, an operation that can be
+   efficiently pipelined.  Further, GCM authentication uses operations
+   that are particularly well suited to efficient implementation in
+   hardware, making it especially appealing for high-speed
+   implementations or for implementations in an efficient and compact
+   circuit.  The purpose of this document is to show how GCM with either
+   AES-128 or AES-256 can be integrated into the Secure Shell Transport
+   Layer Protocol [<a href="./rfc4253" title='"The Secure Shell (SSH) Transport Layer Protocol"'>RFC4253</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Requirements%20Terminology"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Requirements Terminology</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Applicability%20Statement"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Applicability Statement</span>
+
+   Using AES-GCM to provide both confidentiality and data integrity is
+   generally more efficient than using two separate algorithms to
+   provide these security services.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Properties%20of%20Galois%20Counter%20Mode"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Properties of Galois Counter Mode</span>
+
+   Galois Counter Mode (GCM) is a mode of operation for block ciphers
+   that provides both confidentiality and data integrity.  National
+   Institute of Standards and Technology (NIST) Special Publication SP
+   800 38D [<a href="#ref-GCM" title='"Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC"'>GCM</a>] gives an excellent explanation of Galois Counter Mode.
+   In this document, we shall focus on AES GCM, the use of the Advanced
+   Encryption Algorithm (AES) in Galois Counter Mode.  AES-GCM is an
+   example of an "algorithm for authenticated encryption with associated
+   data" (AEAD algorithm) as described in [<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20AES%20GCM%20Authenticated%20Encryption"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  AES GCM Authenticated Encryption</span>
+
+   An invocation of AES GCM to perform an authenticated encryption has
+   the following inputs and outputs:
+
+     GCM Authenticated Encryption
+
+         Inputs:
+            octet_string PT ;   // Plain Text, to be both
+                                //    authenticated and encrypted
+            octet_string AAD;   // Additional Authenticated Data,
+                                //    authenticated but not encrypted
+            octet_string IV;    // Initialization Vector
+            octet_string BK;    // Block Cipher Key
+
+         Outputs:
+            octet_string  CT;   // Cipher Text
+            octet_string  AT;   // Authentication Tag
+
+   Note: in [<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>], the IV is called the nonce.
+
+   For a given block-cipher key BK, it is critical that no IV be used
+   more than once.  <a href="#section-7.1">Section 7.1</a> addresses how this goal is to be
+   achieved in secure shell.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20AES%20GCM%20Authenticated%20Decryption"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  AES GCM Authenticated Decryption</span>
+
+   An invocation of AES GCM to perform an authenticated decryption has
+   the following inputs and outputs:
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+     GCM Authenticated Decryption
+
+         Inputs:
+            octet_string CT ;   // Cipher text, to be both
+                                //    authenticated and decrypted
+            octet_string AAD;   // Additional Authenticated Data,
+                                //    authenticated only
+            octet_string AT;    // Authentication Tag
+            octet_string IV;    // Initialization Vector
+            octet_string BK;    // Block Cipher Key
+
+         Output:
+            Failure_Indicator;  // Returned if the authentication tag
+                                //   is invalid
+            octet_string  PT;   // Plain Text, returned if and only if
+                                //    the authentication tag is valid
+
+   AES-GCM is prohibited from returning any portion of the plaintext
+   until the authentication tag has been validated.  Though this feature
+   greatly simplifies the security analysis of any system using AES-GCM,
+   this creates an incompatibility with the requirements of secure
+   shell, as we shall see in <a href="#section-7.3">Section 7.3</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Review%20of%20Secure%20Shell"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Review of Secure Shell</span>
+
+   The goal of secure shell is to establish two secure tunnels between a
+   client and a server, one tunnel carrying client-to-server
+   communications and the other carrying server-to-client
+   communications.  Each tunnel is encrypted, and a message
+   authentication code is used to ensure data integrity.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Key%20Exchange"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Key Exchange</span>
+
+   These tunnels are initialized using the secure shell key exchange
+   protocol as described in <a href="./rfc4253#section-7">Section 7 of [RFC4253]</a>.  This protocol
+   negotiates a mutually acceptable set of cryptographic algorithms and
+   produces a secret value K and an exchange hash H that are shared by
+   the client and server.  The initial value of H is saved for use as
+   the session_id.
+
+   If AES-GCM is selected as the encryption algorithm for a given
+   tunnel, AES-GCM MUST also be selected as the Message Authentication
+   Code (MAC) algorithm.  Conversely, if AES-GCM is selected as the MAC
+   algorithm, it MUST also be selected as the encryption algorithm.
+
+   As described in <a href="./rfc4253#section-7.2">Section 7.2 of [RFC4253]</a>, a hash-based key derivation
+   function (KDF) is applied to the shared secret value K to generate
+   the required symmetric keys.  Each tunnel gets a distinct set of
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+   symmetric keys.  The keys are generated as shown in Figure 1.  The
+   sizes of these keys varies depending upon which cryptographic
+   algorithms are being used.
+
+      Initial IV
+         Client-to-Server     HASH( K || H ||"A"|| session_id)
+         Server-to-Client     HASH( K || H ||"B"|| session_id)
+      Encryption Key
+         Client-to-Server     HASH( K || H ||"C"|| session_id)
+         Server-to-Client     HASH( K || H ||"D"|| session_id)
+      Integrity Key
+         Client-to-Server     HASH( K || H ||"E"|| session_id)
+         Server-to-Client     HASH( K || H ||"F"|| session_id)
+
+             Figure 1: Key Derivation in Secure Shell
+
+   As we shall see below, SSH AES-GCM requires a 12-octet Initial IV and
+   an encryption key of either 16 or 32 octets.  Because an AEAD
+   algorithm such as AES-GCM uses the encryption key to provide both
+   confidentiality and data integrity, the integrity key is not used
+   with AES-GCM.
+
+   Either the server or client may at any time request that the secure
+   shell session be rekeyed.  The shared secret value K, the exchange
+   hash H, and all the above symmetric keys will be updated.  Only the
+   session_id will remain unchanged.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Secure%20Shell%20Binary%20Packets"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Secure Shell Binary Packets</span>
+
+   Upon completion of the key exchange protocol, all further secure
+   shell traffic is parsed into a data structure known as a secure shell
+   binary packet as shown below in Figure 2 (see also <a href="./rfc4253#section-6">Section 6 of
+   [RFC4253]</a>).
+
+     uint32    packet_length;  // 0 &lt;= packet_length &lt; 2^32
+     byte      padding_length; // 4 &lt;= padding_length &lt; 256
+     byte[n1]  payload;        // n1 = packet_length-padding_length-1
+     byte[n2]  random_padding; // n2 = padding_length
+     byte[m]   mac;            // m  = mac_length
+
+         Figure 2: Structure of a Secure Shell Binary Packet
+
+   The authentication tag produced by AES-GCM authenticated encryption
+   will be placed in the MAC field at the end of the secure shell binary
+   packet.
+
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20AES%20GCM%20Algorithms%20for%20Secure%20Shell"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  AES GCM Algorithms for Secure Shell</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20AEAD_AES_128_GCM"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  AEAD_AES_128_GCM</span>
+
+   AEAD_AES_128_GCM is specified in <a href="./rfc5116#section-5.1">Section 5.1 of [RFC5116]</a>.  Due to
+   the format of secure shell binary packets, the buffer sizes needed to
+   implement AEAD_AES_128_GCM are smaller than those required in
+   [<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>].  Using the notation defined in [<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>], the input and
+   output lengths for AEAD_AES_128_GCM in secure shell are as follows:
+
+      PARAMETER   Meaning                          Value
+
+      K_LEN       AES key length                   16 octets
+      P_MAX       maximum plaintext length         2^32 - 32 octets
+      A_MAX       maximum additional               4 octets
+                  authenticated data length
+      N_MIN       minimum nonce (IV) length        12 octets
+      N_MAX       maximum nonce (IV) length        12 octets
+      C_MAX       maximum cipher length            2^32 octets
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20AEAD_AES_256_GCM"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  AEAD_AES_256_GCM</span>
+
+   AEAD_AES_256_GCM is specified in <a href="./rfc5116#section-5.2">Section 5.2 of [RFC5116]</a>.  Due to
+   the format of secure shell binary packets, the buffer sizes needed
+   to implement AEAD_AES_256_GCM are smaller than those required in
+   [<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>].  Using the notation defined in [<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>], the input and
+   output lengths for AEAD_AES_256_GCM in secure shell are as follows:
+
+      PARAMETER   Meaning                          Value
+
+      K_LEN       AES key length                   32 octets
+      P_MAX       maximum plaintext length         2^32 - 32 octets
+      A_MAX       maximum additional               4 octets
+                  authenticated data length
+      N_MIN       minimum nonce (IV) length        12 octets
+      N_MAX       maximum nonce (IV) length        12 octets
+      C_MAX       maximum cipher length            2^32 octets
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.3.%20%20Size%20of%20the%20Authentication%20Tag"></a><a class="selflink" href="#section-6.3" id="section-6.3">6.3</a>.  Size of the Authentication Tag</span>
+
+   Both AEAD_AES_128_GCM and AEAD_AES_256_GCM produce a 16-octet
+   Authentication Tag ([<a href="./rfc5116" title='"An Interface and Algorithms for Authenticated Encryption"'>RFC5116</a>] calls this a "Message Authentication
+   Code").  Some applications allow use of a truncated version of this
+   tag.  This is not allowed in AES-GCM secure shell.  All
+   implementations of AES-GCM secure shell MUST use the full 16-octet
+   Authentication Tag.
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Processing%20Binary%20Packets%20in%20AES-GCM%20Secure%20Shell"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Processing Binary Packets in AES-GCM Secure Shell</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20IV%20and%20Counter%20Management"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  IV and Counter Management</span>
+
+   With AES-GCM, the 12-octet IV is broken into two fields: a 4-octet
+   fixed field and an 8-octet invocation counter field.  The invocation
+   field is treated as a 64-bit integer and is incremented after each
+   invocation of AES-GCM to process a binary packet.
+
+         uint32  fixed;                  // 4 octets
+         uint64  invocation_counter;     // 8 octets
+
+           Figure 3: Structure of an SSH AES-GCM Nonce
+
+   AES-GCM produces a keystream in blocks of 16-octets that is used to
+   encrypt the plaintext.  This keystream is produced by encrypting the
+   following 16-octet data structure:
+
+         uint32  fixed;                  // 4 octets
+         uint64  invocation_counter;     // 8 octets
+         uint32  block_counter;          // 4 octets
+
+           Figure 4: Structure of an AES Input for SSH AES-GCM
+
+   The block_counter is initially set to one (1) and incremented as each
+   block of key is produced.
+
+   The reader is reminded that SSH requires that the data to be
+   encrypted MUST be padded out to a multiple of the block size
+   (16-octets for AES-GCM).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Formation%20of%20the%20Binary%20Packet"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Formation of the Binary Packet</span>
+
+   In AES-GCM secure shell, the inputs to the authenticated encryption
+   are:
+
+     PT (Plain Text)
+        byte      padding_length; // 4 &lt;= padding_length &lt; 256
+        byte[n1]  payload;        // n1 = packet_length-padding_length-1
+        byte[n2]  random_padding; // n2 = padding_length
+     AAD (Additional Authenticated Data)
+        uint32    packet_length;  // 0 &lt;= packet_length &lt; 2^32
+     IV (Initialization Vector)
+        As described in <a href="#section-7.1">section 7.1</a>.
+     BK (Block Cipher Key)
+        The appropriate Encryption Key formed during the Key Exchange.
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+   As required in [<a href="./rfc4253" title='"The Secure Shell (SSH) Transport Layer Protocol"'>RFC4253</a>], the random_padding MUST be at least 4
+   octets in length but no more than 255 octets.  The total length of
+   the PT MUST be a multiple of 16 octets (the block size of AES).  The
+   binary packet is the concatenation of the 4-octet packet_length, the
+   cipher text (CT), and the 16-octet authentication tag (AT).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.3.%20%20Treatment%20of%20the%20Packet%20Length%20Field"></a><a class="selflink" href="#section-7.3" id="section-7.3">7.3</a>.  Treatment of the Packet Length Field</span>
+
+   <a href="./rfc4253#section-6.3">Section 6.3 of [RFC4253]</a> requires that the packet length, padding
+   length, payload, and padding fields of each binary packet be
+   encrypted.  This presents a problem for SSH AES-GCM because:
+
+   1) The tag cannot be verified until we parse the binary packet.
+
+   2) The packet cannot be parsed until the packet_length has been
+      decrypted.
+
+   3) The packet_length cannot be decrypted until the tag has been
+      verified.
+
+   When using AES-GCM with secure shell, the packet_length field is to
+   be treated as additional authenticated data, not as plaintext.  This
+   violates the requirements of [<a href="./rfc4253" title='"The Secure Shell (SSH) Transport Layer Protocol"'>RFC4253</a>].  The repercussions of this
+   decision are discussed in the following Security Considerations
+   section.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Security%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Security Considerations</span>
+
+   The security considerations in [<a href="./rfc4251" title='"The Secure Shell (SSH) Protocol Architecture"'>RFC4251</a>] apply.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Use%20of%20the%20Packet%20Sequence%20Number%20in%20the%20AT"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Use of the Packet Sequence Number in the AT</span>
+
+   [<a id="ref-RFC4253">RFC4253</a>] requires that the formation of the AT involve the packet
+   sequence_number, a 32-bit value that counts the number of binary
+   packets that have been sent on a given SSH tunnel.  Since the
+   sequence_number is, up to an additive constant, just the low 32 bits
+   of the invocation_counter, the presence of the invocation_counter
+   field in the IV ensures that the sequence_number is indeed involved
+   in the formation of the integrity tag, though this involvement
+   differs slightly from the requirements in <a href="./rfc4253#section-6.4">Section 6.4 of [RFC4253]</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.%20%20Non-Encryption%20of%20Packet%20Length"></a><a class="selflink" href="#section-8.2" id="section-8.2">8.2</a>.  Non-Encryption of Packet Length</span>
+
+   As discussed in <a href="#section-7.3">Section 7.3</a>, there is an incompatibility between
+   GCM's requirement that no plaintext be returned until the
+   authentication tag has been verified, secure shell's requirement that
+   the packet length be encrypted, and the necessity of decrypting the
+   packet length field to locate the authentication tag.  This document
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+   addresses this dilemma by requiring that, in AES-GCM, the packet
+   length field will not be encrypted but will instead be processed as
+   additional authenticated data.
+
+   In theory, one could argue that encryption of the entire binary
+   packet means that the secure shell dataflow becomes a featureless
+   octet stream.  But in practice, the secure shell dataflow will come
+   in bursts, with the length of each burst strongly correlated to the
+   length of the underlying binary packets.  Encryption of the packet
+   length does little in and of itself to disguise the length of the
+   underlying binary packets.  Secure shell provides two other
+   mechanisms, random padding and SSH_MSG_IGNORE messages, that are far
+   more effective than encrypting the packet length in masking any
+   structure in the underlying plaintext stream that might be revealed
+   by the length of the binary packets.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  IANA Considerations</span>
+
+   IANA added the following two entries to the secure shell Encryption
+   Algorithm Names registry described in [<a href="./rfc4250" title='"The Secure Shell (SSH) Protocol Assigned Numbers"'>RFC4250</a>]:
+
+                   +--------------------+-------------+
+                   |                    |             |
+                   | Name               |  Reference  |
+                   +--------------------+-------------+
+                   | AEAD_AES_128_GCM   | <a href="#section-6.1">Section 6.1</a> |
+                   |                    |             |
+                   | AEAD_AES_256_GCM   | <a href="#section-6.2">Section 6.2</a> |
+                   +--------------------+-------------+
+
+   IANA added the following two entries to the secure shell MAC
+   Algorithm Names registry described in [<a href="./rfc4250" title='"The Secure Shell (SSH) Protocol Assigned Numbers"'>RFC4250</a>]:
+
+                   +--------------------+-------------+
+                   |                    |             |
+                   | Name               |  Reference  |
+                   +--------------------+-------------+
+                   | AEAD_AES_128_GCM   | <a href="#section-6.1">Section 6.1</a> |
+                   |                    |             |
+                   | AEAD_AES_256_GCM   | <a href="#section-6.2">Section 6.2</a> |
+                   +--------------------+-------------+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Igoe &amp; Solinas               Informational                      [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc5647">RFC 5647</a>                AES-GCM for Secure Shell             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20References"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.1.%20%20Normative%20References"></a><a class="selflink" href="#section-10.1" id="section-10.1">10.1</a>.  Normative References</span>
+
+   [<a id="ref-GCM">GCM</a>]      Dworkin, M, "Recommendation for Block Cipher Modes of
+              Operation: Galois/Counter Mode (GCM) and GMAC", NIST
+              Special Publication 800-30D, November 2007.
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC4250">RFC4250</a>]  Lehtinen, S. and C. Lonvick, Ed., "The Secure Shell (SSH)
+              Protocol Assigned Numbers", <a href="./rfc4250">RFC 4250</a>, January 2006.
+
+   [<a id="ref-RFC4251">RFC4251</a>]  Ylonen, T. and C. Lonvick, Ed., "The Secure Shell (SSH)
+              Protocol Architecture", <a href="./rfc4251">RFC 4251</a>, January 2006.
+
+   [<a id="ref-RFC4253">RFC4253</a>]  Ylonen, T. and C. Lonvick, Ed., "The Secure Shell (SSH)
+              Transport Layer Protocol", <a href="./rfc4253">RFC 4253</a>, January 2006.
+
+   [<a id="ref-RFC5116">RFC5116</a>]  McGrew, D., "An Interface and Algorithms for Authenticated
+              Encryption", <a href="./rfc5116">RFC 5116</a>, January 2008.
+
+Authors' Addresses
+
+   Kevin M. Igoe
+   NSA/CSS Commercial Solutions Center
+   National Security Agency
+   USA
+
+   EMail: kmigoe@nsa.gov
+
+
+   Jerome A. Solinas
+   National Information Assurance Research Laboratory
+   National Security Agency
+   USA
+
+   EMail: jasolin@orion.ncsc.mil
+
+
+
+
+
+
+
+
+
+
+
+
+Igoe &amp; Solinas               Informational                     [Page 10]
+</pre>
+</body></html>

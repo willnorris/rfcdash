@@ -1,0 +1,1006 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                       A. Melnikov
+Request for Comments: 6134                                 Isode Limited
+Category: Standards Track                                       B. Leiba
+ISSN: 2070-1721                                      Huawei Technologies
+                                                               July 2011
+
+
+                <span class="h1">Sieve Extension: Externally Stored Lists</span>
+
+Abstract
+
+   The Sieve email filtering language can be used to implement email
+   whitelisting, blacklisting, personal distribution lists, and other
+   sorts of list matching.  Currently, this requires that all members of
+   such lists be hard-coded in the script itself.  Whenever a member of
+   a list is added or deleted, the script needs to be updated and
+   possibly uploaded to a mail server.
+
+   This document defines a Sieve extension for accessing externally
+   stored lists -- lists whose members are stored externally to the
+   script, such as using the Lightweight Directory Access Protocol
+   (LDAP), the Application Configuration Access Protocol (ACAP), vCard
+   Extensions to WebDAV (CardDAV), or relational databases.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6134">http://www.rfc-editor.org/info/rfc6134</a>.
+
+Copyright Notice
+
+   Copyright (c) 2011 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-1.1">1.1</a>.  Conventions Used in This Document  . . . . . . . . . . . .  <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Extlists Extension . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-2.1">2.1</a>.  Capability Identifier  . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-2.2">2.2</a>.  :list Match Type for Supported Tests . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-2.3">2.3</a>.  :list Tagged Argument to the "redirect" Action . . . . . .  <a href="#page-5">5</a>
+     <a href="#section-2.4">2.4</a>.  Other Uses for External Lists  . . . . . . . . . . . . . .  <a href="#page-5">5</a>
+     <a href="#section-2.5">2.5</a>.  Syntax of an Externally Stored List Name . . . . . . . . .  <a href="#page-5">5</a>
+     <a href="#section-2.6">2.6</a>.  Definition of "addrbook" URN Parameter . . . . . . . . . .  <a href="#page-7">7</a>
+     <a href="#section-2.7">2.7</a>.  Test valid_ext_list  . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+     <a href="#section-2.8">2.8</a>.  Interaction with ManageSieve . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+     <a href="#section-2.9">2.9</a>.  Examples . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-10">10</a>
+       <a href="#section-2.9.1">2.9.1</a>.  Example 1  . . . . . . . . . . . . . . . . . . . . . . <a href="#page-10">10</a>
+       <a href="#section-2.9.2">2.9.2</a>.  Example 2  . . . . . . . . . . . . . . . . . . . . . . <a href="#page-10">10</a>
+       <a href="#section-2.9.3">2.9.3</a>.  Example 3  . . . . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+       <a href="#section-2.9.4">2.9.4</a>.  Example 4  . . . . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+       <a href="#section-2.9.5">2.9.5</a>.  Example 5  . . . . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+   <a href="#section-3">3</a>.  Security Considerations  . . . . . . . . . . . . . . . . . . . <a href="#page-12">12</a>
+   <a href="#section-4">4</a>.  IANA Considerations  . . . . . . . . . . . . . . . . . . . . . <a href="#page-14">14</a>
+     <a href="#section-4.1">4.1</a>.  Registration of Sieve Extension  . . . . . . . . . . . . . <a href="#page-14">14</a>
+     <a href="#section-4.2">4.2</a>.  Registration of ManageSieve Capability . . . . . . . . . . <a href="#page-14">14</a>
+     <a href="#section-4.3">4.3</a>.  Creation of Sieve URN Parameters Registry  . . . . . . . . <a href="#page-15">15</a>
+     <a href="#section-4.4">4.4</a>.  Registration of the "addrbook" URN parameter . . . . . . . <a href="#page-16">16</a>
+     <a href="#section-4.5">4.5</a>.  Registration of "sieve" URN sub-namespace  . . . . . . . . <a href="#page-16">16</a>
+   <a href="#section-5">5</a>.  Acknowledgements . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-16">16</a>
+   <a href="#section-6">6</a>.  References . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-16">16</a>
+     <a href="#section-6.1">6.1</a>.  Normative References . . . . . . . . . . . . . . . . . . . <a href="#page-16">16</a>
+     <a href="#section-6.2">6.2</a>.  Informative References . . . . . . . . . . . . . . . . . . <a href="#page-17">17</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   This document specifies an extension to the Sieve language [<a href="./rfc5228" title='"Sieve: An Email Filtering Language"'>RFC5228</a>]
+   for checking membership in an external list or for redirecting
+   messages to an external list of recipients.  An "external list" is a
+   list whose members are stored externally to the Sieve script, such as
+   using LDAP [<a href="./rfc4510" title='"Lightweight Directory Access Protocol (LDAP): Technical Specification Road Map"'>RFC4510</a>], ACAP [<a href="./rfc2244" title='"ACAP -- Application Configuration Access Protocol"'>RFC2244</a>], CardDAV [<a href="#ref-CardDAV" title='"vCard Extensions to WebDAV (CardDAV)"'>CardDAV</a>], or
+   relational databases.
+
+   This extension adds a new match type to apply to supported tests and
+   a new tagged argument to the "redirect" action.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Conventions%20Used%20in%20This%20Document"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Conventions Used in This Document</span>
+
+   Conventions for notations are as in <a href="./rfc5228#section-1.1">[RFC5228], Section 1.1</a>, including
+   the use of ABNF [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>].
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Extlists%20Extension"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Extlists Extension</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Capability%20Identifier"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Capability Identifier</span>
+
+   The capability string associated with the extension defined in this
+   document is "extlists".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20%3Alist%20Match%20Type%20for%20Supported%20Tests"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  :list Match Type for Supported Tests</span>
+
+   ABNF:
+
+         MATCH-TYPE  =/ ":list"
+              ; only valid for supported tests
+
+   The new ":list" match type changes the interpretation of the "key-
+   list" parameter (the second parameter) in supported tests.  When the
+   match type is ":list", the key-list becomes a list of names of
+   externally stored lists.  The external lists are queried, perhaps
+   through a list-specific mechanism, and the test evaluates to "true"
+   if any of the specified values matches any member of one or more of
+   the lists.
+
+   Comparators are not allowed together with the ":list" match type, so
+   if both are specified in a test, that MUST result in an error.
+   Queries done through list-specific mechanisms might have the effect
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   of built-in comparators; for example, queries to certain lists might
+   be case-sensitive, while queries to other lists might be done without
+   regard to case.
+
+   Implementations MUST support the use of ":list" in "address",
+   "envelope", and "header" tests.  Implementations that include the
+   Variables extension [<a href="./rfc5229" title='"Sieve Email Filtering: Variables Extension"'>RFC5229</a>] MUST also support its use in "string"
+   tests.
+
+   Implementations MAY support other tests than the ones in this
+   document.  Implementations MUST report an error when a script uses
+   ":list" with a test that does not support ":list".  This error SHOULD
+   be reported at compile-time but MAY be reported at run-time.  To
+   maintain interoperability, other tests that can be used with ":list"
+   SHOULD be documented in a specification that defines a capability
+   string that can be tested (in a "require" statement or using "ihave"
+   [<a href="./rfc5463" title='"Sieve Email Filtering: Ihave Extension"'>RFC5463</a>]).
+
+   For example, testing 'header ["to", "cc"]' against a list would cause
+   each "to" and "cc" value, ignoring leading and trailing whitespace,
+   to be queried.  If any value is found to belong to the list, the test
+   returns "true".  If no value belongs to the list, the test returns
+   "false".  Once a value is found in the list, there is no need for the
+   query mechanism to look further.
+
+   For some lists, the Sieve engine might directly retrieve the list and
+   make its own comparison.  Other lists might not work that way -- they
+   might provide a way to ask if a value is in the list, but not permit
+   retrieval of the list itself.  It is up to the Sieve implementation
+   to understand how to interact with any supported list.  If the Sieve
+   engine is permanently unable to query the list (perhaps because the
+   list doesn't support the required operation), the test MUST result in
+   a runtime error in the Sieve script.
+
+   See <a href="#section-2.5">Section 2.5</a> for the detailed description of syntax used for
+   naming externally stored lists.
+
+   The ":list" match type uses the concept of "match variables" as
+   defined in <a href="#section-3.2">Section 3.2</a> of the Variables extension [<a href="./rfc5229" title='"Sieve Email Filtering: Variables Extension"'>RFC5229</a>].
+   Implementations that also support that extension MUST set the ${0}
+   match variable to the value in the list that matched the query.
+   Other numbered match variables (${1}, ${2}, and so on) MAY be set
+   with list-specific information that might be of use to the script.
+
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20%3Alist%20Tagged%20Argument%20to%20the%20%22redirect%22%20Action"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  :list Tagged Argument to the "redirect" Action</span>
+
+   Usage:  redirect :list &lt;ext-list-name: string&gt;
+
+   The "redirect" action with the ":list" argument is used to send the
+   message to the set of email addresses in the externally stored list
+   named by the ext-list-name string.  This variant of the redirect
+   command can be used to implement a personal distribution list.
+
+   For this feature to work, one of the following conditions has to be
+   true:
+
+   1.  The list resolves to a list of email addresses, and the Sieve
+       engine is able to enumerate those addresses.
+
+   2.  The list handler is able to take care of the redirection on
+       behalf of the Sieve engine.
+
+   In cases where, for example, a list contains hashed email address
+   values or an email address pattern ("sz*@example.com",
+   "*+ietf@example.net"), the Sieve engine will not be able to redirect
+   to that list, and responsibility must pass to the list handler.
+
+   If neither the Sieve engine nor the list handler can enumerate (or
+   iterate) the list, or the list does not resolve to email addresses,
+   the situation MUST result in a runtime error in the Sieve script.
+
+   See <a href="#section-2.5">Section 2.5</a> for the detailed description of syntax used for
+   naming externally stored lists.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20Other%20Uses%20for%20External%20Lists"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  Other Uses for External Lists</span>
+
+   The uses for external lists specified here represent known cases and
+   situations at the time of this writing.  Other uses for external
+   lists, employing other Sieve features, might be devised in the
+   future, and such uses can be described in extensions to this
+   document.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.5.%20%20Syntax%20of%20an%20Externally%20Stored%20List%20Name"></a><a class="selflink" href="#section-2.5" id="section-2.5">2.5</a>.  Syntax of an Externally Stored List Name</span>
+
+   A name of an externally stored list is always an absolute URI
+   [<a href="./rfc3986" title='"Uniform Resource Identifier (URI): Generic Syntax"'>RFC3986</a>].  Implementations might find URIs such as LDAP [<a href="./rfc4510" title='"Lightweight Directory Access Protocol (LDAP): Technical Specification Road Map"'>RFC4510</a>],
+   CardDAV [<a href="#ref-CardDAV" title='"vCard Extensions to WebDAV (CardDAV)"'>CardDAV</a>], or "tag" [<a href="./rfc4151" title="&quot;The 'tag' URI Scheme&quot;">RFC4151</a>] to be useful for naming
+   external lists.
+
+   The "tag" URI scheme [<a href="./rfc4151" title="&quot;The 'tag' URI Scheme&quot;">RFC4151</a>] can be used to represent opaque, but
+   more user-friendly identifiers.  Resolution of such identifiers is
+   going to be implementation specific and it can help in hiding the
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   complexity of an implementation from end users.  For example, an
+   implementation can provide a web interface for managing lists of
+   users stored in LDAP.  Requiring users to know generic LDAP URI
+   syntax might not be very practical, due to its complexity.  An
+   implementation can instead use a fixed tag URI prefix such as "tag:
+   example.com,&lt;date&gt;:" (where &lt;date&gt; can be, for example, a date
+   generated once on installation of the web interface and left
+   untouched upon upgrades), and the prefix doesn't even need to be
+   shown to end users.
+
+   The "addrbook" URNs defined in <a href="#section-2.6">Section 2.6</a> (in particular, the
+   reserved URI "urn:ietf:params:sieve:addrbook:default") MUST be
+   supported.  To make it easier to use registered Sieve URN parameters,
+   we define a shorthand way to specify them in a Sieve script: a list
+   name that begins with ":" is taken as referencing a Sieve URN
+   parameter, with the initial ":" expanding to
+   "urn:ietf:params:sieve:".  So we have the following equivalences:
+
+      :addrbook:default == urn:ietf:params:sieve:addrbook:default
+
+      :addrbook:personal == urn:ietf:params:sieve:addrbook:personal
+
+   and so on.
+
+   The mandatory-to-implement URI
+
+      urn:ietf:params:sieve:addrbook:default
+
+   gives access to the user's default address book (usually the user's
+   personal address book).  Note that these are URIs, subject to normal
+   URI encoding rules, including percent-encoding.  The reserved name
+   "default" MUST be considered case-insensitive after decoding.  That
+   means that the following URIs are all equivalent:
+
+      :addrbook:default
+
+      :ADDRBOOK:DEFAULT
+
+      :aDdRbOOk:DeFauLt
+
+      :AddrBook:%44%65%66ault
+
+   Address book names other than "default" MAY be case-sensitive,
+   depending upon the implementation, so their case (after URI decoding)
+   MUST be maintained.
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   It's possible that a server will have no access to anything
+   resembling an address book (perhaps in an implementation where
+   address books are only client-side things), but the server can still
+   provide access to other sorts of lists -- consider the list of dates
+   in Example 2 (<a href="#section-2.9.2">Section 2.9.2</a>), or lists of important keywords and the
+   like.  It might sometimes make sense to map ":addrbook:default" into
+   some available list, but that might not always be reasonable.  If
+   there really is no concept of an address book in a particular server
+   implementation, the server MAY support ":addrbook:default" by having
+   all matches to it fail.  Such an implementation SHOULD NOT be done
+   except as a last resort.
+
+   Queries against address books SHOULD be done without regard to case.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.6.%20%20Definition%20of%20%22addrbook%22%20URN%20Parameter"></a><a class="selflink" href="#section-2.6" id="section-2.6">2.6</a>.  Definition of "addrbook" URN Parameter</span>
+
+   This section gives the details of the "addrbook" Sieve URN parameter
+   that's registered in <a href="#section-4.4">Section 4.4</a>.  URIs that use this parameter begin
+   with "urn:ietf:params:sieve:addrbook:".
+
+   URN parameter name:  addrbook
+
+   URN parameter syntax:  The "addrbook" parameter is defined by the
+       &lt;addrbook-urn&gt; rule, defined using ABNF [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>]:
+
+          addrbook-urn = "addrbook:" addrbook [ "?" extensions ]
+          addrbook = segment
+               ; &lt;segment&gt; defined in [<a href="./rfc3986" title='"Uniform Resource Identifier (URI): Generic Syntax"'>RFC3986</a>]
+          extensions = query
+               ; &lt;query&gt; defined in [<a href="./rfc3986" title='"Uniform Resource Identifier (URI): Generic Syntax"'>RFC3986</a>]
+
+   Intended usage:  "addrbook" URNs are used for designating references
+   to address books.  An address book is a concept used by different
+   applications (such as Sieve interpreters) for describing a list of
+   named entries, and may be translated into other types of address
+   books, such as LDAP groups.  Address books may be private or shared;
+   they may be personal, organizational, or perhaps even "crowdsourced".
+
+   The address book name (the "addrbook" element in the ABNF above)
+   refers to a specifically named address book, as defined by the
+   implementation.  A user might, for example, have access to a number
+   of different address books, such as a personal one, a family one, a
+   company one, and one for the town where the user lives.
+
+   The extension information (the "extensions" element in the ABNF
+   above) is available for use in future extensions.  It might allow for
+   things such as dynamic subsets of an address book -- for example,
+   something such as this might be defined in the future:
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+       urn:ietf:params:sieve:addrbook:personal?name.contains=fred
+
+       There are no extensions defined at this time.
+
+       An "addrbook" URN is designed to be used by applications for
+       referencing address books.  Each URN is intended to represent a
+       grouping of addresses that can be logically thought of as one
+       "book".  Any given address can belong to more than one book --
+       that is, can be referred to by more than one URN.
+
+       The URI "urn:ietf:params:sieve:addrbook" has no meaning in
+       itself.  It MUST be used with sub-parameters representing the
+       address book name and extension information, as shown in the ABNF
+       above.
+
+       The sub-parameter "default" (creating the URN
+       "urn:ietf:params:sieve:addrbook:default") is a reserved (case-
+       insensitive) name that MUST be implemented, representing a
+       default grouping (book) of addresses.  Other names, representing
+       the same or other groupings MAY be implemented.  For example, an
+       implementation might use the following sub-parameters:
+
+       *   personal -- a book representing the user's personal address
+           book.
+
+       *   friends -- a subset of
+           urn:ietf:params:sieve:addrbook:personal, defined by the user.
+
+       *   family -- a subset of
+           urn:ietf:params:sieve:addrbook:personal, defined by the user.
+
+       *   company -- a book representing the user's company's address
+           book.
+
+       *   department -- a subset of
+           urn:ietf:params:sieve:addrbook:company, defined by the
+           company.
+
+       *   co-workers -- a subset of
+           urn:ietf:params:sieve:addrbook:company, defined by the user.
+
+       *   default -- the default address book, a reference to
+           urn:ietf:params:sieve:addrbook:personal.
+
+   Interoperability considerations:  Applications are only REQUIRED to
+       support "addrbook:default", where all cases and encodings of
+       "default" are considered equivalent.  Address book names other
+       than "default" MAY be case-sensitive, depending upon the
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+       implementation, so their case (after URI decoding) MUST be
+       maintained.
+
+   Security considerations:  Applications SHOULD ensure appropriate
+       restrictions are in place to protect sensitive information that
+       might be revealed by "addrbook" URNs from access or modification
+       by untrusted sources.
+
+   Contact:  Sieve mailing list &lt;sieve@ietf.org&gt;
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.7.%20%20Test%20valid_ext_list"></a><a class="selflink" href="#section-2.7" id="section-2.7">2.7</a>.  Test valid_ext_list</span>
+
+   Usage: valid_ext_list &lt;ext-list-names: string-list&gt;
+
+   The "valid_ext_list" test is true if all of the external list names
+   in the ext-list-names argument are supported, and they are valid both
+   syntactically (including URI parameters) and semantically (including
+   implementation-specific semantic restrictions).  Otherwise, the test
+   returns false.
+
+   This test MUST perform exactly the same validation of an external
+   list name as would be performed by the "header :list" test.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.8.%20%20Interaction%20with%20ManageSieve"></a><a class="selflink" href="#section-2.8" id="section-2.8">2.8</a>.  Interaction with ManageSieve</span>
+
+   This extension defines the following new capability for ManageSieve
+   (see <a href="./rfc5804#section-1.7">[RFC5804], Section 1.7</a>):
+
+   EXTLISTS - A space-separated list of URI schema parts [<a href="./rfc3986" title='"Uniform Resource Identifier (URI): Generic Syntax"'>RFC3986</a>] for
+   supported externally stored list types.  This capability MUST be
+   returned if the corresponding Sieve implementation supports the
+   "extlists" extension defined in this document.
+
+   This also extends the ManageSieve ABNF as follows:
+
+
+   single-capability  =/ DQUOTE "EXTLISTS" DQUOTE SP ext-list-types CRLF
+           ; single-capability is defined in [<a href="./rfc5804" title='"A Protocol for Remotely Managing Sieve Scripts"'>RFC5804</a>]
+
+   ext-list-types  = string
+           ; space separated list of URI schema parts
+           ; for supported externally stored list types.
+           ; MUST NOT be empty.
+
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.9.%20%20Examples"></a><a class="selflink" href="#section-2.9" id="section-2.9">2.9</a>.  Examples</span>
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.9.1.%20%20Example%201"></a><a class="selflink" href="#section-2.9.1" id="section-2.9.1">2.9.1</a>.  Example 1</span>
+
+   This example uses a personal address book, along with the Spamtest
+   [<a href="./rfc5235" title='"Sieve Email Filtering: Spamtest and Virustest Extensions"'>RFC5235</a>] and Relational [<a href="./rfc5231" title='"Sieve Email Filtering: Relational Extension"'>RFC5231</a>] extensions to give a different
+   level of spam tolerance to known senders.
+
+       require ["envelope", "extlists", "fileinto", "spamtest",
+                "relational", "comparator-i;ascii-numeric"];
+       if envelope :list "from" ":addrbook:default"
+         { /* Known: allow high spam score */
+           if spamtest :value "ge" :comparator "i;ascii-numeric" "8"
+             {
+               fileinto "spam";
+             }
+         }
+       elsif spamtest :value "ge" :comparator "i;ascii-numeric" "3"
+         { /* Unknown: less tolerance in spam score */
+           fileinto "spam";
+         }
+
+   The same example can also be written another way, if the Variables
+   extension [<a href="./rfc5229" title='"Sieve Email Filtering: Variables Extension"'>RFC5229</a>] is also supported:
+
+       require ["envelope", "extlists", "fileinto", "spamtest",
+           "variables", "relational", "comparator-i;ascii-numeric"];
+       if envelope :list "from" ":addrbook:default" {
+         set "lim" "8";  /* Known: allow high spam score */
+       } else {
+         set "lim" "3";  /* Unknown: less tolerance in spam score */
+       }
+       if spamtest :value "ge" :comparator "i;ascii-numeric" "${lim}" {
+         fileinto "spam";
+       }
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.9.2.%20%20Example%202"></a><a class="selflink" href="#section-2.9.2" id="section-2.9.2">2.9.2</a>.  Example 2</span>
+
+   This example uses the "currentdate" test [<a href="./rfc5260" title='"Sieve Email Filtering: Date and Index Extensions"'>RFC5260</a>] and a list
+   containing the dates of local holidays.  If today is a holiday, the
+   script will notify (as described in [<a href="./rfc5435" title='"Sieve Email Filtering: Extension for Notifications"'>RFC5435</a>]) the user via the
+   Extensible Messaging and Presence Protocol (XMPP) [<a href="./rfc5437" title='"Sieve Notification Mechanism: Extensible Messaging and Presence Protocol (XMPP)"'>RFC5437</a>] about the
+   message.
+
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+       require ["extlists", "date", "enotify"];
+       if currentdate :list "date"
+          "tag:example.com,2011-01-01:localHolidays" {
+          notify "xmpp:romeo@im.example.com";
+       }
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.9.3.%20%20Example%203"></a><a class="selflink" href="#section-2.9.3" id="section-2.9.3">2.9.3</a>.  Example 3</span>
+
+   This example also uses the "envelope" option [<a href="./rfc5228" title='"Sieve: An Email Filtering Language"'>RFC5228</a>] and the
+   Subaddress extension [<a href="./rfc5233" title='"Sieve Email Filtering: Subaddress Extension"'>RFC5233</a>].  If mail is sent with the list name
+   as a subaddress of the recipient (to, say, "alexey+mylist"), and the
+   message comes from a member of the list, it will be redirected to all
+   members of the list.  Variants of this technique might be useful for
+   creating private mailing lists.
+
+       require ["extlists", "envelope", "subaddress"];
+
+       # Submission from list members is sent to all members
+       if allof (envelope :detail "to" "mylist",
+                 header :list "from"
+                        "tag:example.com,2010-05-28:mylist") {
+           redirect :list "tag:example.com,2010-05-28:mylist";
+       }
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.9.4.%20%20Example%204"></a><a class="selflink" href="#section-2.9.4" id="section-2.9.4">2.9.4</a>.  Example 4</span>
+
+   This example uses variable matching [<a href="./rfc5229" title='"Sieve Email Filtering: Variables Extension"'>RFC5229</a>] to extract the IP
+   address from the last "Received" header field.  It then checks that
+   against a "block list" of undesirable IP addresses, and rejects the
+   message if there's a match.
+
+       require ["variables", "extlists", "index", "reject"];
+       if header :index 1 :matches "received" "*(* [*.*.*.*])*" {
+         set "ip" "${3}.${4}.${5}.${6}";
+         if string :list "${ip}"
+             "tag:example.com,2011-04-10:DisallowedIPs" {
+           reject "Message not allowed from this IP address";
+         }
+       }
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.9.5.%20%20Example%205"></a><a class="selflink" href="#section-2.9.5" id="section-2.9.5">2.9.5</a>.  Example 5</span>
+
+   This example uses several features of the MIME parts extension
+   [<a href="./rfc5703" title='"Sieve Email Filtering: MIME Part Tests, Iteration, Extraction, Replacement, and Enclosure"'>RFC5703</a>] to scan for unsafe attachment types.  To make it easily
+   extensible, the unsafe types are kept in an external list, which
+   would be shared among all users and all scripts, avoiding the need to
+   change scripts when the list changes.
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   [Note that this is an illustrative example, and more rigorous malware
+   filtering is advisable.  It is insufficient to base email security on
+   checks of filenames alone.]
+
+       require [ "extlists", "foreverypart", "mime", "enclose" ];
+
+       foreverypart
+       {
+         if header :mime :param "filename"
+            :list ["Content-Type", "Content-Disposition"]
+              "tag:example.com,2011-04-10:BadFileNameExts"
+         {
+           # these attachment types are executable
+           enclose :subject "Warning" :text
+    WARNING! The enclosed message has attachments that might be unsafe.
+    These attachment types may contain a computer virus program
+    that can infect your computer and potentially damage your data.
+
+    Before clicking on these message attachments, you should verify
+    with the sender that this message was sent intentionally, and
+    that the attachments are safe to open.
+    .
+    ;
+           break;
+         }
+       }
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Security%20Considerations"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Security Considerations</span>
+
+   Security considerations related to the "address"/"envelope"/"header"
+   tests and "redirect" action discussed in Sieve [<a href="./rfc5228" title='"Sieve: An Email Filtering Language"'>RFC5228</a>] also apply
+   to this document.
+
+   External list memberships ought to be treated as if they are an
+   integral part of the script, so a temporary failure to access an
+   external list SHOULD be handled in the same way as a temporary
+   failure to retrieve the Sieve script itself.
+
+   For example, if the Sieve script is stored in the Lightweight
+   Directory Access Protocol [<a href="./rfc4510" title='"Lightweight Directory Access Protocol (LDAP): Technical Specification Road Map"'>RFC4510</a>] and the script can't be retrieved
+   when a message is processed (perhaps the LDAP server is unavailable),
+   then the Sieve engine might delay message delivery until the script
+   can be retrieved successfully.  Similarly, if an external list is
+   stored in LDAP and that LDAP server is unavailable, the Sieve engine
+   would take the same action -- delay message delivery and try again
+   later.
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   Protocols/APIs used to retrieve/verify external list membership MUST
+   provide an appropriate level of confidentiality and authentication.
+   Usually, that will be at least the same level of confidentiality as
+   protocols/APIs used to retrieve Sieve scripts, but only the
+   implementation (or deployment) will know what is appropriate.
+   There's a difference, for example, between making an LDAP request on
+   a closed LAN that's only used for trusted servers (it may be that
+   neither encryption nor authentication is needed), on a firewalled LAN
+   internal to a company (it might be OK to skip encryption, depending
+   upon policy), and on the open Internet (encryption and authentication
+   are probably both required).  It also matters whether the list being
+   accessed is private or public (no encryption or authentication may be
+   needed for public data, even on the Internet).
+
+   Having the processing and outcome of a Sieve script depend on the
+   contents of external data can allow someone with control of the
+   external data to have unusual, and perhaps unauthorized, control of
+   the script -- and, consequently, of the disposition of the user's
+   email.  A user using such a list for spam control, for example, might
+   find important mail being discarded because of tampering with the
+   list.  Someone using redirect to an external list could have her
+   email redirected to the wrong eyes because of such tampering.
+   Security and integrity protection of external lists is as important
+   as protection of the Sieve script itself.
+
+   Implementations of this extension should keep in mind that matching
+   values against an externally stored list can be I/O and/or CPU
+   intensive.  This can be used to deny service to the mail server
+   and/or to servers providing access to externally stored mailing
+   lists.  A naive implementation, such as the one that tries to
+   retrieve content of the whole list to perform matching, can make this
+   worse.
+
+   But note that many protocols that can be used for accessing
+   externally stored lists support flexible searching features that can
+   be used to minimize network traffic and load on the directory
+   service.  For example, LDAP allows for search filters.
+   Implementations SHOULD use such features whenever they can.
+
+   Many organizations support external lists with thousands of
+   recipients.  In order to avoid mailbombs when redirecting a message
+   to an externally stored list, implementations SHOULD enforce limits
+   on the number of recipients and/or on domains to which such
+   recipients belong.
+
+   Note, in particular, that it can be too easy for a script to use
+        redirect :list ":addrbook:default";
+   to send messages to "everyone in your address book", and one can
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   easily imagine both intentional and accidental abuse.  The situation
+   can be even worse for, say, ":addrbook:corporate".  Warnings, as well
+   as enforced limits, are appropriate here.
+
+   Applications SHOULD ensure appropriate restrictions are in place to
+   protect sensitive information that might be revealed by "addrbook"
+   URNs from access or modification by untrusted sources.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  IANA Considerations</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Registration%20of%20Sieve%20Extension"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Registration of Sieve Extension</span>
+
+   The following template specifies the IANA registration of the Sieve
+   extension specified in this document.  This information has been
+   added to the Sieve Extensions registry on <a href="http://www.iana.org">http://www.iana.org</a>.
+
+   To: iana@iana.org
+
+   Subject:  Registration of new Sieve extension
+
+   Capability name:  extlists
+
+   Description:  Adds the ":list" match type to certain Sieve tests, and
+       the ":list" argument to the "redirect" action.  The ":list" match
+       type changes tests to match values against values stored in one
+       or more externally stored lists.  The ":list" argument to the
+       redirect action changes the redirect action to forward the
+       message to email addresses stored in the externally stored list.
+
+   RFC number:  <a href="./rfc6134">RFC 6134</a>
+
+   Contact address:  Sieve mailing list &lt;sieve@ietf.org&gt;
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Registration%20of%20ManageSieve%20Capability"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Registration of ManageSieve Capability</span>
+
+   IANA has registered a new ManageSieve Capability according to the
+   IANA registration template specified in [<a href="./rfc5804" title='"A Protocol for Remotely Managing Sieve Scripts"'>RFC5804</a>]:
+
+   To: iana@iana.org
+
+   Subject:  ManageSieve Capability Registration
+
+   Capability name:  extlists
+
+   Description:  This capability is returned if the server supports the
+       "extlists" <a href="./rfc6134">RFC 6134</a> Sieve extension.
+
+   Relevant publications:  <a href="./rfc6134#section-2.8">RFC 6134, Section 2.8</a>
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   Person &amp; email address to contact for further information:
+       Sieve mailing list &lt;sieve@ietf.org&gt;
+
+   Author/Change controller:  IESG
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Creation%20of%20Sieve%20URN%20Parameters%20Registry"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Creation of Sieve URN Parameters Registry</span>
+
+   IANA has created a new registry under "Sieve Extensions" for Sieve
+   URN Parameters.  Registration into this registry is according to the
+   "Specification Required" policy [<a href="./rfc5226" title="">RFC5226</a>].
+
+   The registry contains the following two items:
+
+   URN parameter name:  The name of the URN parameter.  If the name is
+       "paramname", the resulting top-level URN will be
+       "urn:ietf:params:sieve:paramname".
+
+   Reference:  The document and section where the definition of the
+       parameter can be found.  Be sure to include the section number as
+       well as the document reference, so the documentation is easy to
+       find.
+
+   The documentation -- which will be in the referenced document and
+   section, and will not be included in the registry -- MUST include the
+   following information (see <a href="#section-2.6">Section 2.6</a> for an example):
+
+      URN parameter name:  The name of the URN parameter.
+
+      URN parameter syntax:  The syntax of the parameter and any sub-
+          parameters, which SHOULD be specified using ABNF [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>].
+
+      Intended usage:  A detailed description of how the parameter and
+          any sub-parameters are expected to be used.  This is the place
+          to define static sub-parameters, registries for sub-
+          parameters, options, registries for options, and so on.
+
+      Interoperability considerations:  Any notes specific to
+          interoperability issues.  This is where to put mandatory-to-
+          implement sub-parameters and the like.
+
+      Security considerations:  Any notes specific to security and
+          privacy issues.
+
+      Contact:  Contact information, in case there are questions.
+
+
+
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.4.%20%20Registration%20of%20the%20%22addrbook%22%20URN%20parameter"></a><a class="selflink" href="#section-4.4" id="section-4.4">4.4</a>.  Registration of the "addrbook" URN parameter</span>
+
+   IANA has registered a new Sieve URN parameter in the registry defined
+   in <a href="#section-4.3">Section 4.3</a>.
+
+   URN parameter name:  addrbook
+
+   Reference:  <a href="./rfc6134#section-2.6">RFC 6134, Section 2.6</a>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.5.%20%20Registration%20of%20%22sieve%22%20URN%20sub-namespace"></a><a class="selflink" href="#section-4.5" id="section-4.5">4.5</a>.  Registration of "sieve" URN sub-namespace</span>
+
+   IANA has registered a new URN sub-namespace within the IETF URN Sub-
+   namespace for Registered Protocol Parameter Identifiers defined in
+   [<a href="./rfc3553" title='"An IETF URN Sub-namespace for Registered Protocol Parameters"'>RFC3553</a>].
+
+   Registry name:  sieve
+
+   Specification:  <a href="./rfc6134">RFC 6134</a>
+
+   Repository:  Sieve URN Parameters registry (<a href="#section-4.3">Section 4.3</a>)
+
+   Index value:  Sub-parameters MUST be specified in UTF-8, using
+       standard URI encoding where necessary.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Acknowledgements"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Acknowledgements</span>
+
+   Thanks to Alexandros Vellis, Nigel Swinson, Ned Freed, Kjetil Torgrim
+   Homme, Dave Cridland, Cyrus Daboo, Pete Resnick, and Robert Burrell
+   Donkin for ideas, comments, and suggestions.  Kristin Hubner also
+   helped greatly with the examples.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Normative%20References"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC3986">RFC3986</a>]  Berners-Lee, T., Fielding, R., and L. Masinter, "Uniform
+              Resource Identifier (URI): Generic Syntax", STD 66,
+              <a href="./rfc3986">RFC 3986</a>, January 2005.
+
+   [<a id="ref-RFC4151">RFC4151</a>]  Kindberg, T. and S. Hawke, "The 'tag' URI Scheme",
+              <a href="./rfc4151">RFC 4151</a>, October 2005.
+
+   [<a id="ref-RFC5226">RFC5226</a>]  Narten, T. and H. Alvestrand, "Guidelines for Writing an
+              IANA Considerations Section in RFCs", <a href="https://www.rfc-editor.org/bcp/bcp26">BCP 26</a>, <a href="./rfc5226">RFC 5226</a>,
+              May 2008.
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   [<a id="ref-RFC5228">RFC5228</a>]  Guenther, P. and T. Showalter, "Sieve: An Email Filtering
+              Language", <a href="./rfc5228">RFC 5228</a>, January 2008.
+
+   [<a id="ref-RFC5234">RFC5234</a>]  Crocker, D. and P. Overell, "Augmented BNF for Syntax
+              Specifications: ABNF", STD 68, <a href="./rfc5234">RFC 5234</a>, January 2008.
+
+   [<a id="ref-RFC5804">RFC5804</a>]  Melnikov, A. and T. Martin, "A Protocol for Remotely
+              Managing Sieve Scripts", <a href="./rfc5804">RFC 5804</a>, July 2010.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Informative%20References"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Informative References</span>
+
+   [<a id="ref-CardDAV">CardDAV</a>]  Daboo, C., <a href="https://www.google.com/search?sitesearch=datatracker.ietf.org%2Fdoc%2Fhtml%2F&amp;q=inurl:draft-+%22vCard+Extensions+to+WebDAV+%28CardDAV%29%22" style="text-decoration: none">"vCard Extensions to WebDAV (CardDAV)"</a>, Work
+              in Progress, November 2009.
+
+   [<a id="ref-RFC2244">RFC2244</a>]  Newman, C. and J. Myers, "ACAP -- Application
+              Configuration Access Protocol", <a href="./rfc2244">RFC 2244</a>, November 1997.
+
+   [<a id="ref-RFC3553">RFC3553</a>]  Mealling, M., Masinter, L., Hardie, T., and G. Klyne, "An
+              IETF URN Sub-namespace for Registered Protocol
+              Parameters", <a href="https://www.rfc-editor.org/bcp/bcp73">BCP 73</a>, <a href="./rfc3553">RFC 3553</a>, June 2003.
+
+   [<a id="ref-RFC4510">RFC4510</a>]  Zeilenga, K., "Lightweight Directory Access Protocol
+              (LDAP): Technical Specification Road Map", <a href="./rfc4510">RFC 4510</a>,
+              June 2006.
+
+   [<a id="ref-RFC5229">RFC5229</a>]  Homme, K., "Sieve Email Filtering: Variables Extension",
+              <a href="./rfc5229">RFC 5229</a>, January 2008.
+
+   [<a id="ref-RFC5231">RFC5231</a>]  Segmuller, W. and B. Leiba, "Sieve Email Filtering:
+              Relational Extension", <a href="./rfc5231">RFC 5231</a>, January 2008.
+
+   [<a id="ref-RFC5233">RFC5233</a>]  Murchison, K., "Sieve Email Filtering: Subaddress
+              Extension", <a href="./rfc5233">RFC 5233</a>, January 2008.
+
+   [<a id="ref-RFC5235">RFC5235</a>]  Daboo, C., "Sieve Email Filtering: Spamtest and Virustest
+              Extensions", <a href="./rfc5235">RFC 5235</a>, January 2008.
+
+   [<a id="ref-RFC5260">RFC5260</a>]  Freed, N., "Sieve Email Filtering: Date and Index
+              Extensions", <a href="./rfc5260">RFC 5260</a>, July 2008.
+
+   [<a id="ref-RFC5435">RFC5435</a>]  Melnikov, A., Leiba, B., Segmuller, W., and T. Martin,
+              "Sieve Email Filtering: Extension for Notifications",
+              <a href="./rfc5435">RFC 5435</a>, January 2009.
+
+   [<a id="ref-RFC5437">RFC5437</a>]  Saint-Andre, P. and A. Melnikov, "Sieve Notification
+              Mechanism: Extensible Messaging and Presence Protocol
+              (XMPP)", <a href="./rfc5437">RFC 5437</a>, January 2009.
+
+
+
+
+<span class="grey">Melnikov &amp; Leiba             Standards Track                   [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc6134">RFC 6134</a>        Sieve Extension: Externally Stored Lists       July 2011</span>
+
+
+   [<a id="ref-RFC5463">RFC5463</a>]  Freed, N., "Sieve Email Filtering: Ihave Extension",
+              <a href="./rfc5463">RFC 5463</a>, March 2009.
+
+   [<a id="ref-RFC5703">RFC5703</a>]  Hansen, T. and C. Daboo, "Sieve Email Filtering: MIME Part
+              Tests, Iteration, Extraction, Replacement, and Enclosure",
+              <a href="./rfc5703">RFC 5703</a>, October 2009.
+
+Authors' Addresses
+
+   Alexey Melnikov
+   Isode Limited
+   5 Castle Business Village
+   36 Station Road
+   Hampton, Middlesex  TW12 2BX
+   UK
+
+   EMail: Alexey.Melnikov@isode.com
+
+
+   Barry Leiba
+   Huawei Technologies
+
+   Phone: +1 646 827 0648
+   EMail: barryleiba@computer.org
+   URI:   <a href="http://internetmessagingtechnology.org/">http://internetmessagingtechnology.org/</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Melnikov &amp; Leiba             Standards Track                   [Page 18]
+</pre>
+</body></html>

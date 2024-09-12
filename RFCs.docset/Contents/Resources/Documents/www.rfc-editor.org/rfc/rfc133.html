@@ -1,0 +1,222 @@
+<html><head></head><body><pre>Network Working Group                                      R. L. Sunberg
+Request for Comments: 133                             Harvard University
+NIC 6710                                                   27 April 1971
+[Categories C.4, C.5, C.6, D.4, D.7, D.7]
+
+
+                    FILE TRANSFER AND ERROR RECOVERY
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1%20%20%20FILE%20TRANSFER%20PROTOCOL"></a><a class="selflink" href="#section-1" id="section-1">1</a>   FILE TRANSFER PROTOCOL</span>
+
+1A   Handshaking
+
+   I think that Mr Bhushan(RFC #114, NIC 5823) is not strict enough in
+   his concept of a transaction sequence.  Every transaction should
+   prompt a response from its recipient (recall Kalin's crates --
+   RFC #60, NIC 4762).  Control should pass back and forth until the
+   server terminates.  The server _always_ gets the last word (more on
+   error recovery later).
+
+   Some sample interchanges are given.
+
+       User                Server       Comments
+
+       &lt;...&gt;       ==&gt;                  Establish a connection
+                   &lt;==     &lt;...&gt;
+       &lt;I&gt;&lt;...&gt;    ==&gt;                  Identify self
+                   &lt;==     &lt;+&gt;          Ok, ready
+
+       &lt;R&gt;&lt;...&gt;    ==&gt;                  Retrieval request
+                   &lt;==     &lt;rs&gt;         I've got your file
+       &lt;rr&gt;        ==&gt;                  Send it
+                   &lt;==     &lt;,&gt;&lt;...&gt;     Here's the first part
+       &lt;rr&gt;        ==&gt;                  Got it
+                   &lt;==     &lt;+&gt;          All done
+
+       &lt;S&gt;&lt;...&gt;    ==&gt;                  Store request
+                   &lt;==     &lt;rr&gt;         Ok, go ahead
+       &lt;#&gt;&lt;...&gt;    ==&gt;                  Here's some protection stuff
+                   &lt;==     &lt;rr&gt;         Ok
+       &lt;*&gt;&lt;...&gt;    ==&gt;                  Here's the file
+                   &lt;==     &lt;+&gt;          Got it.  All done.
+
+   See <a href="#section-2">section 2</a>B, below, for examples of error recovery.
+
+
+
+
+
+
+
+<span class="grey">Sunberg                                                         [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc133">RFC 133</a>             File Transfer and Error Recovery          April 1971</span>
+
+
+1B  Extensions to the file transfer protocol
+
+   The file transfer protocol needs a mechanism for accessing individual
+   records of a file.  This will be particularly useful when very large
+   data bases appear on the network.  The following definitions should
+   be added to the protocol:
+
+   The store(S) and retrieve(R) requests have the data field format
+   &lt;key&gt;, where &lt;key&gt; has the syntax:
+
+    &lt;key&gt;::=&lt;devicename&gt;RS&lt;filename&gt;US&lt;keyname&gt; | &lt;filename&gt;US&lt;keyname&gt;.
+                           --          --                      --
+
+   The &lt;pathname&gt; syntax is changed to:
+
+       &lt;pathname&gt;::=&lt;devicename&gt; | &lt;filename&gt; | &lt;pathname&gt;RS&lt;filename&gt;.
+                                                          --
+   If a retrieve(R) request is given with a data field with &lt;key&gt;
+   syntax rather than &lt;pathname&gt; syntax, then the returned data will
+   consist of the record following the matching &lt;key&gt;.  If a store(S)
+   request is given with a data field of &lt;key&gt; syntax, then the
+   supplied data will replace the record following the matching
+   &lt;keyname&gt;.  If the keyname does not exist, the record will be
+   appended to the named file.  The individual installation must
+   provide the linkage between the &lt;keyname&gt; and the record it
+   references.
+
+   In addition, the lookup(L) request will provide a list of keynames
+   into a file (or the name of a file which contains the keynames).
+
+   Transaction code F (request File directory) requests a listing of
+   available files.  The data field of the F transaction is of the
+   form:  &lt;pathname&gt;GS&lt;pathname&gt;GS...  All files in the server system
+                    --          --
+   which match one or more of the given &lt;pathname&gt; specifiers are
+   listed in a return file.  The format of the data fields of this
+   file is:  &lt;pathname&gt;GS&lt;pathname&gt;GS...  If a &lt;pathname&gt; field in
+                       --          --
+   the request transaction does not include a &lt;name&gt; field, the
+   default is all files on the given device.  Some examples are given:
+
+       &lt;F&gt;&lt;DC1 DSK[62,50]] GS JOE&gt;
+           ---             --
+
+
+
+
+
+
+
+
+<span class="grey">Sunberg                                                         [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc133">RFC 133</a>             File Transfer and Error Recovery          April 1971</span>
+
+
+   This example requests a list of all files on the disk specified by
+   [62,50] plus all files named JOE.  The response could contain in
+   the data field:
+
+     &lt;DC1 DSK[62,50] RS ALPHA RS BETA RS JOE GS DC1 DSK[10,50] RS JOE&gt;
+      ---            --       --      --     -- ---            --
+
+   This message states that in the [62,50] area of the disk there are
+   files ALPHA, BETA, and JOE, and that JOE is also a file in the
+   [10,50] area of the disk.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2%20%20%20ERROR%20RECOVERY"></a><a class="selflink" href="#section-2" id="section-2">2</a>   ERROR RECOVERY</span>
+
+2A   Error recovery procedures have been noticeably lacking to date.
+   The usual approach has been to close the connection and start from
+   scratch.  Mr Bhushan proposes a third level abort but doesn't
+   really detail the implementation.  I propose a multilevel error
+   recovery procedure as follows.
+
+2B   If an error occurs which does not cause a loss of third level
+   transaction boundaries and only affects one side of a duplex
+   connection, a third level recovery is possible via a transaction
+   sequence abort.  An example is given:
+
+       User                Server          Comments
+
+       &lt;R&gt;&lt;...&gt;    ==&gt;                     Send me this file
+                   &lt;==     &lt;rs&gt;            Ok, I've got it
+       &lt;rr&gt;        ==&gt;                     Ready
+                   &lt;==     &lt;*&gt;&lt;...error&gt;   Here it is (with an error)
+       &lt;-&gt;&lt;D&gt;      ==&gt;                     No.  (data) error
+                   &lt;==     &lt;-&gt;&lt;D&gt;          Sorry, forget it
+       &lt;R&gt;&lt;...&gt;    ==&gt;                     Send the file (again)
+                   |&lt;==    &lt;rs&gt;            Ready (doesn't get there)
+                   ...                     (waiting)
+       &lt;-&gt;&lt;0&gt;      ==&gt;                     Error, timeout
+                   &lt;==     &lt;-&gt;&lt;0&gt;          Sorry, forget it
+       &lt;R&gt;&lt;...&gt;    ==&gt;                     Send the file (third time)
+                   &lt;==     &lt;rs&gt;            Got it
+       &lt;rr&gt;        ==&gt;                     Ready
+                   &lt;==     &lt;*&gt;&lt;...&gt;        There it is
+       &lt;rr&gt;        ==&gt;                     Got it
+                   &lt;==     &lt;+&gt;             Done (finally&gt;
+
+   Note that the server always gets the last word in error situations
+   as well as normal transmission.
+
+
+
+
+
+<span class="grey">Sunberg                                                         [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc133">RFC 133</a>             File Transfer and Error Recovery          April 1971</span>
+
+
+2C   Although the above examples are given in terms of Bhushan's
+   transaction codes, this form of error recovery is implementable in
+   any protocol which uses flagged blocking and duplex connections.
+
+2D   If errors cannot be recovered as above, then some means must be
+   available to clear the link completely and resynchronize.  I
+   suggest that an 8-bit argument be appended to the interrupt-on-link
+   NCP message (INR, INS).  The receiver would send &lt;INR&gt;&lt;error&gt; to
+   indicate that the block boundaries were lost and all incoming data
+   is being discarded.  The sender, upon receiving the INR, would
+   flush all queued output and wait for the link to clear.  The NCP
+   would then send a &lt;INS&gt;&lt;newsync&gt; message and, when it was received
+   (RFNM returned), a negative termination would be sent on the link.
+   The receiver begins accepting data again when the INS is received.
+   This assumes that any process can flush untransmitted data and
+   detect a clear link.  Note that this method is useable on any
+   simplex connection.
+
+2E  If all else fails, one can resort to closing the faulty socket.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3%20%20%20NCP%20VERSION%20NUMBERS"></a><a class="selflink" href="#section-3" id="section-3">3</a>   NCP VERSION NUMBERS</span>
+
+3A  I suggest that the NCP be given a version number and the next
+   version include two new message types: &lt;WRU&gt; ('Who aRe yoU?')
+   requests a version number from the receiving host and &lt;IAM&gt;&lt;version&gt;
+   ('I AM') supplies that number.
+
+3B  The messages would probably be initially used in a 'can I talk to
+   you?' sense or not at all.  Eventually, it would take on a 'what
+   can you do?' meaning.  Accordingly, the &lt;version&gt; field should be
+   large (32 bits?) for expansion.
+
+
+
+         [ This RFC was put into machine readable form for entry ]
+           [ into the online RFC archives by Jose Tamayo 4/97 ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sunberg                                                         [Page 4]
+</pre>
+</body></html>

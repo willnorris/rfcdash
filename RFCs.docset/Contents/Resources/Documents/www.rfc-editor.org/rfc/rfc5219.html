@@ -1,0 +1,1230 @@
+<html><head></head><body><pre>Network Working Group                                       R. Finlayson
+Request for Comments: 5219                           Live Networks, Inc.
+Obsoletes: <a href="./rfc3119">3119</a>                                            February 2008
+Category: Standard Track
+
+
+         A More Loss-Tolerant RTP Payload Format for MP3 Audio
+
+Status of This Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Abstract
+
+   This document describes an RTP (Real-Time Protocol) payload format
+   for transporting MPEG (Moving Picture Experts Group) 1 or 2, layer
+   III audio (commonly known as "MP3").  This format is an alternative
+   to that described in <a href="./rfc2250">RFC 2250</a>, and performs better if there is packet
+   loss.  This document obsoletes <a href="./rfc3119">RFC 3119</a>, correcting typographical
+   errors in the "SDP usage" section and pseudo-code appendices.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-2">2</a>
+   <a href="#section-2">2</a>. Terminology .....................................................<a href="#page-3">3</a>
+   <a href="#section-3">3</a>. The Structure of MP3 Frames .....................................<a href="#page-3">3</a>
+   <a href="#section-4">4</a>. A New Payload Format ............................................<a href="#page-4">4</a>
+      <a href="#section-4.1">4.1</a>. ADU Frames .................................................<a href="#page-4">4</a>
+      <a href="#section-4.2">4.2</a>. ADU Descriptors ............................................<a href="#page-4">4</a>
+      <a href="#section-4.3">4.3</a>. Packing Rules ..............................................<a href="#page-5">5</a>
+      <a href="#section-4.4">4.4</a>. RTP Header Fields ..........................................<a href="#page-6">6</a>
+      <a href="#section-4.5">4.5</a>. Handling Received Data .....................................<a href="#page-6">6</a>
+   <a href="#section-5">5</a>. Handling Multiple MPEG Audio Layers .............................<a href="#page-6">6</a>
+   <a href="#section-6">6</a>. Frame Packetizing and Depacketizing .............................<a href="#page-7">7</a>
+   <a href="#section-7">7</a>. ADU Frame Interleaving ..........................................<a href="#page-8">8</a>
+   <a href="#section-8">8</a>. IANA Considerations ............................................<a href="#page-10">10</a>
+   <a href="#section-9">9</a>. SDP Usage ......................................................<a href="#page-11">11</a>
+   <a href="#section-10">10</a>. Security Considerations .......................................<a href="#page-11">11</a>
+   <a href="#section-11">11</a>. Acknowledgements ..............................................<a href="#page-11">11</a>
+   <a href="#section-12">12</a>. Normative References ..........................................<a href="#page-12">12</a>
+   <a href="#appendix-A">Appendix A</a>. Translating between "MP3 Frames" and "ADU Frames" .....<a href="#page-13">13</a>
+      A.1. Converting a Sequence of "MP3 Frames"
+           to a Sequence of "ADU Frames" .............................<a href="#page-14">14</a>
+      A.2. Converting a Sequence of "ADU Frames"
+           to a Sequence of "MP3 Frames" .............................<a href="#page-15">15</a>
+   <a href="#appendix-B">Appendix B</a>. Interleaving and Deinterleaving .......................<a href="#page-18">18</a>
+      <a href="#appendix-B.1">B.1</a>. Interleaving a Sequence of "ADU Frames" ...................<a href="#page-18">18</a>
+      <a href="#appendix-B.2">B.2</a>. Deinterleaving a Sequence of (Interleaved) "ADU Frames" ...<a href="#page-19">19</a>
+   <a href="#appendix-C">Appendix C</a>. Changes from <a href="./rfc3119">RFC 3119</a> .................................<a href="#page-20">20</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   While the RTP payload format defined in <a href="./rfc2250">RFC 2250</a> [<a href="#ref-1" title='"RTP Payload Format for MPEG1/MPEG2 Video"'>1</a>] is generally
+   applicable to all forms of MPEG audio or video, it is sub-optimal for
+   MPEG-1 or 2, layer III audio (commonly known as "MP3").  The reason
+   for this is that an MP3 frame is not a true "Application Data Unit"
+   -- it contains a back-pointer to data in earlier frames, and so
+   cannot be decoded independently of these earlier frames.  Because <a href="./rfc2250">RFC</a>
+   <a href="./rfc2250">2250</a> defines that packet boundaries coincide with frame boundaries,
+   it handles packet loss inefficiently when carrying MP3 data.  The
+   loss of an MP3 frame will render some data in previous (or future)
+   frames useless, even if they are received without loss.
+
+   In this document, we define an alternative RTP payload format for MP3
+   audio.  This format uses a data-preserving rearrangement of the
+   original MPEG frames, so that packet boundaries now coincide with
+   true MP3 "Application Data Units", which can also (optionally) be
+   rearranged in an interleaving pattern.  This new format is therefore
+   more data efficient than <a href="./rfc2250">RFC 2250</a> in the face of packet loss.
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Terminology"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Terminology</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="#ref-2" title='"Key words for use in RFCs to Indicate Requirement Levels"'>2</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20The%20Structure%20of%20MP3%20Frames"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  The Structure of MP3 Frames</span>
+
+   In this section we give a brief overview of the structure of an MP3
+   frame.  (For a more detailed description, see the MPEG-1 audio [<a href="#ref-3" title='"Coding of moving pictures and associated audio for digital storage media up to about 1,5 Mbits/s -- Part 3: Audio"'>3</a>]
+   and MPEG-2 audio [<a href="#ref-4" title='"Generic coding of moving pictures and associated audio information -- Part 3: Audio"'>4</a>] specifications.)
+
+   Each MPEG audio frame begins with a 4-byte header.  Information
+   defined by this header includes:
+
+   -  Whether the audio is MPEG-1 or MPEG-2.
+   -  Whether the audio is layer I, II, or III.  (The remainder of this
+      document assumes layer III, i.e., "MP3" frames.)
+   -  Whether the audio is mono or stereo.
+   -  Whether or not there is a 2-byte CRC field following the header.
+   -  (indirectly) The size of the frame.
+
+   The following structures appear after the header:
+
+   -  (optionally) A 2-byte Cyclic Redundancy Check (CRC) field
+   -  A "side info" structure.  This has the following length:
+      -  32 bytes for MPEG-1 stereo
+      -  17 bytes for MPEG-1 mono, or for MPEG-2 stereo
+      -  9 bytes for MPEG-2 mono
+   -  Encoded audio data, plus optional ancillary data (filling out the
+      rest of the frame)
+
+   For the purpose of this document, the "side info" structure is the
+   most important, because it defines the location and size of the
+   "Application Data Unit" (ADU) that an MP3 decoder will process.  In
+   particular, the "side info" structure defines:
+
+   -  "main_data_begin": This is a back-pointer (in bytes) to the start
+      of the ADU.  The back-pointer is counted from the beginning of the
+      frame, and counts only encoded audio data and any ancillary data
+      (i.e., ignoring any header, CRC, or "side info" fields).
+
+   An MP3 decoder processes each ADU independently.  The ADUs will
+   generally vary in length, but their average length will, of course,
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+   be that of the of the MP3 frames (minus the length of the header,
+   CRC, and "side info" fields).  (In MPEG literature, this ADU is
+   sometimes referred to as a "bit reservoir".)
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20A%20New%20Payload%20Format"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  A New Payload Format</span>
+
+   As noted in [<a href="#ref-5" title='"Guidelines for Writers of RTP Payload Format Specifications"'>5</a>], a payload format should be designed so that packet
+   boundaries coincide with "codec frame boundaries" -- i.e., with ADUs.
+   In the <a href="./rfc2250">RFC 2250</a> payload format for MPEG audio [<a href="#ref-1" title='"RTP Payload Format for MPEG1/MPEG2 Video"'>1</a>], each RTP packet
+   payload contains MP3 frames.  In this new payload format for MP3
+   audio, however, each RTP packet payload contains "ADU frames", each
+   preceded by an "ADU descriptor".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20ADU%20Frames"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  ADU Frames</span>
+
+   An "ADU frame" is defined as:
+
+      -  The 4-byte MPEG header (the same as the original MP3 frame,
+         except that the first 11 bits are (optionally) replaced by an
+         "Interleaving Sequence Number", as described in <a href="#section-7">Section 7</a>
+         below)
+      -  The optional 2-byte CRC field (the same as the original MP3
+         frame)
+      -  The "side info" structure (the same as the original MP3 frame)
+      -  The complete sequence of encoded audio data (and any ancillary
+         data) for the ADU (i.e., running from the start of this MP3
+         frame's "main_data_begin" back-pointer, up to the start of the
+         next MP3 frame's back-pointer)
+
+   Note that there is a one-to-one mapping between MP3 frames and ADU
+   frames.  Because MP3 frames are self-describing, with the bitrate
+   (and sampling frequency) encoded within the 4-byte MPEG header, the
+   same is true for ADU frames.  Therefore, as with MP3 streams, the
+   bitrate can change within a stream and may be used for congestion
+   control.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20ADU%20Descriptors"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  ADU Descriptors</span>
+
+   Within each RTP packet payload, each "ADU frame" is preceded by a
+   1- or 2-byte "ADU descriptor", which gives the size of the ADU and
+   indicates whether or not this packet's data is a continuation of the
+   previous packet's data.  (This occurs only when a single "ADU
+   descriptor" + "ADU frame" is too large to fit within an RTP packet.)
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+   An ADU descriptor consists of the following fields:
+
+   -  "C": Continuation flag (1 bit):  1, if the data following the ADU
+           descriptor is a continuation of an ADU frame that was too
+           large to fit within a single RTP packet; 0 otherwise.
+
+   -  "T": Descriptor Type flag (1 bit):
+           0 if this is a 1-byte ADU descriptor;
+           1 if this is a 2-byte ADU descriptor.
+
+   -  "ADU size" (6 or 14 bits):  The size (in bytes) of the ADU frame
+           that will follow this ADU descriptor (i.e., NOT including the
+           size of the descriptor itself).  A 2-byte ADU descriptor
+           (with a 14-bit "ADU size" field) is used for ADU frame sizes
+           of 64 bytes or more.  For smaller ADU frame sizes, senders
+           MAY alternatively use a 1-byte ADU descriptor (with a 6-bit
+           "ADU size" field).  Receivers MUST be able to accept an ADU
+           descriptor of either size.
+
+   Thus, a 1-byte ADU descriptor is formatted as follows:
+
+          0 1 2 3 4 5 6 7
+         +-+-+-+-+-+-+-+-+
+         |C|0|  ADU size |
+         +-+-+-+-+-+-+-+-+
+
+   and a 2-byte ADU descriptor is formatted as follows:
+
+          0                   1
+          0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
+         +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+         |C|1|     ADU size (14 bits)    |
+         +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Packing%20Rules"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Packing Rules</span>
+
+   Each RTP packet payload begins with an "ADU descriptor", followed by
+   "ADU frame" data.  Normally, this "ADU descriptor" + "ADU frame" will
+   fit completely within the RTP packet.  In this case, more than one
+   successive "ADU descriptor" + "ADU frame" MAY be packed into a single
+   RTP packet, provided that they all fit completely.
+
+   If, however, a single "ADU descriptor" + "ADU frame" is too large to
+   fit within an RTP packet, then the "ADU frame" is split across two or
+   more successive RTP packets.  Each such packet begins with an ADU
+   descriptor.  The first packet's descriptor has a "C" (continuation)
+   flag of 0; the following packets' descriptors each have a "C" flag of
+   1.  Each descriptor, in this case, has the same "ADU size" value: the
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+   size of the entire "ADU frame" (not just the portion that will fit
+   within a single RTP packet).  Each such packet (even the last one)
+   contains only one "ADU descriptor".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.4.%20%20RTP%20Header%20Fields"></a><a class="selflink" href="#section-4.4" id="section-4.4">4.4</a>.  RTP Header Fields</span>
+
+   Payload Type: The (static) payload type 14 that was defined for
+      MPEG audio [<a href="#ref-6" title='"RTP Profile for Audio and Video Conferences with Minimal Control"'>6</a>] MUST NOT be used.  Instead, a different, dynamic
+      payload type MUST be used -- i.e., one within the range [96..127].
+
+   M bit: This payload format defines no use for this bit.  Senders
+      SHOULD set this bit to zero in each outgoing packet.
+
+   Timestamp: This is a 32-bit, 90 kHz timestamp, representing the
+      presentation time of the first ADU packed within the packet.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.5.%20%20Handling%20Received%20Data"></a><a class="selflink" href="#section-4.5" id="section-4.5">4.5</a>.  Handling Received Data</span>
+
+   Note that no information is lost by converting a sequence of MP3
+   frames to a corresponding sequence of "ADU frames", so a receiving
+   RTP implementation can either feed the ADU frames directly to an
+   appropriately modified MP3 decoder, or convert them back into a
+   sequence of MP3 frames, as described in <a href="#appendix-A.2">Appendix A.2</a> below.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Handling%20Multiple%20MPEG%20Audio%20Layers"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Handling Multiple MPEG Audio Layers</span>
+
+   The RTP payload format described here is intended only for MPEG-1 or
+   2, layer III audio ("MP3").  In contrast, layer I and layer II frames
+   are self-contained, without a back-pointer to earlier frames.
+   However, it is possible (although unusual) for a sequence of audio
+   frames to consist of a mixture of layer III frames, and layer I or II
+   frames.  When such a sequence is transmitted, only layer III frames
+   are converted to ADUs; layer I or II frames are sent 'as is' (except
+   for the prepending of an "ADU descriptor").  Similarly, the receiver
+   of a sequence of frames -- using this payload format -- leaves layer
+   I and II frames untouched (after removing the prepended "ADU
+   descriptor"), but converts layer III frames from "ADU frames" to
+   regular MP3 frames.  (Recall that each frame's layer is identified
+   from its 4-byte MPEG header.)
+
+   If you are transmitting a stream consisting *only* of layer I or
+   layer II frames (i.e., without any MP3 data), then there is no
+   benefit to using this payload format, *unless* you are using the
+   interleaving mechanism described in <a href="#section-7">Section 7</a> below.
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Frame%20Packetizing%20and%20Depacketizing"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Frame Packetizing and Depacketizing</span>
+
+   The transmission of a sequence of MP3 frames takes the following
+   steps:
+
+         MP3 frames
+                 -1-&gt; ADU frames
+                     -2-&gt; interleaved ADU frames
+                           -3-&gt; RTP packets
+
+   Step 1 is the conversion of a sequence of MP3 frames to a
+   corresponding sequence of ADU frames, and takes place as described in
+   Sections <a href="#section-3">3</a> and <a href="#section-4.1">4.1</a> above.  (Note also the pseudo-code in <a href="#appendix-A.1">Appendix</a>
+   <a href="#appendix-A.1">A.1</a>.)
+
+   Step 2 is the reordering of the sequence of ADU frames in an
+   (optional) interleaving pattern, prior to packetization, as described
+   in <a href="#section-7">section 7</a> below.  (Note also the pseudo-code in <a href="#appendix-B.1">Appendix B.1</a>.)
+   Interleaving helps reduce the effect of packet loss by distributing
+   consecutive ADU frames over non-consecutive packets.  (Note that
+   because of the back-pointer in MP3 frames, interleaving can be
+   applied -- in general -- only to ADU frames.  Thus, interleaving was
+   not possible for <a href="./rfc2250">RFC 2250</a>.)
+
+   Step 3 is the packetizing of a sequence of (interleaved) ADU frames
+   into RTP packets -- as described in <a href="#section-4.3">section 4.3</a> above.  Each packet's
+   RTP timestamp is the presentation time of the first ADU that is
+   packed within it.  Note that if interleaving was done in step 2, the
+   RTP timestamps on outgoing packets will not necessarily be
+   monotonically nondecreasing.
+
+   Similarly, a sequence of received RTP packets is handled as follows:
+
+         RTP packets
+               -4-&gt; RTP packets ordered by RTP sequence number
+                     -5-&gt; interleaved ADU frames
+                           -6-&gt; ADU frames
+                                 -7-&gt; MP3 frames
+
+   Step 4 is the usual sorting of incoming RTP packets using the RTP
+   sequence number.
+
+   Step 5 is the depacketizing of ADU frames from RTP packets -- i.e.,
+   the reverse of step 3.  As part of this process, a receiver uses the
+   "C" (continuation) flag in the ADU descriptor to notice when an ADU
+   frame is split over more than one packet (and to discard the ADU
+   frame entirely if one of these packets is lost).
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+   Step 6 is the rearranging of the sequence of ADU frames back to its
+   original order (except for ADU frames missing due to packet loss), as
+   described in <a href="#section-7">Section 7</a> below.  (Note also the pseudo-code in <a href="#appendix-B.2">Appendix</a>
+   <a href="#appendix-B.2">B.2</a>.)
+
+   Step 7 is the conversion of the sequence of ADU frames into a
+   corresponding sequence of MP3 frames -- i.e., the reverse of step 1.
+   (Note also the pseudo-code in <a href="#appendix-A.2">Appendix A.2</a>.)  With an appropriately
+   modified MP3 decoder, an implementation may omit this step; instead,
+   it could feed ADU frames directly to the (modified) MP3 decoder.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20ADU%20Frame%20Interleaving"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  ADU Frame Interleaving</span>
+
+   In MPEG audio frames (MPEG-1 or 2; all layers), the high-order 11
+   bits of the 4-byte MPEG header ('syncword') are always all-one (i.e.,
+   0xFFE).  When reordering a sequence of ADU frames for transmission,
+   we reuse these 11 bits as an "Interleaving Sequence Number" (ISN).
+   (Upon reception, they are replaced with 0xFFE once again.)
+
+   The structure of the ISN is (a,b), where:
+
+         - a == bits 0-7:      8-bit Interleave Index (within Cycle)
+         - b == bits 8-10:     3-bit Interleave Cycle Count
+
+   That is, the 4-byte MPEG header is reused as follows:
+
+     0                   1                   2                   3
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |Interleave Idx |CycCt|   The rest of the original MPEG header  |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+   Example: Consider the following interleave cycle (of size 8):
+
+            1,3,5,7,0,2,4,6
+
+   (This particular pattern has the property that any loss of up to four
+   consecutive ADUs in the interleaved stream will lead to a
+   deinterleaved stream with no gaps greater than one.)  This produces
+   the following sequence of ISNs:
+
+   (1,0) (3,0) (5,0) (7,0) (0,0) (2,0) (4,0) (6,0) (1,1) (3,1) (5,1)
+   etc.
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+   So, in this example, a sequence of ADU frames
+
+   f0 f1 f2 f3 f4 f5 f6 f7 f8 f9 (etc.)
+
+   would get reordered, in step 2, into:
+
+   (1,0)f1 (3,0)f3 (5,0)f5 (7,0)f7 (0,0)f0 (2,0)f2 (4,0)f4 (6,0)f6
+   (1,1)f9 (3,1)f11 (5,1)f13 (etc.)
+
+   and the reverse reordering (along with replacement of the 0xFFE)
+   would occur upon reception.
+
+   The reason for breaking the ISN into "Interleave Cycle Count" and
+   "Interleave Index" (rather than just treating it as a single 11-bit
+   counter) is to give receivers a way of knowing when an ADU frame
+   should be 'released' to the ADU-&gt;MP3 conversion process (step 7
+   above), rather than waiting for more interleaved ADU frames to
+   arrive.  For instance, in the example above, when the receiver sees a
+   frame with ISN (&lt;something&gt;,1), it knows that it can release all
+   previously seen frames with ISN (&lt;something&gt;,0), even if some other
+   (&lt;something&gt;,0) frames remain missing due to packet loss.  An 8-bit
+   Interleave Index allows interleave cycles of size up to 256.
+
+   The choice of an interleaving order can be made independently of RTP
+   packetization.  Thus, a simple implementation could choose an
+   interleaving order first, reorder the ADU frames accordingly (step
+   2), then simply pack them sequentially into RTP packets (step 3).
+   However, the size of ADU frames -- and thus the number of ADU frames
+   that will fit in each RTP packet -- will typically vary in size, so a
+   more optimal implementation would combine steps 2 and 3, by choosing
+   an interleaving order that better reflected the number of ADU frames
+   packed within each RTP packet.
+
+   Each receiving implementation of this payload format MUST recognize
+   the ISN and be able to perform deinterleaving of incoming ADU frames
+   (step 6).  However, a sending implementation of this payload format
+   MAY choose not to perform interleaving -- i.e., by omitting step 2.
+   In this case, the high-order 11 bits in each 4-byte MPEG header would
+   remain at 0xFFE.  Receiving implementations would thus see a sequence
+   of identical ISNs (all 0xFFE).  They would handle this in the same
+   way as if the Interleave Cycle Count changed with each ADU frame, by
+   simply releasing the sequence of incoming ADU frames sequentially to
+   the ADU-&gt;MP3 conversion process (step 7), without reordering.  (Note
+   also the pseudo-code in <a href="#appendix-B.2">Appendix B.2</a>.)
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  IANA Considerations</span>
+
+   Media type name: audio
+
+   Media subtype: mpa-robust
+
+   Required parameters: none
+
+   Optional parameters: none
+
+   Encoding considerations:
+         This type is defined only for transfer via RTP, as specified in
+         <a href="./rfc5219">RFC 5219</a>.
+
+      Security considerations:
+         See the "Security Considerations" section of <a href="./rfc5219">RFC 5219</a>.
+
+      Interoperability considerations:
+         This encoding is incompatible with both the "audio/mpa" and
+         "audio/mpeg" media types.
+
+      Published specification:
+         The ISO/IEC MPEG-1 [<a href="#ref-3" title='"Coding of moving pictures and associated audio for digital storage media up to about 1,5 Mbits/s -- Part 3: Audio"'>3</a>] and MPEG-2 [<a href="#ref-4" title='"Generic coding of moving pictures and associated audio information -- Part 3: Audio"'>4</a>] audio specifications, and
+         <a href="./rfc5219">RFC 5219</a>.
+
+      Applications that use this media type:
+         Audio streaming tools (transmitting and receiving)
+
+      Additional information: none
+
+      Person &amp; email address to contact for further information:
+         Ross Finlayson
+         finlayson@live555.com
+
+      Intended usage: COMMON
+
+      Author/Change controller:
+         Author: Ross Finlayson
+         Change controller: IETF AVT Working Group
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20SDP%20Usage"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  SDP Usage</span>
+
+   When conveying information by SDP [<a href="#ref-7" title='"SDP: Session Description Protocol"'>7</a>], the encoding name SHALL be
+   "mpa-robust" (the same as the media subtype).  An example of the
+   media representation in SDP is:
+
+         m=audio 49000 RTP/AVP 121
+         a=rtpmap:121 mpa-robust/90000
+
+   Note that the RTP timestamp frequency MUST be 90000.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20Security%20Considerations"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  Security Considerations</span>
+
+   If a session using this payload format is being encrypted, and
+   interleaving is being used, then the sender SHOULD ensure that any
+   change of encryption key coincides with a start of a new interleave
+   cycle.  Apart from this, the security considerations for this payload
+   format are identical to those noted for <a href="./rfc2250">RFC 2250</a> [<a href="#ref-1" title='"RTP Payload Format for MPEG1/MPEG2 Video"'>1</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20Acknowledgements"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  Acknowledgements</span>
+
+   The suggestion of adding an interleaving option (using the first bits
+   of the MPEG 'syncword' -- which would otherwise be all-ones -- as an
+   interleaving index) is due to Dave Singer and Stefan Gewinner.  In
+   addition, Dave Singer provided valuable feedback that helped clarify
+
+   and improve the description of this payload format.  Feedback from
+   Chris Sloan led to the addition of an "ADU descriptor" preceding each
+   ADU frame in the RTP packet.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.%20Normative%20References"></a><a class="selflink" href="#section-12" id="section-12">12</a>. Normative References</span>
+
+   [<a id="ref-1">1</a>] Hoffman, D., Fernando, G., Goyal, V., and M. Civanlar, "RTP
+       Payload Format for MPEG1/MPEG2 Video", <a href="./rfc2250">RFC 2250</a>, January 1998.
+
+   [<a id="ref-2">2</a>] Bradner, S., "Key words for use in RFCs to Indicate Requirement
+       Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-3">3</a>] ISO/IEC International Standard 11172-3; "Coding of moving
+       pictures and associated audio for digital storage media up to
+       about 1,5 Mbits/s -- Part 3: Audio", 1993.
+
+   [<a id="ref-4">4</a>] ISO/IEC International Standard 13818-3; "Generic coding of moving
+       pictures and associated audio information -- Part 3: Audio",
+       1998.
+
+   [<a id="ref-5">5</a>] Handley, M. and C. Perkins, "Guidelines for Writers of RTP
+       Payload Format Specifications", <a href="https://www.rfc-editor.org/bcp/bcp36">BCP 36</a>, <a href="./rfc2736">RFC 2736</a>, December 1999.
+
+   [<a id="ref-6">6</a>] Schulzrinne, H. and S. Casner, "RTP Profile for Audio and Video
+       Conferences with Minimal Control", STD 65, <a href="./rfc3551">RFC 3551</a>, July 2003.
+
+   [<a id="ref-7">7</a>] Handley, M., Jacobson, V., and C. Perkins, "SDP: Session
+       Description Protocol", <a href="./rfc4566">RFC 4566</a>, July 2006.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Translating%20between%20%22MP3%20Frames%22%20and%20%22ADU%20Frames%22"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Translating between "MP3 Frames" and "ADU Frames"</span>
+
+   The following 'pseudo code' describes how a sender using this payload
+   format can translate a sequence of regular "MP3 Frames" to "ADU
+   Frames", and how a receiver can perform the reverse translation: from
+   "ADU Frames" to "MP3 Frames".
+
+   We first define the following abstract data structures:
+
+   -  "Segment": A record that represents either a "MP3 Frame" or an
+      "ADU Frame".  It consists of the following fields:
+      -  "header": the 4-byte MPEG header
+      -  "headerSize": a constant (== 4)
+      -  "sideInfo": the 'side info' structure, *including* the optional
+         2-byte CRC field, if present
+      -  "sideInfoSize": the size (in bytes) of the above structure
+      -  "frameData": the remaining data in this frame
+      -  "frameDataSize": the size (in bytes) of the above data
+      -  "backpointer": the value (expressed in bytes) of the
+         backpointer for this frame
+      -  "aduDataSize": the size (in bytes) of the ADU associated with
+         this frame.  (If the frame is already an "ADU Frame", then
+         aduDataSize == frameDataSize)
+      -  "mp3FrameSize": the total size (in bytes) that this frame would
+         have if it were a regular "MP3 Frame".  (If it is already a
+         "MP3 Frame", then mp3FrameSize == headerSize + sideInfoSize +
+         frameDataSize) Note that this size can be derived completely
+         from "header".
+
+   -  "SegmentQueue": A FIFO queue of "Segments", with operations
+      -  void enqueue(Segment)
+      -  Segment dequeue()
+      -  Boolean isEmpty()
+      -  Segment head()
+      -  Segment tail()
+      -  Segment previous(Segment):  returns the segment prior to a
+         given one
+      -  Segment next(Segment): returns the segment after a given one
+      -  unsigned totalDataSize(): returns the sum of the
+         "frameDataSize" fields of each entry in the queue
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.1.%20%20Converting%20a%20Sequence%20of%20%22MP3%20Frames%22%20to%20a%20Sequence%20of"></a><a class="selflink" href="#appendix-A.1" id="appendix-A.1">A.1</a>.  Converting a Sequence of "MP3 Frames" to a Sequence of</span>
+      "ADU Frames"
+
+   SegmentQueue pendingMP3Frames; // initially empty
+   while (1) {
+            // Enqueue new MP3 Frames, until we have enough data to
+            // generate the ADU for a frame:
+            do {
+                    int totalDataSizeBefore
+                            = pendingMP3Frames.totalDataSize();
+
+                    Segment newFrame = 'the next MP3 Frame';
+                    pendingMP3Frames.enqueue(newFrame);
+
+                    int totalDataSizeAfter
+                            = pendingMP3Frames.totalDataSize();
+            } while (totalDataSizeBefore &lt; newFrame.backpointer ||
+                      totalDataSizeAfter &lt; newFrame.aduDataSize);
+
+            // We now have enough data to generate the ADU for the most
+            // recently enqueued frame (i.e., the tail of the queue).
+            // (The earlier frames in the queue -- if any -- must be
+            // discarded, as we don't have enough data to generate
+            // their ADUs.)
+            Segment tailFrame = pendingMP3Frames.tail();
+
+            // Output the header and side info:
+            output(tailFrame.header);
+            output(tailFrame.sideInfo);
+
+            // Go back to the frame that contains the start of our
+            // ADU data:
+            int offset = 0;
+            Segment curFrame = tailFrame;
+            int prevBytes = tailFrame.backpointer;
+            while (prevBytes &gt; 0) {
+                    curFrame = pendingMP3Frames.previous(curFrame);
+                    int dataHere = curFrame.frameDataSize;
+                    if (dataHere &lt; prevBytes) {
+                            prevBytes -= dataHere;
+                    } else {
+                            offset = dataHere - prevBytes;
+                            break;
+                    }
+            }
+
+            // Dequeue any frames that we no longer need:
+            while (pendingMP3Frames.head() != curFrame) {
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+                    pendingMP3Frames.dequeue();
+            }
+
+            // Output, from the remaining frames, the ADU data that
+            // we want:
+            int bytesToUse = tailFrame.aduDataSize;
+            while (bytesToUse &gt; 0) {
+                    int dataHere = curFrame.frameDataSize - offset;
+                    int bytesUsedHere
+                            = dataHere &lt; bytesToUse ? dataHere :
+                            bytesToUse;
+
+                    output("bytesUsedHere" bytes from
+                           curFrame.frameData, starting from "offset");
+
+                    bytesToUse -= bytesUsedHere;
+                    offset = 0;
+                    curFrame = pendingMP3Frames.next(curFrame);
+            }
+   }
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.2.%20%20Converting%20a%20Sequence%20of%20%22ADU%20Frames%22%20to%20a%20Sequence%20of"></a><a class="selflink" href="#appendix-A.2" id="appendix-A.2">A.2</a>.  Converting a Sequence of "ADU Frames" to a Sequence of</span>
+      "MP3 Frames"
+
+   SegmentQueue pendingADUFrames; // initially empty
+   while (1) {
+            while (needToGetAnADU()) {
+                    Segment newADU = 'the next ADU Frame';
+                    pendingADUFrames.enqueue(newADU);
+
+                    insertDummyADUsIfNecessary();
+            }
+
+            generateFrameFromHeadADU();
+   }
+
+   Boolean needToGetAnADU() {
+            // Checks whether we need to enqueue one or more new ADUs
+            // before we have enough data to generate a frame for the
+            // head ADU.
+            Boolean needToEnqueue = True;
+
+            if (!pendingADUFrames.isEmpty()) {
+                    Segment curADU = pendingADUFrames.head();
+                    int endOfHeadFrame = curADU.mp3FrameSize
+                            - curADU.headerSize - curADU.sideInfoSize;
+                    int frameOffset = 0;
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+                    while (1) {
+                           int endOfData = frameOffset
+                                   - curADU.backpointer +
+                                     curADU.aduDataSize;
+                           if (endOfData &gt;= endOfHeadFrame) {
+                                   // We have enough data to generate a
+                                   // frame.
+                                   needToEnqueue = False;
+                                   break;
+                           }
+
+                           frameOffset += curADU.mp3FrameSize
+                                   - curADU.headerSize
+                                   - curADU.sideInfoSize;
+                           if (curADU == pendingADUFrames.tail()) break;
+                           curADU = pendingADUFrames.next(curADU);
+                    }
+            }
+
+        return needToEnqueue;
+   }
+
+   void generateFrameFromHeadADU() {
+            Segment curADU = pendingADUFrames.head();
+
+            // Output the header and side info:
+            output(curADU.header);
+            output(curADU.sideInfo);
+
+            // Begin by zeroing out the rest of the frame, in case the
+            // ADU data doesn't fill it in completely:
+            int endOfHeadFrame = curADU.mp3FrameSize
+                    - curADU.headerSize - curADU.sideInfoSize;
+            output("endOfHeadFrame" zero bytes);
+
+            // Fill in the frame with appropriate ADU data from this and
+            // subsequent ADUs:
+            int frameOffset = 0;
+            int toOffset = 0;
+
+            while (toOffset &lt; endOfHeadFrame) {
+                   int startOfData = frameOffset - curADU.backpointer;
+                   if (startOfData &gt; endOfHeadFrame) {
+                           break; // no more ADUs are needed
+                   }
+                   int endOfData = startOfData + curADU.aduDataSize;
+                   if (endOfData &gt; endOfHeadFrame) {
+                           endOfData = endOfHeadFrame;
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+                   }
+
+                   int fromOffset;
+                   if (startOfData &lt;= toOffset) {
+                           fromOffset = toOffset - startOfData;
+                           startOfData = toOffset;
+                           if (endOfData &lt; startOfData) {
+                                   endOfData = startOfData;
+                           }
+                   } else {
+                           fromOffset = 0;
+
+                           // leave some zero bytes beforehand:
+                           toOffset = startOfData;
+                   }
+
+                   int bytesUsedHere = endOfData - startOfData;
+                   output(starting at offset "toOffset", "bytesUsedHere"
+                           bytes from "&amp;curADU.frameData[fromOffset]");
+                   toOffset += bytesUsedHere;
+
+                   frameOffset += curADU.mp3FrameSize
+                           - curADU.headerSize - curADU.sideInfoSize;
+                   curADU = pendingADUFrames.next(curADU);
+            }
+
+            pendingADUFrames.dequeue();
+   }
+
+   void insertDummyADUsIfNecessary() {
+            // The tail segment (ADU) is assumed to have been recently
+            // enqueued.  If its backpointer would overlap the data
+            // of the previous ADU, then we need to insert one or more
+            // empty, 'dummy' ADUs ahead of it.  (This situation
+            // should occur only if an intermediate ADU was missing
+            // -- e.g., due to packet loss.)
+            while (1) {
+                   Segment tailADU = pendingADUFrames.tail();
+                   int prevADUend; // relative to the start
+                    of the tail ADU
+
+                   if (pendingADUFrames.head() != tailADU) {
+                           // there is a previous ADU
+                           Segment prevADU
+                                   = pendingADUFrames.previous(tailADU);
+                           prevADUend
+                                   = prevADU.mp3FrameSize +
+                                     prevADU.backpointer
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+                                     - prevADU.headerSize
+                                     - prevADU.sideInfoSize;
+                           if (prevADU.aduDataSize &gt; prevADUend) {
+                                   // this shouldn't happen if the
+                                   // previous ADU was well-formed
+                                   prevADUend = 0;
+                           } else {
+                                   prevADUend -= prevADU.aduDataSize;
+                           }
+                   } else {
+                           prevADUend = 0;
+                   }
+
+                   if (tailADU.backpointer &gt; prevADUend) {
+                      // Insert a 'dummy' ADU in front of the tail.
+                      // This ADU can have the same "header" (and thus,
+                      // "mp3FrameSize") as the tail ADU, but should
+                      // have a "backpointer" of "prevADUend", and
+                      // an "aduDataSize" of zero.  The simplest
+                      // way to do this is to copy the "sideInfo" from
+                      // the tail ADU, replace the value of
+                      // "main_data_begin" with "prevADUend", and set
+                      // all of the "part2_3_length" fields to zero.
+                   } else {
+                           break; // no more dummy ADUs need to be
+                                  // inserted
+                   }
+            }
+   }
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20B.%20%20Interleaving%20and%20Deinterleaving"></a><a class="selflink" href="#appendix-B" id="appendix-B">Appendix B</a>.  Interleaving and Deinterleaving</span>
+
+   The following 'pseudo code' describes how a sender can reorder a
+   sequence of "ADU Frames" according to an interleaving pattern
+   (step 2), and how a receiver can perform the reverse reordering (step
+   6).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/B.1.%20%20Interleaving%20a%20Sequence%20of%20%22ADU%20Frames%22"></a><a class="selflink" href="#appendix-B.1" id="appendix-B.1">B.1</a>.  Interleaving a Sequence of "ADU Frames"</span>
+
+   We first define the following abstract data structures:
+
+   -  "interleaveCycleSize": an integer in the range [1..256] --
+      "interleaveCycle": an array, of size "interleaveCycleSize",
+      containing some permutation of the integers from the set [0 ..
+      interleaveCycleSize-1] e.g., if "interleaveCycleSize" == 8,
+      "interleaveCycle" might contain: 1,3,5,7,0,2,4,6
+   -  "inverseInterleaveCycle": an array containing the inverse of the
+      permutation in "interleaveCycle" -- i.e., such that
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+      interleaveCycle[inverseInterleaveCycle[i]] == i
+   -  "ii": the current Interleave Index (initially 0)
+   -  "icc": the current Interleave Cycle Count (initially 0)
+   -  "aduFrameBuffer": an array, of size "interleaveCycleSize", of ADU
+      Frames that are awaiting packetization
+
+   while (1) {
+            int positionOfNextFrame = inverseInterleaveCycle[ii];
+            aduFrameBuffer[positionOfNextFrame] = the next ADU frame;
+            replace the high-order 11 bits of this frame's MPEG header
+                with (ii,icc);
+                    // Note: Be sure to leave the remaining 21 bits
+                    // as is
+            if (++ii == interleaveCycleSize) {
+                    // We've finished this cycle, so pass all
+                    // pending frames to the packetizing step
+                    for (int i = 0; i &lt; interleaveCycleSize; ++i) {
+                         pass aduFrameBuffer[i] to the packetizing step;
+                    }
+
+                    ii = 0;
+                    icc = (icc+1)%8;
+            }
+   }
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/B.2.%20%20Deinterleaving%20a%20Sequence%20of%20%28Interleaved%29%20%22ADU%20Frames%22"></a><a class="selflink" href="#appendix-B.2" id="appendix-B.2">B.2</a>.  Deinterleaving a Sequence of (Interleaved) "ADU Frames"</span>
+
+   We first define the following abstract data structures:
+
+   -  "ii": the Interleave Index from the current incoming ADU frame
+   -  "icc": the Interleave Cycle Count from the current incoming ADU
+      frame
+   -  "iiLastSeen": the most recently seen Interleave Index (initially,
+      some integer *not* in the range [0..255])
+   -  "iccLastSeen": the most recently seen Interleave Cycle Count
+      (initially, some integer *not* in the range [0..7])
+   -  "aduFrameBuffer": an array, of size 256, of (pointers to) ADU
+      Frames that have just been depacketized (initially, all entries
+      are NULL)
+
+   while (1) {
+            aduFrame = the next ADU frame from the depacketizing step;
+            (ii,icc) = "the high-order 11 bits of aduFrame's MPEG
+            header"; "the high-order 11 bits of aduFrame's MPEG
+            header" = 0xFFE;
+                    // Note: Be sure to leave the remaining 21 bits
+                    // as is
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+            if (icc != iccLastSeen || ii == iiLastSeen) {
+                    // We've started a new interleave cycle
+                    // (or interleaving was not used).  Release all
+                    // pending ADU frames to the ADU-&gt;MP3 conversion
+                    // step:
+                    for (int i = 0; i &lt; 256; ++i) {
+                            if (aduFrameBuffer[i] != NULL) {
+                                    release aduFrameBuffer[i];
+                                    aduFrameBuffer[i] = NULL;
+                            }
+                    }
+            }
+
+            iiLastSeen = ii;
+            iccLastSeen = icc;
+            aduFrameBuffer[ii] = aduFrame;
+   }
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20C.%20%20Changes%20from%20RFC%203119"></a><a class="selflink" href="#appendix-C" id="appendix-C">Appendix C</a>.  Changes from <a href="./rfc3119">RFC 3119</a></span>
+
+   The primary change from <a href="./rfc3119">RFC 3119</a> is to correct the encoding name in
+   the "SDP usage" section.  The correct encoding name is "mpa-robust".
+   Also, the term "media type" replaces "mime type".  Finally, some
+   minor bug fixes and clarifications were made to the (non-normative)
+   pseudo code in <a href="#appendix-A">Appendix A</a> and <a href="#appendix-B">Appendix B</a>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+Author's Address
+
+   Ross Finlayson,
+   Live Networks, Inc.
+   650 Castro St., suite 120-196
+   Mountain View, CA 94041
+   USA
+
+   EMail: finlayson@live555.com
+   URI: <a href="http://www.live555.com/">http://www.live555.com/</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Finlayson                   Standards Track                    [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc5219">RFC 5219</a>                                                   February 2008</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The IETF Trust (2008).
+
+   This document is subject to the rights, licenses and restrictions
+   contained in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a>, and except as set forth therein, the authors
+   retain all their rights.
+
+   This document and the information contained herein are provided on an
+   "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+   OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY, THE IETF TRUST AND
+   THE INTERNET ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF
+   THE INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+   WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Intellectual Property
+
+   The IETF takes no position regarding the validity or scope of any
+   Intellectual Property Rights or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this document or the extent to which any license under such rights
+   might or might not be available; nor does it represent that it has
+   made any independent effort to identify any such rights.  Information
+   on the procedures with respect to rights in RFC documents can be
+   found in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and <a href="https://www.rfc-editor.org/bcp/bcp79">BCP 79</a>.
+
+   Copies of IPR disclosures made to the IETF Secretariat and any
+   assurances of licenses to be made available, or the result of an
+   attempt made to obtain a general license or permission for the use of
+   such proprietary rights by implementers or users of this
+   specification can be obtained from the IETF on-line IPR repository at
+   <a href="http://www.ietf.org/ipr">http://www.ietf.org/ipr</a>.
+
+   The IETF invites any interested party to bring to its attention any
+   copyrights, patents or patent applications, or other proprietary
+   rights that may cover technology that may be required to implement
+   this standard.  Please address the information to the IETF at
+   ietf-ipr@ietf.org.
+
+
+
+
+
+
+
+
+
+
+
+
+Finlayson                   Standards Track                    [Page 22]
+</pre>
+</body></html>

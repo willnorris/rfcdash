@@ -1,0 +1,614 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                          R. Asati
+Request for Comments: 7527                                      H. Singh
+Updates: <a href="./rfc4429">4429</a>, <a href="./rfc4861">4861</a>, <a href="./rfc4862">4862</a>                                      W. Beebee
+Category: Standards Track                                   C. Pignataro
+ISSN: 2070-1721                                      Cisco Systems, Inc.
+                                                                 E. Dart
+                                   Lawrence Berkeley National Laboratory
+                                                               W. George
+                                                       Time Warner Cable
+                                                              April 2015
+
+
+                  <span class="h1">Enhanced Duplicate Address Detection</span>
+
+Abstract
+
+   IPv6 Loopback Suppression and Duplicate Address Detection (DAD) are
+   discussed in <a href="./rfc4862#appendix-A">Appendix A of RFC 4862</a>.  That specification mentions a
+   hardware-assisted mechanism to detect looped back DAD messages.  If
+   hardware cannot suppress looped back DAD messages, a software
+   solution is required.  Several service provider communities have
+   expressed a need for automated detection of looped back Neighbor
+   Discovery (ND) messages used by DAD.  This document includes
+   mitigation techniques and outlines the Enhanced DAD algorithm to
+   automate the detection of looped back IPv6 ND messages used by DAD.
+   For network loopback tests, the Enhanced DAD algorithm allows IPv6 to
+   self-heal after a loopback is placed and removed.  Further, for
+   certain access networks, this document automates resolving a specific
+   duplicate address conflict.  This document updates RFCs 4429, 4861,
+   and 4862.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc7527">http://www.rfc-editor.org/info/rfc7527</a>.
+
+
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2015 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+     <a href="#section-1.1">1.1</a>.  Requirements Language . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-1.2">1.2</a>.  Terminology . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Problem Statement . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-3">3</a>.  Operational Mitigation Options  . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-3.1">3.1</a>.  Disable DAD on an Interface . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-3.2">3.2</a>.  Dynamic Disable/Enable of DAD Using Layer 2 Protocol  . .   <a href="#page-5">5</a>
+     <a href="#section-3.3">3.3</a>.  Operational Considerations  . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+   <a href="#section-4">4</a>.  The Enhanced DAD Algorithm  . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-4.1">4.1</a>.  Processing Rules for Senders  . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-4.2">4.2</a>.  Processing Rules for Receivers  . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-4.3">4.3</a>.  Changes to <a href="./rfc4861">RFC 4861</a> . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  Action to Perform on Detecting a Genuine Duplicate  . . . . .   <a href="#page-7">7</a>
+   <a href="#section-6">6</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-7">7</a>.  Normative References  . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   IPv6 Loopback Suppression and Duplicate Address Detection (DAD) are
+   discussed in <a href="./rfc4862#appendix-A">Appendix A of [RFC4862]</a>.  That specification mentions a
+   hardware-assisted mechanism to detect looped back DAD messages.  If
+   hardware cannot suppress looped back DAD messages, a software
+   solution is required.  One specific DAD message is the Neighbor
+   Solicitation (NS), specified in [<a href="./rfc4861" title='"Neighbor Discovery for IP version 6 (IPv6)"'>RFC4861</a>].  The NS is issued by the
+   network interface of an IPv6 node for DAD.  Another message involved
+   in DAD is the Neighbor Advertisement (NA).  The Enhanced DAD
+   algorithm specified in this document focuses on detecting an NS
+   looped back to the transmitting interface during the DAD operation.
+   Detecting a looped back NA does not solve the looped back DAD
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   problem.  Detection of any other looped back ND messages during the
+   DAD operation is outside the scope of this document.  This document
+   also includes a section on mitigation that discusses means already
+   available to mitigate the DAD loopback problem.  This document
+   updates RFCs 4429, 4861, and 4862.  It updates RFCs 4429 and 4862 to
+   use the Enhanced DAD algorithm to detect looped back DAD probes, and
+   it updates <a href="./rfc4861">RFC 4861</a> as described in <a href="#section-4.3">Section 4.3</a> below.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Requirements%20Language"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Requirements Language</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.2.%20%20Terminology"></a><a class="selflink" href="#section-1.2" id="section-1.2">1.2</a>.  Terminology</span>
+
+   o  DAD-failed state - Duplication Address Detection failure as
+      specified in [<a href="./rfc4862" title='"IPv6 Stateless Address Autoconfiguration"'>RFC4862</a>].  Note even Optimistic DAD as specified in
+      [<a href="./rfc4429" title='"Optimistic Duplicate Address Detection (DAD) for IPv6"'>RFC4429</a>] can fail due to a looped back DAD probe.  This document
+      covers looped back detection for Optimistic DAD as well.
+
+   o  Looped back message - also referred to as a reflected message.
+      The message sent by the sender is received by the sender due to
+      the network or an upper-layer protocol on the sender looping the
+      message back.
+
+   o  Loopback - A function in which the router's Layer 3 interface (or
+      the circuit to which the router's interface is connected) is
+      looped back or connected to itself.  Loopback causes packets sent
+      by the interface to be received by the interface and results in
+      interface unavailability for regular data traffic forwarding.  See
+      more details in <a href="./rfc2328#section-9.1">Section 9.1 of [RFC2328]</a>.  The Loopback function
+      is commonly used in an interface context to gain information on
+      the quality of the interface, by employing mechanisms such as
+      ICMPv6 pings and bit-error tests.  In a circuit context, this
+      function is used in wide-area environments including optical Dense
+      Wavelength Division Multiplexing (DWDM) and Synchronous Optical
+      Network / Synchronous Digital Hierarchy (SONET/SDH) for fault
+      isolation (e.g., by placing a loopback at different geographic
+      locations along the path of a wide-area circuit to help locate a
+      circuit fault).  The Loopback function may be employed locally or
+      remotely.
+
+   o  NS(DAD) - shorthand notation to denote a Neighbor Solicitation
+      (NS) (as specified in [<a href="./rfc4861" title='"Neighbor Discovery for IP version 6 (IPv6)"'>RFC4861</a>]) that has an unspecified IPv6
+      source address and was issued during DAD.
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Problem%20Statement"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Problem Statement</span>
+
+   Service providers have reported a problem with DAD that arises in a
+   few scenarios.  In the first scenario, loopback testing for
+   troubleshooting purposes is underway on a circuit connected to an
+   IPv6-enabled interface on a router.  The interface issues an NS for
+   the IPv6 link-local address DAD.  The NS is reflected back to the
+   router interface due to the loopback condition of the circuit, and
+   the router interface enters a DAD-failed state.  After the loopback
+   condition is removed, IPv4 will return to operation without further
+   manual intervention.  However, IPv6 will remain in DAD-failed state
+   until manual intervention on the router restores IPv6 to operation.
+
+   In the second scenario, two broadband modems are served by the same
+   service provider and terminate to the same Layer 3 interface on an
+   IPv6-enabled access concentrator.  In this case, the two modems'
+   Ethernet interfaces are also connected to a common local network
+   (collision domain).  The access concentrator serving the modems is
+   the first-hop IPv6 router for the modems and issues a NS(DAD) message
+   for the IPv6 link-local address of its Layer 3 interface.  The NS
+   message reaches one modem first, and this modem sends the message to
+   the local network, where the second modem receives the message and
+   then forwards it back to the access concentrator.  The looped back NS
+   message causes the network interface on the access concentrator to be
+   in a DAD-failed state.  Such a network interface typically serves
+   thousands of broadband modems, and all would have their IPv6
+   connectivity affected until the DAD-failed state is cleared.
+   Additionally, it may be difficult for the user of the access
+   concentrator to determine the source of the looped back DAD message.
+   Thus, in order to avoid IPv6 outages that can potentially affect
+   multiple users, there is a need for automated detection of looped
+   back NS messages during DAD operations by a node.
+
+   Note: In both examples above, the IPv6 link-local address DAD
+   operation fails due to a looped back DAD probe.  However, the problem
+   of a looped back DAD probe exists for any IPv6 address type including
+   global addresses.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Operational%20Mitigation%20Options"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Operational Mitigation Options</span>
+
+   Two mitigation options are described below that do not require any
+   change to existing implementations.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Disable%20DAD%20on%20an%20Interface"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Disable DAD on an Interface</span>
+
+   One can disable DAD on an interface so that there are no NS(DAD)
+   messages issued.  While this mitigation may be the simplest, the
+   mitigation has three drawbacks: 1) care is needed when making such
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   configuration changes on point-to-point interfaces, 2) this is a one-
+   time manual configuration on each interface, and 3) genuine
+   duplicates on the link will not be detected.
+
+   A service provider router, such as an access concentrator, or network
+   core router, SHOULD support the DAD deactivation per interface.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Dynamic%20Disable%2FEnable%20of%20DAD%20Using%20Layer%202%20Protocol"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Dynamic Disable/Enable of DAD Using Layer 2 Protocol</span>
+
+   Some Layer 2 protocols include provisions to detect the existence of
+   a loopback on an interface circuit, usually by comparing protocol
+   data sent and received.  For example, the Point-to-Point Protocol
+   (PPP) uses a magic number (<a href="./rfc1661#section-6.4">Section 6.4 of [RFC1661]</a>) to detect a
+   loopback on an interface.
+
+   When a Layer 2 protocol detects that a loopback is present on an
+   interface circuit, the device MUST temporarily disable DAD on the
+   interface.  When the protocol detects that a loopback is no longer
+   present (or the interface state has changed), the device MUST
+   (re-)enable DAD on that interface.
+
+   This mitigation has several benefits.  It leverages the Layer 2
+   protocol's built-in hardware loopback detection capability, if
+   available.  Being a hardware solution, it scales better than the
+   software solution proposed in this document.  This mitigation also
+   scales better since it relies on an event-driven model that requires
+   no additional state or timer.  This may be significant on devices
+   with hundreds or thousands of interfaces that may be in loopback for
+   long periods of time (e.g., awaiting turn-up).
+
+   Detecting looped back DAD messages using a Layer 2 protocol SHOULD be
+   enabled by default, and it MUST be a configurable option if the Layer
+   2 technology provides means for detecting loopback messages on an
+   interface circuit.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Operational%20Considerations"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Operational Considerations</span>
+
+   The mitigation options discussed above do not require the devices on
+   both ends of the circuit to support the mitigation functionality
+   simultaneously and do not propose any capability negotiation.  They
+   are effective for unidirectional circuit or interface loopback (i.e.
+   the loopback is placed in one direction on the circuit, rendering the
+   other direction nonoperational), but they may not be effective for a
+   bidirectional loopback (i.e., the loopback is placed in both
+   directions of the circuit interface, so as to identify the faulty
+   segment).  This is because, unless both ends followed a mitigation
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   option specified in this document, the noncompliant device would
+   follow current behavior and disable IPv6 on that interface due to DAD
+   until manual intervention restores it.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20The%20Enhanced%20DAD%20Algorithm"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  The Enhanced DAD Algorithm</span>
+
+   The Enhanced DAD algorithm covers detection of a looped back NS(DAD)
+   message.  This document proposes use of a random number in the Nonce
+   Option specified in SEcure Neighbor Discovery (SEND) [<a href="./rfc3971" title='"SEcure Neighbor Discovery (SEND)"'>RFC3971</a>].  Note
+   [<a href="./rfc3971" title='"SEcure Neighbor Discovery (SEND)"'>RFC3971</a>] does not provide a recommendation for pseudorandom
+   functions.  Pseudorandom functions are covered in [<a href="./rfc4086" title='"Randomness Requirements for Security"'>RFC4086</a>].  Since a
+   nonce is used only once, the NS(DAD) for each IPv6 address of an
+   interface uses a different nonce.  Additional details of the
+   algorithm are included in <a href="#section-4.1">Section 4.1</a>.
+
+   If there is a collision because two nodes used the same Target
+   Address in their NS(DAD) and generated the same random nonce, then
+   the algorithm will incorrectly detect a looped back NS(DAD) when a
+   genuine address collision has occurred.  Since each looped back
+   NS(DAD) event is logged to system management, the administrator of
+   the network will have access to the information necessary to
+   intervene manually.  Also, because the nodes will have detected what
+   appear to be looped back NS(DAD) messages, they will continue to
+   probe, and it is unlikely that they will choose the same nonce the
+   second time (assuming quality random number generators).
+
+   The algorithm is capable of detecting any ND solicitation (NS and
+   Router Solicitation) or advertisement (NA and Router Advertisement)
+   that is looped back.  However, there may be increased implementation
+   complexity and memory usage for the sender node to store a nonce and
+   nonce-related state for all ND messages.  Therefore, this document
+   does not recommend using the algorithm outside of the DAD operation
+   by an interface on a node.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Processing%20Rules%20for%20Senders"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Processing Rules for Senders</span>
+
+   If a node has been configured to use the Enhanced DAD algorithm, when
+   sending an NS(DAD) for a tentative or optimistic interface address,
+   the sender MUST generate a random nonce associated with the interface
+   address, MUST store the nonce internally, and MUST include the nonce
+   in the Nonce option included in the NS(DAD).  If the interface does
+   not receive any DAD failure indications within RetransTimer
+   milliseconds (see [<a href="./rfc4861" title='"Neighbor Discovery for IP version 6 (IPv6)"'>RFC4861</a>]) after having sent DupAddrDetectTransmits
+   Neighbor Solicitations, the interface moves the Target Address to the
+   assigned state.
+
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   If any probe is looped back within RetransTimer milliseconds after
+   having sent DupAddrDetectTransmits NS(DAD) messages, the interface
+   continues with another MAX_MULTICAST_SOLICIT number of NS(DAD)
+   messages transmitted RetransTimer milliseconds apart.  <a href="./rfc3971#section-2">Section 2 of
+   [RFC3971]</a> defines a single-use nonce, so each Enhanced DAD probe uses
+   a different nonce.  If no probe is looped back within RetransTimer
+   milliseconds after MAX_MULTICAST_SOLICIT NS(DAD) messages are sent,
+   the probing stops.  The probing MAY be stopped via manual
+   intervention.  When probing is stopped, the interface moves the
+   Target Address to the assigned state.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Processing%20Rules%20for%20Receivers"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Processing Rules for Receivers</span>
+
+   If the node has been configured to use the Enhanced DAD algorithm and
+   an interface on the node receives any NS(DAD) message where the
+   Target Address matches the interface address (in tentative or
+   optimistic state), the receiver compares the nonce included in the
+   message, with any stored nonce on the receiving interface.  If a
+   match is found, the node SHOULD log a system management message,
+   SHOULD update any statistics counter, and MUST drop the received
+   message.  If the received NS(DAD) message includes a nonce and no
+   match is found with any stored nonce, the node SHOULD log a system
+   management message for a DAD-failed state and SHOULD update any
+   statistics counter.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Changes%20to%20RFC%204861"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Changes to <a href="./rfc4861">RFC 4861</a></span>
+
+   The following text is appended to the Source Address definition in
+   <a href="./rfc4861#section-4.3">Section 4.3 of [RFC4861]</a>:
+
+   If a node has been configured to use the Enhanced DAD algorithm, an
+   NS with an unspecified source address adds the Nonce option to the
+   message and implements the state machine of the Enhanced DAD
+   algorithm.
+
+   The following text is appended to the RetransTimer variable
+   description in <a href="./rfc4861#section-6.3.2">Section 6.3.2 of [RFC4861]</a>:
+
+   The RetransTimer MAY be overridden by a link-specific document if a
+   node supports the Enhanced DAD algorithm.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Action%20to%20Perform%20on%20Detecting%20a%20Genuine%20Duplicate"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Action to Perform on Detecting a Genuine Duplicate</span>
+
+   As described in the paragraphs above, the nonce can also serve to
+   detect genuine duplicates even when the network has potential for
+   looping back ND messages.  When a genuine duplicate is detected, the
+   node follows the manual intervention specified in <a href="./rfc4862#section-5.4.5">Section 5.4.5 of
+   [RFC4862]</a>.  However, in certain cases, if the genuine duplicate
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   matches the tentative or optimistic IPv6 address of a network
+   interface of the access concentrator, additional automated action is
+   recommended.
+
+   Some networks follow a trust model where a trusted router serves
+   untrusted IPv6 host nodes.  Operators of such networks have a desire
+   to take automated action if a network interface of the trusted router
+   has a tentative or optimistic address duplicated by a host.  One
+   example of a type of access network is cable broadband deployment
+   where the access concentrator is the first-hop IPv6 router to
+   multiple broadband modems and supports proxying of DAD messages.  The
+   network interface on the access concentrator initiates DAD for an
+   IPv6 address and detects a genuine duplicate due to receiving an
+   NS(DAD) or an NA message.  On detecting such a duplicate, the access
+   concentrator SHOULD log a system management message, drop the
+   received ND message, and block the modem on whose Layer 2 service
+   identifier the duplicate NS(DAD) or NA message was received.  Any
+   other network that follows the same trust model MAY use the automated
+   action proposed in this section.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   This document does not improve or reduce the security posture of
+   [<a href="./rfc4862" title='"IPv6 Stateless Address Autoconfiguration"'>RFC4862</a>].  The nonce can be exploited by a rogue deliberately
+   changing the nonce to fail the looped back detection specified by the
+   Enhanced DAD algorithm.  SEND is recommended to circumvent this
+   exploit.  Additionally, the nonce does not protect against the DoS
+   caused by a rogue node replying by a fake NA to all DAD probes.  SEND
+   is recommended to circumvent this exploit also.  Disabling DAD has an
+   obvious security issue before a remote node on the link can issue
+   reflected NS(DAD) messages.  Again, SEND is recommended for this
+   exploit.  Source Address Validation Improvement (SAVI) [<a href="./rfc6620" title='"FCFS SAVI: First-Come, First-Served Source Address Validation Improvement for Locally Assigned IPv6 Addresses"'>RFC6620</a>] also
+   protects against various attacks by on-link rogues.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Normative%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Normative References</span>
+
+   [<a id="ref-RFC1661">RFC1661</a>]  Simpson, W., Ed., "The Point-to-Point Protocol (PPP)", STD
+              51, <a href="./rfc1661">RFC 1661</a>, July 1994,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc1661">http://www.rfc-editor.org/info/rfc1661</a>&gt;.
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc2119">http://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC2328">RFC2328</a>]  Moy, J., "OSPF Version 2", STD 54, <a href="./rfc2328">RFC 2328</a>, April 1998,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc2328">http://www.rfc-editor.org/info/rfc2328</a>&gt;.
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   [<a id="ref-RFC3971">RFC3971</a>]  Arkko, J., Ed., Kempf, J., Zill, B., and P. Nikander,
+              "SEcure Neighbor Discovery (SEND)", <a href="./rfc3971">RFC 3971</a>, March 2005,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc3971">http://www.rfc-editor.org/info/rfc3971</a>&gt;.
+
+   [<a id="ref-RFC4086">RFC4086</a>]  Eastlake 3rd, D., Schiller, J., and S. Crocker,
+              "Randomness Requirements for Security", <a href="https://www.rfc-editor.org/bcp/bcp106">BCP 106</a>, <a href="./rfc4086">RFC 4086</a>,
+              June 2005, &lt;<a href="http://www.rfc-editor.org/info/rfc4086">http://www.rfc-editor.org/info/rfc4086</a>&gt;.
+
+   [<a id="ref-RFC4429">RFC4429</a>]  Moore, N., "Optimistic Duplicate Address Detection (DAD)
+              for IPv6", <a href="./rfc4429">RFC 4429</a>, April 2006,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc4429">http://www.rfc-editor.org/info/rfc4429</a>&gt;.
+
+   [<a id="ref-RFC4861">RFC4861</a>]  Narten, T., Nordmark, E., Simpson, W., and H. Soliman,
+              "Neighbor Discovery for IP version 6 (IPv6)", <a href="./rfc4861">RFC 4861</a>,
+              September 2007, &lt;<a href="http://www.rfc-editor.org/info/rfc4861">http://www.rfc-editor.org/info/rfc4861</a>&gt;.
+
+   [<a id="ref-RFC4862">RFC4862</a>]  Thomson, S., Narten, T., and T. Jinmei, "IPv6 Stateless
+              Address Autoconfiguration", <a href="./rfc4862">RFC 4862</a>, September 2007,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc4862">http://www.rfc-editor.org/info/rfc4862</a>&gt;.
+
+   [<a id="ref-RFC6620">RFC6620</a>]  Nordmark, E., Bagnulo, M., and E. Levy-Abegnoli, "FCFS
+              SAVI: First-Come, First-Served Source Address Validation
+              Improvement for Locally Assigned IPv6 Addresses", <a href="./rfc6620">RFC</a>
+              <a href="./rfc6620">6620</a>, May 2012, &lt;<a href="http://www.rfc-editor.org/info/rfc6620">http://www.rfc-editor.org/info/rfc6620</a>&gt;.
+
+Acknowledgements
+
+   Thanks (in alphabetical order by first name) to Adrian Farrel, Benoit
+   Claise, Bernie Volz, Brian Haberman, Dmitry Anipko, Eric Levy-
+   Abegnoli, Eric Vyncke, Erik Nordmark, Fred Templin, Hilarie Orman,
+   Jouni Korhonen, Michael Sinatra, Ole Troan, Pascal Thubert, Ray
+   Hunter, Suresh Krishnan, Tassos Chatzithomaoglou, and Tim Chown for
+   their guidance and review of the document.  Thanks to Thomas Narten
+   for encouraging this work.  Thanks to Steinar Haug and Scott Beuker
+   for describing some of the use cases.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+Authors' Addresses
+
+   Rajiv Asati
+   Cisco Systems, Inc.
+   7025 Kit Creek road
+   Research Triangle Park, NC  27709-4987
+   United States
+
+   EMail: rajiva@cisco.com
+   URI:   <a href="http://www.cisco.com/">http://www.cisco.com/</a>
+
+
+   Hemant Singh
+   Cisco Systems, Inc.
+   1414 Massachusetts Ave.
+   Boxborough, MA  01719
+   United States
+
+   Phone: +1 978 936 1622
+   EMail: shemant@cisco.com
+   URI:   <a href="http://www.cisco.com/">http://www.cisco.com/</a>
+
+
+   Wes Beebee
+   Cisco Systems, Inc.
+   1414 Massachusetts Ave.
+   Boxborough, MA  01719
+   United States
+
+   Phone: +1 978 936 2030
+   EMail: wbeebee@cisco.com
+   URI:   <a href="http://www.cisco.com/">http://www.cisco.com/</a>
+
+
+   Carlos Pignataro
+   Cisco Systems, Inc.
+   7200-12 Kit Creek Road
+   Research Triangle Park, NC  27709
+   United States
+
+   EMail: cpignata@cisco.com
+   URI:   <a href="http://www.cisco.com/">http://www.cisco.com/</a>
+
+
+
+
+
+
+
+
+
+<span class="grey">Asati, et al.                Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc7527">RFC 7527</a>                      Enhanced DAD                    April 2015</span>
+
+
+   Eli Dart
+   Lawrence Berkeley National Laboratory
+   1 Cyclotron Road, Berkeley, CA 94720
+   United States
+
+   EMail: dart@es.net
+   URI:   <a href="http://www.es.net/">http://www.es.net/</a>
+
+
+   Wesley George
+   Time Warner Cable
+   13820 Sunrise Valley Drive
+   Herndon, VA  20171
+   United States
+
+   EMail: wesley.george@twcable.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Asati, et al.                Standards Track                   [Page 11]
+</pre>
+</body></html>

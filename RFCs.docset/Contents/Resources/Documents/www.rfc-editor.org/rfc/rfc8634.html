@@ -1,0 +1,614 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                           B. Weis
+Request for Comments: 8634                                   Independent
+BCP: 224                                                     R. Gagliano
+Category: Best Current Practice                            Cisco Systems
+ISSN: 2070-1721                                                 K. Patel
+                                                            Arrcus, Inc.
+                                                             August 2019
+
+
+                   <span class="h1">BGPsec Router Certificate Rollover</span>
+
+Abstract
+
+   Certification Authorities (CAs) within the Resource Public Key
+   Infrastructure (RPKI) manage BGPsec router certificates as well as
+   RPKI certificates.  The rollover of BGPsec router certificates must
+   be carefully performed in order to synchronize the distribution of
+   router public keys with BGPsec UPDATE messages verified with those
+   router public keys.  This document describes a safe rollover process,
+   and it discusses when and why the rollover of BGPsec router
+   certificates is necessary.  When this rollover process is followed,
+   the rollover will be performed without routing information being
+   lost.
+
+Status of This Memo
+
+   This memo documents an Internet Best Current Practice.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   BCPs is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8634">https://www.rfc-editor.org/info/rfc8634</a>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2019 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Requirements Notation . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-3">3</a>.  Key Rollover in BGPsec  . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-3.1">3.1</a>.  Rollover Process  . . . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+   4.  BGPsec Router Key Rollover as a Measure against Replay
+       Attacks . . . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-4.1">4.1</a>.  BGP UPDATE Window of Exposure Requirement . . . . . . . .   <a href="#page-7">7</a>
+     4.2.  BGPsec Key Rollover as a Mechanism to Protect against
+           Replay Attacks  . . . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   <a href="#section-6">6</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   <a href="#section-7">7</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-7.1">7.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-7.2">7.2</a>.  Informative References  . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   In BGPsec, a key rollover (or re-key) is the process of changing a
+   router's BGPsec key pair (or key pairs), issuing the corresponding
+   new BGPsec router certificate, and (if the old certificate is still
+   valid) revoking the old certificate.  This process will need to
+   happen at regular intervals, normally due to policies of the local
+   network.  This document describes a safe rollover process that
+   results in a BGPsec receiver always having the needed verification
+   keys.  Certification Practice Statement (CPS) documents may reference
+   this memo.  This memo only addresses changing of a router's BGPsec
+   key pair within the RPKI.  Refer to [<a href="./rfc6489" title='"Certification Authority (CA) Key Rollover in the Resource Public Key Infrastructure (RPKI)"'>RFC6489</a>] for a procedure to roll
+   over RPKI Certification Authority key pairs.
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+   When a router receives or creates a new key pair (using a key
+   provisioning mechanism), this key pair will be used to sign new
+   BGPsec UPDATE messages [<a href="./rfc8205" title='"BGPsec Protocol Specification"'>RFC8205</a>] that are originated at or that
+   transit through the BGP speaker.  Additionally, the BGP speaker will
+   refresh its outbound BGPsec UPDATE messages to include a signature
+   using the new key (replacing the old key).  When the rollover process
+   finishes, the old BGPsec router certificate (and its key) will no
+   longer be valid; thus, any BGPsec UPDATE message that includes a
+   signature performed by the old key will be invalid.  Consequently, if
+   the router does not refresh its outbound BGPsec UPDATE messages,
+   previously sent routing information may be treated as unauthenticated
+   after the rollover process is finished.  Therefore, it is extremely
+   important that new BGPsec router certificates have been distributed
+   throughout the RPKI before the router begins signing BGPsec UPDATE
+   messages with a new private key.
+
+   It is also important for an AS to minimize the BGPsec router key-
+   rollover interval (i.e., the period between the time when an AS
+   distributes a BGPsec router certificate with a new public key and the
+   time a BGPsec router begins to use its new private key).  This can be
+   due to a need for a BGPsec router to distribute BGPsec UPDATE
+   messages signed with a new private key in order to invalidate BGPsec
+   UPDATE messages signed with the old private key.  In particular, if
+   the AS suspects that a stale BGPsec UPDATE message is being
+   distributed instead of the most recently signed attribute, it can
+   cause the stale BGPsec UPDATE messages to be invalidated by
+   completing a key-rollover procedure.  The BGPsec router rollover
+   interval can be minimized when an automated certificate provisioning
+   process such as Enrollment over Secure Transport (EST) [<a href="./rfc7030" title='"Enrollment over Secure Transport"'>RFC7030</a>] is
+   used.
+
+   "Security Requirements for BGP Path Validation" [<a href="./rfc7353" title='"Security Requirements for BGP Path Validation"'>RFC7353</a>] also
+   describes the need for protecting against suppression of BGP UPDATE
+   messages with Withdrawn Routes or replay of BGP UPDATE messages, such
+   as controlling BGPsec's window of exposure to such attacks.  The
+   BGPsec router certificate rollover method in this document can be
+   used to achieve this goal.
+
+   In [<a href="./rfc8635" title='"Router Keying for BGPsec"'>RFC8635</a>], the "operator-driven" method is introduced, in which a
+   key pair can be shared among multiple BGP speakers.  In this
+   scenario, the rollover of the corresponding BGPsec router certificate
+   will impact all the BGP speakers sharing the same private key.
+
+
+
+
+
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Key%20Rollover%20in%20BGPsec"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Key Rollover in BGPsec</span>
+
+   A BGPsec router certificate SHOULD be replaced when the following
+   events occur, and it can be replaced for any other reason at the
+   discretion of the AS responsible for the BGPsec router certificate.
+
+   Scheduled rollover:  BGPsec router certificates have an expiration
+         date (NotValidAfter) that requires a frequent rollover process
+         to refresh certificates or issue new certificates.  The
+         validity period for these certificates is typically expressed
+         in the CA's CPS document.
+
+   Router certificate field changes:  Information contained in a BGPsec
+         router certificate (such as the Autonomous System Number (ASN)
+         or the Subject) may need to be changed.
+
+   Emergency router key rollover:  Some special circumstances (such as a
+         compromised key) may require the replacement of a BGPsec router
+         certificate.
+
+   Protection against withdrawal suppression and replay attacks:  An AS
+         may determine that withdrawn BGPsec UPDATE messages are being
+         propagated instead of the most recently propagated BGPsec
+         UPDATE messages.  Changing the BGPsec router signing key,
+         distributing a new BGPsec router certificate, and revoking the
+         old BGPsec router certificate will invalidate the replayed
+         BGPsec UPDATE messages.
+
+   In some of these cases, it is possible to generate a new certificate
+   without changing the key pair.  This practice simplifies the rollover
+   process as the BGP speakers receiving BGPsec UPDATE messages do not
+   even need to be aware of the change of certificate.  However, not
+   replacing the certificate key for a long period of time increases the
+   risk that a compromised router private key may be used by an attacker
+   to deliver unauthorized or false BGPsec UPDATE messages.
+   Distributing the old public key in a new certificate is NOT
+   RECOMMENDED when the rollover event is due to a compromised key or
+   when it is suspected that withdrawn BGPsec UPDATE messages are being
+   distributed.
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Rollover%20Process"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Rollover Process</span>
+
+   The key-rollover process is dependent on the key provisioning
+   mechanisms adopted by an AS [<a href="./rfc8635" title='"Router Keying for BGPsec"'>RFC8635</a>].  An automatic provisioning
+   mechanism such as EST will allow procedures for router key management
+   to include automatic re-keying methods with minimum development cost.
+
+   A safe BGPsec router key-rollover process is as follows.
+
+   1.  New Certificate Publication: The first step in the rollover
+       mechanism is to publish the new certificate.  If required, a new
+       key pair will be generated for the BGPsec router.  A new
+       certificate will be generated and the certificate will be
+       published at the appropriate RPKI repository publication point.
+
+       The details of this process will vary as they depend on 1)
+       whether the keys are assigned per-BGPsec speaker or shared among
+       multiple BGPsec speakers, 2) whether the keys are generated on
+       each BGPsec speaker or in a central location, and 3) whether the
+       RPKI repository is locally or externally hosted.
+
+   2.  Staging Period: A staging period will be required from the time a
+       new certificate is published in the global RPKI repository until
+       the time it is fetched by RPKI caches around the globe.  The
+       exact minimum staging time will be dictated by the conventional
+       interval chosen between repository fetches.  If rollovers will be
+       done more frequently, an administrator can provision two
+       certificates for every router concurrently with different valid
+       start times.  In this case, when the rollover operation is
+       needed, the relying parties around the globe would already have
+       the new router public keys.  However, if an administrator has not
+       previously provisioned the next certificate, implementing a
+       staging period may not be possible during emergency key rollover.
+       If there is no staging period, routing may be disrupted due to
+       the inability of a BGPsec router to validate BGPsec UPDATE
+       messages signed with a new private key.
+
+   3.  Twilight: In this step, the BGPsec speaker holding the rolled-
+       over private key will stop using the old key for signing and will
+       start using the new key.  Also, the router will generate
+       appropriate refreshed BGPsec UPDATE messages, just as in the
+       typical operation of refreshing outbound BGP polices.  This
+       operation may generate a great number of BGPsec UPDATE messages.
+       A BGPsec speaker may vary the distribution of BGPsec UPDATE
+       messages in this step for every peer in order to distribute the
+       system load (e.g., skewing the rollover for different peers by a
+       few minutes each would be sufficient and effective).
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+   4.  Certificate Revocation: This is an optional step, but it SHOULD
+       be taken when the goal is to invalidate BGPsec UPDATE messages
+       signed with the old key.  Reasons to invalidate old BGPsec UPDATE
+       messages include (a) the AS has reason to believe that the router
+       signing key has been compromised, and (b) the AS needs to
+       invalidate already-propagated BGPsec UPDATE messages signed with
+       the old key.  As part of the rollover process, a CA MAY decide to
+       revoke the old certificate by publishing its serial number on the
+       CA's Certificate Revocation List (CRL).  Alternatively, the CA
+       will just let the old certificate expire and not revoke it.  This
+       choice will depend on the reasons that motivated the rollover
+       process.
+
+   5.  RPKI-Router Protocol Withdrawals: At the expiration of the old
+       certificate's validation, the RPKI relying parties around the
+       globe will need to communicate to their router peers that the old
+       certificate's public key is no longer valid (e.g., using the
+       RPKI-Router Protocol described in [<a href="./rfc8210" title='"The Resource Public Key Infrastructure (RPKI) to Router Protocol, Version 1"'>RFC8210</a>]).  A router's
+       reaction to a message indicating withdrawal of a router key in
+       the RPKI-Router Protocol SHOULD include the removal of any RIB
+       entries (i.e., BGPsec updates) signed with that key and the
+       generation of the corresponding BGP UPDATE message with Withdrawn
+       Routes (either implicit or explicit).
+
+   This rollover mechanism depends on the existence of an automatic
+   provisioning process for BGPsec router certificates.  It requires a
+   staging mechanism based on the RPKI propagation time (at the time of
+   writing, this is typically a 24-hour period), and an AS is REQUIRED
+   to re-sign all originated and transited BGPsec UPDATE messages that
+   were previously signed with the old key.
+
+   The first two steps (New Certificate Publication and Staging Period)
+   may happen in advance of the rest of the process.  This will allow a
+   network operator to perform its subsequent key rollover in an
+   efficient and timely manner.
+
+   When a new BGPsec router certificate is generated without changing
+   its key, steps 3 (Twilight) and 5 (RPKI-Router Protocol Withdrawals)
+   SHOULD NOT be executed.
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20BGPsec%20Router%20Key%20Rollover%20as%20a%20Measure%20against%20Replay%20Attacks"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  BGPsec Router Key Rollover as a Measure against Replay Attacks</span>
+
+   There are two typical generic measures to mitigate replay attacks in
+   any protocol: the addition of a timestamp or the addition of a serial
+   number.  However, neither BGP nor BGPsec provides these measures.
+   The timestamp approach was originally proposed for BGPsec
+   [<a href="#ref-PROTECTION-DESIGN-DISCUSSION">PROTECTION-DESIGN-DISCUSSION</a>] but was later dropped in favor of the
+   key-rollover approach.  This section discusses the use of key
+   rollover as a measure to mitigate replay attacks.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20BGP%20UPDATE%20Window%20of%20Exposure%20Requirement"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  BGP UPDATE Window of Exposure Requirement</span>
+
+   The need to limit the vulnerability to replay attacks is described in
+   <a href="./rfc7353#section-4.3">Section 4.3 of [RFC7353]</a>.  One important comment is that during a
+   window of exposure, a replay attack is effective only in very
+   specific circumstances: there is a downstream topology change that
+   makes the signed AS path no longer current, and the topology change
+   makes the replayed route preferable to the route associated with the
+   new update.  In particular, if there is no topology change at all,
+   then no security threat comes from a replay of a BGPsec UPDATE
+   message because the signed information is still valid.
+
+   "BGPsec Operational Considerations" [<a href="./rfc8207" title='"BGPsec Operational Considerations"'>RFC8207</a>] gives some idea of
+   requirements for the size of the window of exposure to replay
+   attacks.  It states that the requirement will be in the order of a
+   day or longer.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20BGPsec%20Key%20Rollover%20as%20a%20Mechanism%20to%20Protect%20against%20Replay"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  BGPsec Key Rollover as a Mechanism to Protect against Replay</span>
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/Attacks"></a>      Attacks</span>
+
+   Since the window requirement is on the order of a day (as documented
+   in [<a href="./rfc8207" title='"BGPsec Operational Considerations"'>RFC8207</a>]) and the BGP speaker performing re-keying is the edge
+   router of the origin AS, it is feasible to use key rollover to
+   mitigate replays.  In this case, it is important to complete the full
+   process (i.e., the old and new certificates do not share the same
+   key).  By re-keying, an AS is letting the BGPsec router certificate
+   validation time be a type of "timestamp" to mitigate replay attacks.
+   However, the use of frequent key rollovers comes with an additional
+   administrative cost and risks if the process fails.  As documented in
+   [<a href="./rfc8207" title='"BGPsec Operational Considerations"'>RFC8207</a>], re-keying should be supported by automatic tools, and for
+   the great majority of the Internet, it will be done with good lead
+   time to ensure that the public key corresponding to the new router
+   certificate will be available to validate the corresponding BGPsec
+   UPDATE messages when received.
+
+   If a transit AS also originates BGPsec UPDATE messages for its own
+   prefixes and it wishes to mitigate replay attacks on those prefixes,
+   then the transit AS SHOULD be provisioned with two unique key pairs
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+   and certificates.  One of the key pairs is used to sign BGPsec UPDATE
+   messages for prefixes originated from the transit AS, and it can have
+   a replay protection policy applied to it.  The other key pair is used
+   to sign BGPsec UPDATE messages in transit and SHOULD NOT have a
+   replay protection policy applied to it.  Because the transit AS is
+   not likely to know or care about the policy of origin ASes elsewhere,
+   there is no value gained by the transit AS performing key rollovers
+   to mitigate replay attacks against prefixes originated elsewhere.  If
+   the transit AS were instead to perform replay protection for all
+   updates that it signs, its process for key rollovers would generate a
+   large number of BGPsec UPDATE messages, even in the complete Default-
+   Free Zone (DFZ).  Therefore, it is best to let each AS independently
+   manage the replay attack vulnerability window for the prefixes it
+   originates.
+
+   Advantages to re-keying as a replay attack protection mechanism are
+   as follows:
+
+   1.  All expiration policies are maintained in the RPKI.
+
+   2.  Much of the additional administrative cost is paid by the
+       provider that wants to protect its infrastructure, as it bears
+       the cost of creating and initiating distribution of new router
+       key pairs and BGPsec router certificates.  (It is true that the
+       cost of relying parties will be affected by the new objects, but
+       their responses should be completely automated or otherwise
+       routine.)
+
+   3.  The re-keying can be implemented in coordination with planned
+       topology changes by either origin ASes or transit ASes (e.g., if
+       an AS changes providers, it completes a key rollover).
+
+   Disadvantages to re-keying as replay attack protection mechanism are
+   as follows:
+
+   1.  Frequent rollovers add administrative and BGP processing loads,
+       although the required frequency is not clear.  Some initial ideas
+       are found in [<a href="./rfc8207" title='"BGPsec Operational Considerations"'>RFC8207</a>].
+
+   2.  The minimum replay vulnerability is bounded by the propagation
+       time for RPKI caches to obtain the new certificate and CRL (2x
+       propagation time because first the new certificate and then the
+       CRL need to propagate through the RPKI system).  If provisioning
+       is done ahead of time, the minimum replay vulnerability window
+       size is reduced to 1x propagation time (i.e., propagation of the
+       CRL).  However, these bounds will be better understood when the
+
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+       RPKI and RPKI relying party software are well deployed; this will
+       also contribute to the propagation time for objects in the RPKI
+       being better understood.
+
+   3.  Re-keying increases the dynamics and size of the RPKI repository.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  IANA Considerations</span>
+
+   This document has no IANA actions.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   This document does not contain a protocol update to either the RPKI
+   or BGPsec.  It describes a process for managing BGPsec router
+   certificates within the RPKI.
+
+   Routers participating in BGPsec will need to roll over their signing
+   keys as part of conventional processing of certificate management.
+   However, because rolling over signing keys will also have the effect
+   of invalidating BGPsec UPDATE message signatures, the rollover
+   process must be carefully orchestrated to ensure that valid BGPsec
+   UPDATE messages are not treated as invalid.  This situation could
+   affect Internet routing.  This document describes a safe method for
+   rolling over BGPsec router certificates.  It takes into account both
+   normal and emergency key-rollover requirements.
+
+   Additionally, the key-rollover method described in this document can
+   be used as a measure to mitigate BGP UPDATE replay attacks, in which
+   an entity in the routing system is suppressing current BGPsec UPDATE
+   messages and replaying withdrawn updates.  When the key used to sign
+   the withdrawn updates has been rolled over, the withdrawn updates
+   will be considered invalid.  When certificates containing a new
+   public key are provisioned ahead of time, the minimum replay
+   vulnerability window size is reduced to the propagation time of a CRL
+   invalidating the certificate containing an old public key.  For a
+   discussion of the difficulties deploying a more effectual replay
+   protection mechanism for BGPSEC, see [<a href="#ref-PROTECTION-DESIGN-DISCUSSION">PROTECTION-DESIGN-DISCUSSION</a>].
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                 [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Normative%20References"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+   [<a id="ref-RFC8635">RFC8635</a>]  Bush, R., Turner, S., and K. Patel, "Router Keying for
+              BGPsec", <a href="./rfc8635">RFC 8635</a>, DOI 10.17487/RFC8635, August 2019,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8635">https://www.rfc-editor.org/info/rfc8635</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Informative%20References"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Informative References</span>
+
+   [<a id="ref-PROTECTION-DESIGN-DISCUSSION">PROTECTION-DESIGN-DISCUSSION</a>]
+              Sriram, K. and D. Montgomery, "Design Discussion and
+              Comparison of Protection Mechanisms for Replay Attack and
+              Withdrawal Suppression in BGPsec", Work in Progress,
+              <a href="./draft-sriram-replay-protection-design-discussion-12">draft-sriram-replay-protection-design-discussion-12</a>, April
+              2019.
+
+   [<a id="ref-RFC6489">RFC6489</a>]  Huston, G., Michaelson, G., and S. Kent, "Certification
+              Authority (CA) Key Rollover in the Resource Public Key
+              Infrastructure (RPKI)", <a href="https://www.rfc-editor.org/bcp/bcp174">BCP 174</a>, <a href="./rfc6489">RFC 6489</a>,
+              DOI 10.17487/RFC6489, February 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6489">https://www.rfc-editor.org/info/rfc6489</a>&gt;.
+
+   [<a id="ref-RFC7030">RFC7030</a>]  Pritikin, M., Ed., Yee, P., Ed., and D. Harkins, Ed.,
+              "Enrollment over Secure Transport", <a href="./rfc7030">RFC 7030</a>,
+              DOI 10.17487/RFC7030, October 2013,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7030">https://www.rfc-editor.org/info/rfc7030</a>&gt;.
+
+   [<a id="ref-RFC7353">RFC7353</a>]  Bellovin, S., Bush, R., and D. Ward, "Security
+              Requirements for BGP Path Validation", <a href="./rfc7353">RFC 7353</a>,
+              DOI 10.17487/RFC7353, August 2014,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7353">https://www.rfc-editor.org/info/rfc7353</a>&gt;.
+
+   [<a id="ref-RFC8205">RFC8205</a>]  Lepinski, M., Ed. and K. Sriram, Ed., "BGPsec Protocol
+              Specification", <a href="./rfc8205">RFC 8205</a>, DOI 10.17487/RFC8205, September
+              2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8205">https://www.rfc-editor.org/info/rfc8205</a>&gt;.
+
+
+
+
+
+
+<span class="grey">Weis, et al.              Best Current Practice                [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8634">RFC 8634</a>               BGPsec Certificate Rollover           August 2019</span>
+
+
+   [<a id="ref-RFC8207">RFC8207</a>]  Bush, R., "BGPsec Operational Considerations", <a href="https://www.rfc-editor.org/bcp/bcp211">BCP 211</a>,
+              <a href="./rfc8207">RFC 8207</a>, DOI 10.17487/RFC8207, September 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8207">https://www.rfc-editor.org/info/rfc8207</a>&gt;.
+
+   [<a id="ref-RFC8210">RFC8210</a>]  Bush, R. and R. Austein, "The Resource Public Key
+              Infrastructure (RPKI) to Router Protocol, Version 1",
+              <a href="./rfc8210">RFC 8210</a>, DOI 10.17487/RFC8210, September 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8210">https://www.rfc-editor.org/info/rfc8210</a>&gt;.
+
+Acknowledgments
+
+   Randy Bush, Kotikalapudi Sriram, Stephen Kent, and Sandy Murphy each
+   provided valuable suggestions resulting in an improved document.
+   Kotikalapudi Sriram contributed valuable guidance regarding the use
+   of key rollovers to mitigate BGP UPDATE replay attacks.
+
+Authors' Addresses
+
+   Brian Weis
+   Independent
+
+   Email: bew.stds@gmail.com
+
+
+   Roque Gagliano
+   Cisco Systems
+   Avenue des Uttins 5
+   Rolle, VD  1180
+   Switzerland
+
+   Email: rogaglia@cisco.com
+
+
+   Keyur Patel
+   Arrcus, Inc.
+
+   Email: keyur@arrcus.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Weis, et al.              Best Current Practice                [Page 11]
+</pre>
+</body></html>

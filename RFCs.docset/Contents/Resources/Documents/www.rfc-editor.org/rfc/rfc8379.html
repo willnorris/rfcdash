@@ -1,0 +1,950 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                          S. Hegde
+Request for Comments: 8379                        Juniper Networks, Inc.
+Category: Standards Track                                      P. Sarkar
+ISSN: 2070-1721                                             Arrcus, Inc.
+                                                              H. Gredler
+                                                            RtBrick Inc.
+                                                              M. Nanduri
+                                                        ebay Corporation
+                                                                L. Jalil
+                                                                 Verizon
+                                                                May 2018
+
+
+                      <span class="h1">OSPF Graceful Link Shutdown</span>
+
+Abstract
+
+   When a link is being prepared to be taken out of service, the traffic
+   needs to be diverted from both ends of the link.  Increasing the
+   metric to the highest value on one side of the link is not sufficient
+   to divert the traffic flowing in the other direction.
+
+   It is useful for the routers in an OSPFv2 or OSPFv3 routing domain to
+   be able to advertise a link as being in a graceful-shutdown state to
+   indicate impending maintenance activity on the link.  This
+   information can be used by the network devices to reroute the traffic
+   effectively.
+
+   This document describes the protocol extensions to disseminate
+   graceful-link-shutdown information in OSPFv2 and OSPFv3.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8379">https://www.rfc-editor.org/info/rfc8379</a>.
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-1.1">1.1</a>.  Requirements Language . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Motivation  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  Flooding Scope  . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-4">4</a>.  Protocol Extensions . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-4.1">4.1</a>.  OSPFv2 Graceful-Link-Shutdown Sub-TLV . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-4.2">4.2</a>.  Remote IPv4 Address Sub-TLV . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-4.3">4.3</a>.  Local/Remote Interface ID Sub-TLV . . . . . . . . . . . .   <a href="#page-5">5</a>
+     <a href="#section-4.4">4.4</a>.  OSPFv3 Graceful-Link-Shutdown Sub-TLV . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-4.5">4.5</a>.  BGP-LS Graceful-Link-Shutdown TLV . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-4.6">4.6</a>.  Distinguishing Parallel Links . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  Elements of Procedure . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+     <a href="#section-5.1">5.1</a>.  Point-to-Point Links  . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+     <a href="#section-5.2">5.2</a>.  Broadcast/NBMA Links  . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+     <a href="#section-5.3">5.3</a>.  Point-to-Multipoint Links . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-5.4">5.4</a>.  Unnumbered Interfaces . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-5.5">5.5</a>.  Hybrid Broadcast and P2MP Interfaces  . . . . . . . . . .  <a href="#page-10">10</a>
+   <a href="#section-6">6</a>.  Backward Compatibility  . . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+   <a href="#section-7">7</a>.  Applications  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+     <a href="#section-7.1">7.1</a>.  Overlay Network . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+     <a href="#section-7.2">7.2</a>.  Controller-Based Deployments  . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+     <a href="#section-7.3">7.3</a>.  L3VPN Services and Sham Links . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+     <a href="#section-7.4">7.4</a>.  Hub and Spoke Deployment  . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+   <a href="#section-8">8</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+   <a href="#section-9">9</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+   <a href="#section-10">10</a>. References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+     <a href="#section-10.1">10.1</a>.  Normative References . . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+     <a href="#section-10.2">10.2</a>.  Informative References . . . . . . . . . . . . . . . . .  <a href="#page-16">16</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-16">16</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-17">17</a>
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   This document describes a mechanism for gracefully taking a link out
+   of service while allowing it to be used if no other path is
+   available.  It also provides a mechanism to divert the traffic from
+   both directions of the link.
+
+   Many OSPFv2 or OSPFv3 deployments run on overlay networks provisioned
+   by means of pseudowires or L2 circuits.  Prior to devices in the
+   underlying network going offline for maintenance, it is useful to
+   divert the traffic away from the node before maintenance is actually
+   performed.  Since the nodes in the underlying network are not visible
+   to OSPF, the existing stub-router mechanism described in [<a href="./rfc6987" title='"OSPF Stub Router Advertisement"'>RFC6987</a>]
+   cannot be used.  In a service provider's network, there may be many
+   CE-to-CE connections that run over a single PE.  It is cumbersome to
+   change the metric on every CE-to-CE connection in both directions.
+   This document provides a mechanism to change the metric of the link
+   on the remote side and also use the link as a last-resort link if no
+   alternate paths are available.  An application specific to this use
+   case is described in detail in <a href="#section-7.1">Section 7.1</a>.
+
+   This document provides mechanisms to advertise graceful-link-shutdown
+   state in the flexible encodings provided by "OSPFv2 Prefix/Link
+   Attribute Advertisement" [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>] and the E-Router-LSA [<a href="./rfc8362" title='"OSPFv3 Link State Advertisement (LSA) Extensibility"'>RFC8362</a>] for
+   OSPFv3.  Throughout this document, OSPF is used when the text applies
+   to both OSPFv2 and OSPFv3.  OSPFv2 or OSPFv3 is used when the text is
+   specific to one version of the OSPF protocol.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Requirements%20Language"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Requirements Language</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in <a href="https://www.rfc-editor.org/bcp/bcp14">BCP</a>
+   <a href="https://www.rfc-editor.org/bcp/bcp14">14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Motivation"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Motivation</span>
+
+   The motivation of this document is to reduce manual intervention
+   during maintenance activities.  The following objectives help to
+   accomplish this in a range of deployment scenarios.
+
+   1.  Advertise impending maintenance activity so that traffic from
+       both directions can be diverted away from the link.
+
+   2.  Allow the solution to be backward compatible so that nodes that
+       do not understand the new advertisement do not cause routing
+       loops.
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+   3.  Advertise the maintenance activity to other nodes in the network
+       so that Label Switched Path (LSP) ingress routers/controllers can
+       learn about the impending maintenance activity and apply specific
+       policies to reroute the LSPs for deployments based on Traffic
+       Engineering (TE).
+
+   4.  Allow the link to be used as a last-resort link to prevent
+       traffic disruption when alternate paths are not available.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Flooding%20Scope"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Flooding Scope</span>
+
+   The graceful-link-shutdown information is flooded in an area-scoped
+   Extended Link Opaque LSA [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>] for OSPFv2 and in an E-Router-LSA
+   for OSPFv3 [<a href="./rfc8362" title='"OSPFv3 Link State Advertisement (LSA) Extensibility"'>RFC8362</a>].  The Graceful-Link-Shutdown sub-TLV MAY be
+   processed by the head-end nodes or the controller as described in the
+   <a href="#section-7">Section 7</a>.  The procedures for processing the Graceful-Link-Shutdown
+   sub-TLV are described in <a href="#section-5">Section 5</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Protocol%20Extensions"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Protocol Extensions</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20OSPFv2%20Graceful-Link-Shutdown%20Sub-TLV"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  OSPFv2 Graceful-Link-Shutdown Sub-TLV</span>
+
+   The Graceful-Link-Shutdown sub-TLV identifies the link as being
+   gracefully shutdown.  It is advertised in the Extended Link TLV of
+   the Extended Link Opaque LSA as defined in [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>].
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |              Type             |             Length            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+            Figure 1: Graceful-Link-Shutdown Sub-TLV for OSPFv2
+
+   Type: 7
+
+   Length: 0
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Remote%20IPv4%20Address%20Sub-TLV"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Remote IPv4 Address Sub-TLV</span>
+
+   This sub-TLV specifies the IPv4 address of the remote endpoint on the
+   link.  It is advertised in the Extended Link TLV as defined in
+   [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>].  This sub-TLV is optional and MAY be advertised in an
+   area-scoped Extended Link Opaque LSA to identify the link when there
+   are multiple parallel links between two nodes.
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |              Type             |             Length            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                     Remote IPv4 Address                       |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                   Figure 2: Remote IPv4 Address Sub-TLV
+
+   Type: 8
+
+   Length: 4
+
+   Value: Remote IPv4 address.  The remote IPv4 address is used to
+   identify a particular link on the remote side when there are multiple
+   parallel links between two nodes.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Local%2FRemote%20Interface%20ID%20Sub-TLV"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Local/Remote Interface ID Sub-TLV</span>
+
+   This sub-TLV specifies Local and Remote Interface IDs.  It is
+   advertised in the Extended Link TLV as defined in [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>].  This
+   sub-TLV is optional and MAY be advertised in an area-scoped Extended
+   Link Opaque LSA to identify the link when there are multiple parallel
+   unnumbered links between two nodes.  The Local Interface ID is
+   generally readily available.  One of the mechanisms to obtain the
+   Remote Interface ID is described in [<a href="./rfc4203" title='"OSPF Extensions in Support of Generalized Multi-Protocol Label Switching (GMPLS)"'>RFC4203</a>].
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |              Type             |             Length            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                     Local Interface ID                        |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                     Remote Interface ID                       |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                Figure 3: Local/Remote Interface ID Sub-TLV
+
+   Type: 9
+
+   Length: 8
+
+   Value: 4 octets of the Local Interface ID followed by 4 octets of the
+   Remote Interface ID.
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.4.%20%20OSPFv3%20Graceful-Link-Shutdown%20Sub-TLV"></a><a class="selflink" href="#section-4.4" id="section-4.4">4.4</a>.  OSPFv3 Graceful-Link-Shutdown Sub-TLV</span>
+
+   The Graceful-Link-Shutdown sub-TLV is carried in the Router-Link TLV
+   as defined in [<a href="./rfc8362" title='"OSPFv3 Link State Advertisement (LSA) Extensibility"'>RFC8362</a>] for OSPFv3.  The Router-Link TLV contains the
+   Neighbor Interface ID and can uniquely identify the link on the
+   remote node.
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |              Type             |             Length            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+            Figure 4: Graceful-Link-Shutdown Sub-TLV for OSPFv3
+
+   Type: 8
+
+   Length: 0
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.5.%20%20BGP-LS%20Graceful-Link-Shutdown%20TLV"></a><a class="selflink" href="#section-4.5" id="section-4.5">4.5</a>.  BGP-LS Graceful-Link-Shutdown TLV</span>
+
+   BGP-LS as defined in [<a href="./rfc7752" title='"North-Bound Distribution of Link-State and Traffic Engineering (TE) Information Using BGP"'>RFC7752</a>] is a mechanism that distributes
+   network information to the external entities using the BGP routing
+   protocol.  Graceful link shutdown is important link information that
+   the external entities can use for various use cases as defined in
+   <a href="#section-7">Section 7</a>.  BGP Link Network Layer Reachability Information (NLRI) is
+   used to carry the link information.  A new TLV called "Graceful-Link-
+   Shutdown" is defined to describe the link attribute corresponding to
+   graceful-link-shutdown state.  The TLV format is as described in
+   <a href="./rfc7752#section-3.1">Section 3.1 of [RFC7752]</a>.  There is no Value field, and the Length
+   field is set to zero for this TLV.
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |              Type             |             Length            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+              Figure 5: Graceful-Link-Shutdown TLV for BGP-LS
+
+   Type: 1121
+
+   Length: 0
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.6.%20%20Distinguishing%20Parallel%20Links"></a><a class="selflink" href="#section-4.6" id="section-4.6">4.6</a>.  Distinguishing Parallel Links</span>
+
+                    ++++++++++I.w            I.y+++++++++++
+                    |Router A|------------------|Router B |
+                    |        |------------------|         |
+                    ++++++++++I.x            I.z+++++++++++
+
+                         Figure 6: Parallel Links
+
+   Consider two routers, A and B, connected with two parallel
+   point-to-point interfaces.  I.w and I.x represent the interface
+   address on Router A's side, and I.y and I.z represent interface
+   addresses on Router B's side.  The Extended Link Opaque LSA as
+   defined in [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>] describes links using Link Type, Link ID, and
+   Link Data.  For example, a link with the address I.w is described as
+   below on Router A.
+
+      Link Type = Point-to-point
+
+      Link ID = Router ID of B
+
+      Link Data = I.w
+
+   A third node (controller or head-end) in the network cannot
+   distinguish the interface on Router B, which is connected to this
+   particular Interface on Router A based on the link information
+   described above.  The interface with address I.y or I.z could be
+   chosen due to this ambiguity.  In such cases, a Remote IPv4 Address
+   sub-TLV should be originated and added to the Extended Link TLV.  The
+   use cases as described in <a href="#section-7">Section 7</a> require controller or head-end
+   nodes to interpret the graceful-link-shutdown information and hence
+   the need for the Remote IPv4 Address sub-TLV.  I.y is carried in the
+   Extended Link TLV, which unambiguously identifies the interface on
+   the remote side.  The OSPFv3 Router-Link TLV as described in
+   [<a href="./rfc8362" title='"OSPFv3 Link State Advertisement (LSA) Extensibility"'>RFC8362</a>] contains an Interface ID and a neighbor's Interface ID,
+   which can uniquely identify connecting the interface on the remote
+   side; hence, OSPFv3 does not require a separate remote IPv6 address
+   to be advertised along with the OSPFv3 Graceful-Link-Shutdown
+   sub-TLV.
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Elements%20of%20Procedure"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Elements of Procedure</span>
+
+   As defined in [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>], every link on the node will have a separate
+   Extended Link Opaque LSA.  The node that has the link to be taken out
+   of service MUST advertise the Graceful-Link-Shutdown sub-TLV in the
+   Extended Link TLV of the Extended Link Opaque LSA for OSPFv2, as
+   defined in [<a href="./rfc7684" title='"OSPFv2 Prefix/Link Attribute Advertisement"'>RFC7684</a>], and in the Router-Link TLV of E-Router-LSA for
+   OSPFv3.  The Graceful-Link-Shutdown sub-TLV indicates that the link
+   identified by the sub-TLV is subjected to maintenance.
+
+   For the purposes of changing the metric OSPFv2 and OSPFv3 Router-LSAs
+   need to be reoriginated.  To change the Traffic Engineering metric,
+   TE Opaque LSAs in OSPFv2 [<a href="./rfc3630" title='"Traffic Engineering (TE) Extensions to OSPF Version 2"'>RFC3630</a>] and Intra-area-TE-LSAs in OSPFv3
+   [<a href="./rfc5329" title='"Traffic Engineering Extensions to OSPF Version 3"'>RFC5329</a>] need to be reoriginated.
+
+   The graceful-link-shutdown information is advertised as a property of
+   the link and is flooded through the area.  This information can be
+   used by ingress routers or controllers to take special actions.  An
+   application specific to this use case is described in <a href="#section-7.2">Section 7.2</a>.
+
+   When a link is ready to carry traffic, the Graceful-Link-Shutdown
+   sub-TLV MUST be removed from the Extended Link TLV/Router-Link TLV,
+   and the corresponding LSAs MUST be readvertised.  Similarly, the
+   metric MUST be set to original values, and the corresponding LSAs
+   MUST be readvertised.
+
+   The procedures described in this document may be used to divert the
+   traffic away from the link in scenarios other than link-shutdown or
+   link-replacement activity.
+
+   The precise action taken by the remote node at the other end of the
+   link identified for graceful-shutdown depends on the link type.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Point-to-Point%20Links"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Point-to-Point Links</span>
+
+   The node that has the link to be taken out of service MUST set the
+   metric of the link to MaxLinkMetric (0xffff) and reoriginate its
+   Router-LSA.  The Traffic Engineering metric of the link SHOULD be set
+   to (0xffffffff), and the node SHOULD reoriginate the corresponding TE
+   Link Opaque LSAs.  When a Graceful-Link-Shutdown sub-TLV is received
+   for a point-to-point link, the remote node MUST identify the local
+   link that corresponds to the graceful-shutdown link and set its
+   metric to MaxLinkMetric (0xffff), and the remote node MUST
+   reoriginate its Router-LSA with the changed metric.  When TE is
+   enabled, the Traffic Engineering metric of the link SHOULD be set to
+   (0xffffffff) and follow the procedures in [<a href="./rfc5817" title='"Graceful Shutdown in MPLS and Generalized MPLS Traffic Engineering Networks"'>RFC5817</a>].  Similarly, the
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+   remote node SHOULD set the Traffic Engineering metric of the link to
+   0xffffffff and SHOULD reoriginate the TE Link Opaque LSA for the link
+   with the new value.
+
+   The Extended Link Opaque LSAs and the Extended Link TLV are not
+   scoped for multi-topology [<a href="./rfc4915" title='"Multi-Topology (MT) Routing in OSPF"'>RFC4915</a>].  In multi-topology deployments
+   [<a href="./rfc4915" title='"Multi-Topology (MT) Routing in OSPF"'>RFC4915</a>], the Graceful-Link-Shutdown sub-TLV advertised in an
+   Extended Link Opaque LSA corresponds to all the topologies that
+   include the link.  The receiver node SHOULD change the metric in the
+   reverse direction for all the topologies that include the remote link
+   and reoriginate the Router-LSA as defined in [<a href="./rfc4915" title='"Multi-Topology (MT) Routing in OSPF"'>RFC4915</a>].
+
+   When the originator of the Graceful-Link-Shutdown sub-TLV purges the
+   Extended Link Opaque LSA or reoriginates it without the
+   Graceful-Link-Shutdown sub-TLV, the remote node must reoriginate the
+   appropriate LSAs with the metric and TE metric values set to their
+   original values.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Broadcast%2FNBMA%20Links"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Broadcast/NBMA Links</span>
+
+   Broadcast or Non-Broadcast Multi-Access (NBMA) networks in OSPF are
+   represented by a star topology where the Designated Router (DR) is
+   the central point to which all other routers on the broadcast or NBMA
+   network logically connect.  As a result, routers on the broadcast or
+   NBMA network advertise only their adjacency to the DR.  Routers that
+   do not act as DRs do not form or advertise adjacencies with each
+   other.  For the broadcast links, the MaxLinkMetric on the remote link
+   cannot be changed since all the neighbors are on same link.  Setting
+   the link cost to MaxLinkMetric would impact all paths that traverse
+   any of the neighbors connected on that broadcast link.
+
+   The node that has the link to be taken out of service MUST set the
+   metric of the link to MaxLinkMetric (0xffff) and reoriginate the
+   Router-LSA.  The Traffic Engineering metric of the link SHOULD be set
+   to (0xffffffff), and the node SHOULD reoriginate the corresponding TE
+   Link Opaque LSAs.  For a broadcast link, the two-part metric as
+   described in [<a href="./rfc8042" title='"OSPF Two-Part Metric"'>RFC8042</a>] is used.  The node originating the
+   Graceful-Link-Shutdown sub-TLV MUST set the metric in the
+   Network-to-Router Metric sub-TLV to MaxLinkMetric (0xffff) for OSPFv2
+   and OSPFv3 and reoriginate the corresponding LSAs.  The nodes that
+   receive the two-part metric should follow the procedures described in
+   [<a href="./rfc8042" title='"OSPF Two-Part Metric"'>RFC8042</a>].  The backward-compatibility procedures described in
+   [<a href="./rfc8042" title='"OSPF Two-Part Metric"'>RFC8042</a>] should be followed to ensure loop-free routing.
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.%20%20Point-to-Multipoint%20Links"></a><a class="selflink" href="#section-5.3" id="section-5.3">5.3</a>.  Point-to-Multipoint Links</span>
+
+   Operation for the point-to-multipoint (P2MP) links is similar to the
+   point-to-point links.  When a Graceful-Link-Shutdown sub-TLV is
+   received for a point-to-multipoint link, the remote node MUST
+   identify the neighbor that corresponds to the graceful-shutdown link
+   and set its metric to MaxLinkMetric (0xffff).  The remote node MUST
+   reoriginate the Router-LSA with the changed metric for the
+   corresponding neighbor.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.4.%20%20Unnumbered%20Interfaces"></a><a class="selflink" href="#section-5.4" id="section-5.4">5.4</a>.  Unnumbered Interfaces</span>
+
+   Unnumbered interfaces do not have a unique IP address and borrow
+   their address from other interfaces.  [<a href="./rfc2328" title='"OSPF Version 2"'>RFC2328</a>] describes procedures
+   to handle unnumbered interfaces in the context of the Router-LSA.  We
+   apply a similar procedure to the Extended Link TLV advertising the
+   Graceful-Link-Shutdown sub-TLV in order to handle unnumbered
+   interfaces.  The Link-Data field in the Extended Link TLV includes
+   the Local Interface ID instead of the IP address.  The Local/Remote
+   Interface ID sub-TLV MUST be advertised when there are multiple
+   parallel unnumbered interfaces between two nodes.  One of the
+   mechanisms to obtain the Interface ID of the remote side is defined
+   in [<a href="./rfc4203" title='"OSPF Extensions in Support of Generalized Multi-Protocol Label Switching (GMPLS)"'>RFC4203</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.5.%20%20Hybrid%20Broadcast%20and%20P2MP%20Interfaces"></a><a class="selflink" href="#section-5.5" id="section-5.5">5.5</a>.  Hybrid Broadcast and P2MP Interfaces</span>
+
+   Hybrid Broadcast and P2MP interfaces represent a broadcast network
+   modeled as P2MP interfaces.  [<a href="./rfc6845" title='"OSPF Hybrid Broadcast and Point-to-Multipoint Interface Type"'>RFC6845</a>] describes procedures to handle
+   these interfaces.  Operation for the Hybrid interfaces is similar to
+   operation for the P2MP interfaces.  When a Graceful-Link-Shutdown
+   sub-TLV is received for a hybrid link, the remote node MUST identify
+   the neighbor that corresponds to the graceful-shutdown link and set
+   its metric to MaxLinkMetric (0xffff).  All the remote nodes connected
+   to the originator MUST reoriginate the Router-LSA with the changed
+   metric for the neighbor.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Backward%20Compatibility"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Backward Compatibility</span>
+
+   The mechanisms described in the document are fully backward
+   compatible.  It is required that the node adverting the
+   Graceful-Link-Shutdown sub-TLV as well as the node at the remote end
+   of the graceful-shutdown link support the extensions described herein
+   for the traffic to be diverted from the graceful-shutdown link.  If
+   the remote node doesn't support the capability, it will still use the
+   graceful-shutdown link, but there are no other adverse effects.  In
+   the case of broadcast links using two-part metrics, the backward-
+   compatibility procedures as described in [<a href="./rfc8042" title='"OSPF Two-Part Metric"'>RFC8042</a>] are applicable.
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Applications"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Applications</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Overlay%20Network"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Overlay Network</span>
+
+   Many service providers offer L2 services to a customer connecting
+   different locations.  The customer's IGP protocol creates a seamless
+   private network (overlay network) across the locations for the
+   customer.  Service providers want to offer graceful-shutdown
+   functionality when the PE device is taken out for maintenance.  There
+   can be large number of customers attached to a PE node, and the
+   remote endpoints for these L2 attachment circuits are spread across
+   the service provider's network.  Changing the metric for all
+   corresponding L2 circuits in both directions is a tedious and error-
+   prone process.  The graceful-link-shutdown feature simplifies the
+   process by increasing the metric on the CE-CE overlay link so that
+   traffic in both directions is diverted away from the PE undergoing
+   maintenance.  The graceful-link-shutdown feature allows the link to
+   be used as a last-resort link so that traffic is not disrupted when
+   alternate paths are not available.
+
+                     ------PE3---------------PE4------CE3
+                   /                           \
+                 /                               \
+              CE1---------PE1----------PE2---------CE2
+                                       \
+                                        \
+                                         ------CE4
+
+   CE: Customer Edge
+   PE: Provider Edge
+
+                         Figure 7: Overlay Network
+
+   In the example shown in Figure 7, when the PE1 node is going out of
+   service for maintenance, a service provider sets the PE1 to stub-
+   router state and communicates the pending maintenance action to the
+   overlay customer networks.  The mechanisms used to communicate
+   between PE1 and CE1 is outside the scope of this document.  CE1 sets
+   the graceful-link-shutdown state on its links connecting CE3, CE2,
+   and CE4, changes the metric to MaxLinkMetric, and reoriginates the
+   corresponding LSA.  The remote end of the link at CE3, CE2, and CE4
+   also set the metric on the link to MaxLinkMetric, and the traffic
+   from both directions gets diverted away from PE1.
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Controller-Based%20Deployments"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Controller-Based Deployments</span>
+
+   In controller-based deployments where the controller participates in
+   the IGP protocol, the controller can also receive the
+   graceful-link-shutdown information as a warning that link maintenance
+   is imminent.  Using this information, the controller can find
+   alternate paths for traffic that uses the affected link.  The
+   controller can apply various policies and reroute the LSPs away from
+   the link undergoing maintenance.  If there are no alternate paths
+   satisfying the constraints, the controller might temporarily relax
+   those constraints and put the service on a different path.
+   Increasing the link metric alone does not specify the maintenance
+   activity as the metric could increase in events such as LDP-IGP
+   synchronization.  An explicit indication from the router using the
+   Graceful-Link-Shutdown sub-TLV is needed to inform the controller or
+   head-end routers.
+
+                              _____________
+                             |             |
+               --------------| Controller  |--------------
+               |             |____________ |             |
+               |                                         |
+               |--------- Primary Path ------------------|
+               PE1---------P1----------------P2---------PE2
+                           |                  |
+                           |                  |
+                           |________P3________|
+
+                              Alternate Path
+
+              Figure 8: Controller-Based Traffic Engineering
+
+   In the above example, the PE1-&gt;PE2 LSP is set up to satisfy a
+   constraint of 10 Gbps bandwidth on each link.  The links P1-&gt;P3 and
+   P3-&gt;P2 have only 1 Gbps capacity, and there is no alternate path
+   satisfying the bandwidth constraint of 10 Gbps.  When the P1-&gt;P2 link
+   is being prepared for maintenance, the controller receives the
+   graceful-link-shutdown information, as there is no alternate path
+   available that satisfies the constraints, and the controller chooses
+   a path that is less optimal and temporarily sets up an alternate path
+   via P1-&gt;P3-&gt;P2.  Once the traffic is diverted, the P1-&gt;P2 link can be
+   taken out of service for maintenance/upgrade.
+
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.3.%20%20L3VPN%20Services%20and%20Sham%20Links"></a><a class="selflink" href="#section-7.3" id="section-7.3">7.3</a>.  L3VPN Services and Sham Links</span>
+
+   Many service providers offer Layer 3 Virtual Private Network (L3VPN)
+   services to customers, and CE-PE links run OSPF [<a href="./rfc4577" title='"OSPF as the Provider/Customer Edge Protocol for BGP/MPLS IP Virtual Private Networks (VPNs)"'>RFC4577</a>].  When the
+   PE is taken out of service for maintenance, all the links on the PE
+   can be set to graceful-link-shutdown state, which will guarantee that
+   the traffic to/from dual-homed CEs gets diverted.  The interaction
+   between OSPF and BGP is outside the scope of this document.  A
+   mechanism based on [<a href="./rfc6987" title='"OSPF Stub Router Advertisement"'>RFC6987</a>] with summaries and externals that are
+   advertised with high metrics could also be used to achieve the same
+   functionality when implementations support high metrics advertisement
+   for summaries and externals.
+
+   Another useful use case is when ISPs provide sham-link services to
+   customers [<a href="./rfc4577" title='"OSPF as the Provider/Customer Edge Protocol for BGP/MPLS IP Virtual Private Networks (VPNs)"'>RFC4577</a>].  When the PE goes out of service for
+   maintenance, all sham links on the PE can be set to graceful-link-
+   shutdown state, and traffic can be diverted from both ends without
+   having to touch the configurations on the remote end of the sham
+   links.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.4.%20%20Hub%20and%20Spoke%20Deployment"></a><a class="selflink" href="#section-7.4" id="section-7.4">7.4</a>.  Hub and Spoke Deployment</span>
+
+   OSPF is largely deployed in Hub and Spoke deployments with a large
+   number of Spokes connecting to the Hub.  It is a general practice to
+   deploy multiple Hubs with all Spokes connecting to these Hubs to
+   achieve redundancy.  The mechanism defined in [<a href="./rfc6987" title='"OSPF Stub Router Advertisement"'>RFC6987</a>] can be used
+   to divert the Spoke-to-Spoke traffic from the overloaded Hub router.
+   The traffic that flows from Spokes via the Hub into an external
+   network may not be diverted in certain scenarios.  When a Hub node
+   goes down for maintenance, all links on the Hub can be set to
+   graceful-link-shutdown state, and traffic gets diverted from the
+   Spoke sites as well without having to make configuration changes on
+   the Spokes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Security%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Security Considerations</span>
+
+   This document utilizes the OSPF packets and LSAs described in
+   [<a href="./rfc2328" title='"OSPF Version 2"'>RFC2328</a>] , [<a href="./rfc3630" title='"Traffic Engineering (TE) Extensions to OSPF Version 2"'>RFC3630</a>], [<a href="./rfc5329" title='"Traffic Engineering Extensions to OSPF Version 3"'>RFC5329</a>], and [<a href="./rfc5340" title='"OSPF for IPv6"'>RFC5340</a>].  The authentication
+   procedures described in [<a href="./rfc2328" title='"OSPF Version 2"'>RFC2328</a>] for OSPFv2 and [<a href="./rfc4552" title='"Authentication/Confidentiality for OSPFv3"'>RFC4552</a>] for OSPFv3
+   are applicable to this document as well.  This document does not
+   introduce any further security issues other than those discussed in
+   [<a href="./rfc2328" title='"OSPF Version 2"'>RFC2328</a>] and [<a href="./rfc5340" title='"OSPF for IPv6"'>RFC5340</a>].
+
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  IANA Considerations</span>
+
+   IANA has registered the following in the "OSPFv2 Extended Link TLV
+   Sub-TLVs" registry:
+
+      7 - Graceful-Link-Shutdown Sub-TLV
+
+      8 - Remote IPv4 Address Sub-TLV
+
+      9 - Local/Remote Interface ID Sub-TLV
+
+   IANA has registered the following value in the "OSPFv3 Extended-LSA
+   Sub-TLVs" registry:
+
+      8 - Graceful-Link-Shutdown sub-TLV
+
+   IANA has registered the following value in the "BGP-LS Node
+   Descriptor, Link Descriptor, Prefix Descriptor, and Attribute TLVs"
+   registry [<a href="./rfc7752" title='"North-Bound Distribution of Link-State and Traffic Engineering (TE) Information Using BGP"'>RFC7752</a>]":
+
+      1121 - Graceful-Link-Shutdown TLV
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20References"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.1.%20%20Normative%20References"></a><a class="selflink" href="#section-10.1" id="section-10.1">10.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC2328">RFC2328</a>]  Moy, J., "OSPF Version 2", STD 54, <a href="./rfc2328">RFC 2328</a>,
+              DOI 10.17487/RFC2328, April 1998,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2328">https://www.rfc-editor.org/info/rfc2328</a>&gt;.
+
+   [<a id="ref-RFC3630">RFC3630</a>]  Katz, D., Kompella, K., and D. Yeung, "Traffic Engineering
+              (TE) Extensions to OSPF Version 2", <a href="./rfc3630">RFC 3630</a>,
+              DOI 10.17487/RFC3630, September 2003,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3630">https://www.rfc-editor.org/info/rfc3630</a>&gt;.
+
+   [<a id="ref-RFC5329">RFC5329</a>]  Ishiguro, K., Manral, V., Davey, A., and A. Lindem, Ed.,
+              "Traffic Engineering Extensions to OSPF Version 3",
+              <a href="./rfc5329">RFC 5329</a>, DOI 10.17487/RFC5329, September 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5329">https://www.rfc-editor.org/info/rfc5329</a>&gt;.
+
+   [<a id="ref-RFC5340">RFC5340</a>]  Coltun, R., Ferguson, D., Moy, J., and A. Lindem, "OSPF
+              for IPv6", <a href="./rfc5340">RFC 5340</a>, DOI 10.17487/RFC5340, July 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5340">https://www.rfc-editor.org/info/rfc5340</a>&gt;.
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+   [<a id="ref-RFC5817">RFC5817</a>]  Ali, Z., Vasseur, JP., Zamfir, A., and J. Newton,
+              "Graceful Shutdown in MPLS and Generalized MPLS Traffic
+              Engineering Networks", <a href="./rfc5817">RFC 5817</a>, DOI 10.17487/RFC5817,
+              April 2010, &lt;<a href="https://www.rfc-editor.org/info/rfc5817">https://www.rfc-editor.org/info/rfc5817</a>&gt;.
+
+   [<a id="ref-RFC6845">RFC6845</a>]  Sheth, N., Wang, L., and J. Zhang, "OSPF Hybrid Broadcast
+              and Point-to-Multipoint Interface Type", <a href="./rfc6845">RFC 6845</a>,
+              DOI 10.17487/RFC6845, January 2013,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6845">https://www.rfc-editor.org/info/rfc6845</a>&gt;.
+
+   [<a id="ref-RFC6987">RFC6987</a>]  Retana, A., Nguyen, L., Zinin, A., White, R., and D.
+              McPherson, "OSPF Stub Router Advertisement", <a href="./rfc6987">RFC 6987</a>,
+              DOI 10.17487/RFC6987, September 2013,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6987">https://www.rfc-editor.org/info/rfc6987</a>&gt;.
+
+   [<a id="ref-RFC7684">RFC7684</a>]  Psenak, P., Gredler, H., Shakir, R., Henderickx, W.,
+              Tantsura, J., and A. Lindem, "OSPFv2 Prefix/Link Attribute
+              Advertisement", <a href="./rfc7684">RFC 7684</a>, DOI 10.17487/RFC7684, November
+              2015, &lt;<a href="https://www.rfc-editor.org/info/rfc7684">https://www.rfc-editor.org/info/rfc7684</a>&gt;.
+
+   [<a id="ref-RFC7752">RFC7752</a>]  Gredler, H., Ed., Medved, J., Previdi, S., Farrel, A., and
+              S. Ray, "North-Bound Distribution of Link-State and
+              Traffic Engineering (TE) Information Using BGP", <a href="./rfc7752">RFC 7752</a>,
+              DOI 10.17487/RFC7752, March 2016,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7752">https://www.rfc-editor.org/info/rfc7752</a>&gt;.
+
+   [<a id="ref-RFC8042">RFC8042</a>]  Zhang, Z., Wang, L., and A. Lindem, "OSPF Two-Part
+              Metric", <a href="./rfc8042">RFC 8042</a>, DOI 10.17487/RFC8042, December 2016,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8042">https://www.rfc-editor.org/info/rfc8042</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+   [<a id="ref-RFC8362">RFC8362</a>]  Lindem, A., Roy, A., Goethals, D., Reddy Vallem, V., and
+              F. Baker, "OSPFv3 Link State Advertisement (LSA)
+              Extensibility", <a href="./rfc8362">RFC 8362</a>, DOI 10.17487/RFC8362, April
+              2018, &lt;<a href="https://www.rfc-editor.org/info/rfc8362">https://www.rfc-editor.org/info/rfc8362</a>&gt;.
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.2.%20%20Informative%20References"></a><a class="selflink" href="#section-10.2" id="section-10.2">10.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC4203">RFC4203</a>]  Kompella, K., Ed. and Y. Rekhter, Ed., "OSPF Extensions in
+              Support of Generalized Multi-Protocol Label Switching
+              (GMPLS)", <a href="./rfc4203">RFC 4203</a>, DOI 10.17487/RFC4203, October 2005,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4203">https://www.rfc-editor.org/info/rfc4203</a>&gt;.
+
+   [<a id="ref-RFC4552">RFC4552</a>]  Gupta, M. and N. Melam, "Authentication/Confidentiality
+              for OSPFv3", <a href="./rfc4552">RFC 4552</a>, DOI 10.17487/RFC4552, June 2006,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4552">https://www.rfc-editor.org/info/rfc4552</a>&gt;.
+
+   [<a id="ref-RFC4577">RFC4577</a>]  Rosen, E., Psenak, P., and P. Pillay-Esnault, "OSPF as the
+              Provider/Customer Edge Protocol for BGP/MPLS IP Virtual
+              Private Networks (VPNs)", <a href="./rfc4577">RFC 4577</a>, DOI 10.17487/RFC4577,
+              June 2006, &lt;<a href="https://www.rfc-editor.org/info/rfc4577">https://www.rfc-editor.org/info/rfc4577</a>&gt;.
+
+   [<a id="ref-RFC4915">RFC4915</a>]  Psenak, P., Mirtorabi, S., Roy, A., Nguyen, L., and P.
+              Pillay-Esnault, "Multi-Topology (MT) Routing in OSPF",
+              <a href="./rfc4915">RFC 4915</a>, DOI 10.17487/RFC4915, June 2007,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4915">https://www.rfc-editor.org/info/rfc4915</a>&gt;.
+
+Acknowledgements
+
+   Thanks to Chris Bowers for valuable input and edits to the document.
+   Thanks to Jeffrey Zhang, Acee Lindem, and Ketan Talaulikar for their
+   input.  Thanks to Karsten Thomann for careful review and input on the
+   applications where graceful link shutdown is useful.
+
+   Thanks to Alia Atlas, Deborah Brungard, Alvaro Retana, Andrew G.
+   Malis, and Tim Chown for their valuable input.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hegde, et al.                Standards Track                   [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8379">RFC 8379</a>               OSPF Graceful Link Shutdown              May 2018</span>
+
+
+Authors' Addresses
+
+   Shraddha Hegde
+   Juniper Networks, Inc.
+   Embassy Business Park
+   Bangalore, KA  560093
+   India
+
+   Email: shraddha@juniper.net
+
+
+   Pushpasis Sarkar
+   Arrcus, Inc.
+
+   Email: pushpasis.ietf@gmail.com
+
+
+   Hannes Gredler
+   RtBrick Inc.
+
+   Email: hannes@rtbrick.com
+
+
+   Mohan Nanduri
+   ebay Corporation
+   2025 Hamilton Avenue
+   San Jose, CA  98052
+   United States of America
+
+   Email: mnanduri@ebay.com
+
+
+   Luay Jalil
+   Verizon
+
+   Email: luay.jalil@verizon.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hegde, et al.                Standards Track                   [Page 17]
+</pre>
+</body></html>

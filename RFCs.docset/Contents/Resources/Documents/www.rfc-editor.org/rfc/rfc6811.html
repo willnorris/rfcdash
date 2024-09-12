@@ -1,0 +1,558 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                      P. Mohapatra
+Request for Comments: 6811                                 Cisco Systems
+Category: Standards Track                                     J. Scudder
+ISSN: 2070-1721                                         Juniper Networks
+                                                                 D. Ward
+                                                           Cisco Systems
+                                                                 R. Bush
+                                               Internet Initiative Japan
+                                                              R. Austein
+                                                    Dragon Research Labs
+                                                            January 2013
+
+
+                      <span class="h1">BGP Prefix Origin Validation</span>
+
+Abstract
+
+   To help reduce well-known threats against BGP including prefix mis-
+   announcing and monkey-in-the-middle attacks, one of the security
+   requirements is the ability to validate the origination Autonomous
+   System (AS) of BGP routes.  More specifically, one needs to validate
+   that the AS number claiming to originate an address prefix (as
+   derived from the AS_PATH attribute of the BGP route) is in fact
+   authorized by the prefix holder to do so.  This document describes a
+   simple validation mechanism to partially satisfy this requirement.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6811">http://www.rfc-editor.org/info/rfc6811</a>.
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2013 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-2">2</a>
+     <a href="#section-1.1">1.1</a>.  Requirements Language . . . . . . . . . . . . . . . . . . . <a href="#page-4">4</a>
+   <a href="#section-2">2</a>.  Prefix-to-AS Mapping Database . . . . . . . . . . . . . . . . . <a href="#page-4">4</a>
+     <a href="#section-2.1">2.1</a>.  Pseudo-Code . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-6">6</a>
+   <a href="#section-3">3</a>.  Policy Control  . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-6">6</a>
+   <a href="#section-4">4</a>.  Interaction with Local Cache  . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  Deployment Considerations . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-6">6</a>.  Security Considerations . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-7">7</a>.  Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-8">8</a>
+   <a href="#section-8">8</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-8">8</a>
+     <a href="#section-8.1">8.1</a>.  Normative References  . . . . . . . . . . . . . . . . . . . <a href="#page-8">8</a>
+     <a href="#section-8.2">8.2</a>.  Informational References  . . . . . . . . . . . . . . . . . <a href="#page-9">9</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   A BGP route associates an address prefix with a set of Autonomous
+   Systems (ASes) that identify the interdomain path the prefix has
+   traversed in the form of BGP announcements.  This set is represented
+   as the AS_PATH attribute in BGP [<a href="./rfc4271" title='"A Border Gateway Protocol 4 (BGP-4)"'>RFC4271</a>] and starts with the AS that
+   originated the prefix.  To help reduce well-known threats against BGP
+   including prefix mis-announcing and monkey-in-the-middle attacks, one
+   of the security requirements is the ability to validate the
+   origination AS of BGP routes.  More specifically, one needs to
+   validate that the AS number claiming to originate an address prefix
+   (as derived from the AS_PATH attribute of the BGP route) is in fact
+   authorized by the prefix holder to do so.  This document describes a
+   simple validation mechanism to partially satisfy this requirement.
+
+
+
+
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+   The Resource Public Key Infrastructure (RPKI) describes an approach
+   to build a formally verifiable database of IP addresses and AS
+   numbers as resources.  The overall architecture of RPKI as defined in
+   [<a href="./rfc6480" title='"An Infrastructure to Support Secure Internet Routing"'>RFC6480</a>] consists of three main components:
+
+   o  a public key infrastructure (PKI) with the necessary certificate
+      objects,
+
+   o  digitally signed routing objects, and
+
+   o  a distributed repository system to hold the objects that would
+      also support periodic retrieval.
+
+   The RPKI system is based on resource certificates that define
+   extensions to X.509 to represent IP addresses and AS identifiers
+   [<a href="./rfc3779" title='"X.509 Extensions for IP Addresses and AS Identifiers"'>RFC3779</a>], thus the name RPKI.  Route Origin Authorizations (ROAs)
+   [<a href="./rfc6482" title='"A Profile for Route Origin Authorizations (ROAs)"'>RFC6482</a>] are separate digitally signed objects that define
+   associations between ASes and IP address blocks.  Finally, the
+   repository system is operated in a distributed fashion through the
+   IANA, Regional Internet Registry (RIR) hierarchy, and ISPs.
+
+   In order to benefit from the RPKI system, it is envisioned that
+   relying parties at either the AS or organization level obtain a local
+   copy of the signed object collection, verify the signatures, and
+   process them.  The cache must also be refreshed periodically.  The
+   exact access mechanism used to retrieve the local cache is beyond the
+   scope of this document.
+
+   Individual BGP speakers can utilize the processed data contained in
+   the local cache to validate BGP announcements.  The protocol details
+   to retrieve the processed data from the local cache to the BGP
+   speakers is beyond the scope of this document (refer to [<a href="./rfc6810" title='"The RPKI/Router Protocol"'>RFC6810</a>] for
+   such a mechanism).  This document proposes a means by which a BGP
+   speaker can make use of the processed data in order to assign a
+   "validation state" to each prefix in a received BGP UPDATE message.
+
+   Note that the complete path attestation against the AS_PATH attribute
+   of a route is outside the scope of this document.
+
+   Like the DNS, the global RPKI presents only a loosely consistent
+   view, depending on timing, updating, fetching, etc.  Thus, one cache
+   or router may have different data about a particular prefix than
+   another cache or router.  There is no 'fix' for this; it is the
+   nature of distributed data with distributed caches.
+
+   Although RPKI provides the context for this document, it is equally
+   possible to use any other database that is able to map prefixes to
+   their authorized origin ASes.  Each distinct database will have its
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+   own particular operational and security characteristics; such
+   characteristics are beyond the scope of this document.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Requirements%20Language"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Requirements Language</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to
+   be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] only when they
+   appear in all upper case.  They may also appear in lower or mixed
+   case as English words, without special meaning.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Prefix-to-AS%20Mapping%20Database"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Prefix-to-AS Mapping Database</span>
+
+   The BGP speaker loads validated objects from the cache into local
+   storage.  The objects loaded have the content (IP address, prefix
+   length, maximum length, origin AS number).  We refer to such a
+   locally stored object as a "Validated ROA Payload" or "VRP".
+
+   We define several terms in addition to "VRP".  Where these terms are
+   used, they are capitalized:
+
+   o  Prefix: (IP address, prefix length), interpreted as is customary
+      (see [<a href="./rfc4632" title='"Classless Inter-domain Routing (CIDR): The Internet Address Assignment and Aggregation Plan"'>RFC4632</a>]).
+
+   o  Route: Data derived from a received BGP UPDATE, as defined in
+      <a href="./rfc4271#section-1.1">[RFC4271], Section 1.1</a>.  The Route includes one Prefix and an
+      AS_PATH; it may include other attributes to characterize the
+      prefix.
+
+   o  VRP Prefix: The Prefix from a VRP.
+
+   o  VRP ASN: The origin AS number from a VRP.
+
+   o  Route Prefix: The Prefix derived from a route.
+
+   o  Route Origin ASN: The origin AS number derived from a Route as
+      follows:
+
+      *  the rightmost AS in the final segment of the AS_PATH attribute
+         in the Route if that segment is of type AS_SEQUENCE, or
+
+      *  the BGP speaker's own AS number if that segment is of type
+         AS_CONFED_SEQUENCE or AS_CONFED_SET or if the AS_PATH is empty,
+         or
+
+      *  the distinguished value "NONE" if the final segment of the
+         AS_PATH attribute is of any other type.
+
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+   o  Covered: A Route Prefix is said to be Covered by a VRP when the
+      VRP prefix length is less than or equal to the Route prefix
+      length, and the VRP prefix address and the Route prefix address
+      are identical for all bits specified by the VRP prefix length.
+      (That is, the Route prefix is either identical to the VRP prefix
+      or more specific than the VRP prefix.)
+
+   o  Matched: A Route Prefix is said to be Matched by a VRP when the
+      Route Prefix is Covered by that VRP, the Route prefix length is
+      less than or equal to the VRP maximum length, and the Route Origin
+      ASN is equal to the VRP ASN.
+
+   Given these definitions, any given BGP Route will be found to have
+   one of the following validation states:
+
+   o  NotFound: No VRP Covers the Route Prefix.
+
+   o  Valid: At least one VRP Matches the Route Prefix.
+
+   o  Invalid: At least one VRP Covers the Route Prefix, but no VRP
+      Matches it.
+
+   We observe that no VRP can have the value "NONE" as its VRP ASN.
+   Thus, a Route whose Origin ASN is "NONE" cannot be Matched by any
+   VRP.  Similarly, no valid Route can have an Origin ASN of zero [<a href="#ref-AS0" title='"Codification of AS 0 processing."'>AS0</a>].
+   Thus, no Route can be Matched by a VRP whose ASN is zero.
+
+   When a BGP speaker receives an UPDATE from a neighbor, it SHOULD
+   perform a lookup as described above for each of the Routes in the
+   UPDATE message.  The lookup SHOULD also be applied to routes that are
+   redistributed into BGP from another source, such as another protocol
+   or a locally defined static route.  An implementation MAY provide
+   configuration options to control which routes the lookup is applied
+   to.  The validation state of the Route MUST be set to reflect the
+   result of the lookup.  The implementation should consider the
+   validation state as described in the document as a local property or
+   attribute of the Route.  If validation is not performed on a Route,
+   the implementation SHOULD initialize the validation state of such a
+   route to "NotFound".
+
+   Use of the validation state is discussed in Sections <a href="#section-3">3</a> and <a href="#section-5">5</a>.  An
+   implementation MUST NOT exclude a route from the Adj-RIB-In or from
+   consideration in the decision process as a side effect of its
+   validation state, unless explicitly configured to do so.
+
+   We observe that a Route can be Matched or Covered by more than one
+   VRP.  This procedure does not mandate an order in which VRPs must be
+   visited; however, the validation state output is fully determined.
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Pseudo-Code"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Pseudo-Code</span>
+
+   The following pseudo-code illustrates the procedure above.  In case
+   of ambiguity, the procedure above, rather than the pseudo-code,
+   should be taken as authoritative.
+
+   result = BGP_PFXV_STATE_NOT_FOUND;
+
+   //Iterate through all the Covering entries in the local VRP
+   //database, pfx_validate_table.
+   entry = next_lookup_result(pfx_validate_table, route_prefix);
+
+   while (entry != NULL) {
+     prefix_exists = TRUE;
+
+     if (route_prefix_length &lt;= entry-&gt;max_length) {
+       if (route_origin_as != NONE
+           &amp;&amp; entry-&gt;origin_as != 0
+           &amp;&amp; route_origin_as == entry-&gt;origin_as) {
+         result = BGP_PFXV_STATE_VALID;
+         return (result);
+       }
+     }
+     entry = next_lookup_result(pfx_validate_table, input.prefix);
+   }
+
+   //If one or more VRP entries Covered the route prefix, but
+   //none Matched, return "Invalid" validation state.
+   if (prefix_exists == TRUE) {
+     result = BGP_PFXV_STATE_INVALID;
+   }
+
+   return (result);
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Policy%20Control"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Policy Control</span>
+
+   An implementation MUST provide the ability to match and set the
+   validation state of routes as part of its route policy filtering
+   function.  Use of validation state in route policy is elaborated in
+   <a href="#section-5">Section 5</a>.  For more details on operational policy considerations,
+   see [<a href="#ref-ORIGIN-OPS" title='"RPKI-Based Origin Validation Operation"'>ORIGIN-OPS</a>].
+
+   An implementation MUST also support four-octet AS numbers [<a href="./rfc6793" title='"BGP Support for Four-Octet Autonomous System (AS) Number Space"'>RFC6793</a>].
+
+
+
+
+
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Interaction%20with%20Local%20Cache"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Interaction with Local Cache</span>
+
+   Each BGP speaker supporting prefix validation as described in this
+   document is expected to communicate with one or more RPKI caches,
+   each of which stores a local copy of the global RPKI database.  The
+   protocol mechanisms used to gather and validate these data and
+   present them to BGP speakers are described in [<a href="./rfc6810" title='"The RPKI/Router Protocol"'>RFC6810</a>].
+
+   The prefix-to-AS mappings used by the BGP speaker are expected to be
+   updated over time.  When a mapping is added or deleted, the
+   implementation MUST re-validate any affected prefixes and run the BGP
+   decision process if needed.  An "affected prefix" is any prefix that
+   was matched by a deleted or updated mapping, or could be matched by
+   an added or updated mapping.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Deployment%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Deployment Considerations</span>
+
+   Once a Route is selected for validation, it is categorized according
+   the procedure given in <a href="#section-2">Section 2</a>.  Subsequently, routing policy as
+   discussed in <a href="#section-3">Section 3</a> can be used to take action based on the
+   validation state.
+
+   Policies that could be implemented include filtering routes based on
+   validation state (for example, rejecting all "invalid" routes) or
+   adjusting a route's degree of preference in the selection algorithm
+   based on its validation state.  The latter could be accomplished by
+   adjusting the value of such attributes as LOCAL_PREF.  Considering
+   invalid routes for BGP decision process is a purely local policy
+   matter and should be done with utmost care.
+
+   In some cases (particularly when the selection algorithm is
+   influenced by the adjustment of a route property that is not
+   propagated into Internal BGP (IBGP)) it could be necessary for
+   routing correctness to propagate the validation state to the IBGP
+   peer.  This can be accomplished on the sending side by setting a
+   community or extended community based on the validation state, and on
+   the receiving side by matching the (extended) community and setting
+   the validation state.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   Although this specification discusses one portion of a system to
+   validate BGP routes, it should be noted that it relies on a database
+   (RPKI or other) to provide validation information.  As such, the
+   security properties of that database must be considered in order to
+   determine the security provided by the overall solution.  If
+   "invalid" routes are blocked as this specification suggests, the
+   overall system provides a possible denial-of-service vector; for
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+   example, if an attacker is able to inject (or remove) one or more
+   records into (or from) the validation database, it could lead an
+   otherwise valid route to be marked as invalid.
+
+   In addition, this system is only able to provide limited protection
+   against a determined attacker -- the attacker need only prepend the
+   "valid" source AS to a forged BGP route announcement in order to
+   defeat the protection provided by this system.
+
+   This mechanism does not protect against "AS-in-the-middle attacks" or
+   provide any path validation.  It only attempts to verify the origin.
+   In general, this system should be thought of more as a protection
+   against misconfiguration than as true "security" in the strong sense.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Acknowledgments"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Acknowledgments</span>
+
+   The authors wish to thank Rex Fernando, Hannes Gredler, Mouhcine
+   Guennoun, Russ Housley, Junaid Israr, Miya Kohno, Shin Miyakawa, Taka
+   Mizuguchi, Hussein Mouftah, Keyur Patel, Tomoya Yoshida, Kannan
+   Varadhan, Wes George, Jay Borkenhagen, and Sandra Murphy.  The
+   authors are grateful for the feedback from the members of the SIDR
+   working group.
+
+   Junaid Israr's contribution to this specification was part of his PhD
+   research work and thesis at University of Ottawa.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20References"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Normative%20References"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]     Bradner, S., "Key words for use in RFCs to Indicate
+                 Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC3779">RFC3779</a>]     Lynn, C., Kent, S., and K. Seo, "X.509 Extensions for
+                 IP Addresses and AS Identifiers", <a href="./rfc3779">RFC 3779</a>, June 2004.
+
+   [<a id="ref-RFC4271">RFC4271</a>]     Rekhter, Y., Li, T., and S. Hares, "A Border Gateway
+                 Protocol 4 (BGP-4)", <a href="./rfc4271">RFC 4271</a>, January 2006.
+
+   [<a id="ref-RFC4632">RFC4632</a>]     Fuller, V. and T. Li, "Classless Inter-domain Routing
+                 (CIDR): The Internet Address Assignment and Aggregation
+                 Plan", <a href="https://www.rfc-editor.org/bcp/bcp122">BCP 122</a>, <a href="./rfc4632">RFC 4632</a>, August 2006.
+
+   [<a id="ref-RFC6482">RFC6482</a>]     Lepinski, M., Kent, S., and D. Kong, "A Profile for
+                 Route Origin Authorizations (ROAs)", <a href="./rfc6482">RFC 6482</a>,
+                 February 2012.
+
+
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+   [<a id="ref-RFC6793">RFC6793</a>]     Vohra, Q. and E. Chen, "BGP Support for Four-Octet
+                 Autonomous System (AS) Number Space", <a href="./rfc6793">RFC 6793</a>,
+                 December 2012.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.%20%20Informational%20References"></a><a class="selflink" href="#section-8.2" id="section-8.2">8.2</a>.  Informational References</span>
+
+   [<a id="ref-AS0">AS0</a>]         Kumari, W., Bush, R., Schiller, H., and K. Patel,
+                 "Codification of AS 0 processing.", Work in Progress,
+                 August 2012.
+
+   [<a id="ref-ORIGIN-OPS">ORIGIN-OPS</a>]  Bush, R., <a href="https://www.google.com/search?sitesearch=datatracker.ietf.org%2Fdoc%2Fhtml%2F&amp;q=inurl:draft-+%22RPKI-Based+Origin+Validation+Operation%22" style="text-decoration: none">"RPKI-Based Origin Validation Operation"</a>,
+                 Work in Progress, August 2012.
+
+   [<a id="ref-RFC6480">RFC6480</a>]     Lepinski, M. and S. Kent, "An Infrastructure to Support
+                 Secure Internet Routing", <a href="./rfc6480">RFC 6480</a>, February 2012.
+
+   [<a id="ref-RFC6810">RFC6810</a>]     Bush, R. and R. Austein, "The RPKI/Router Protocol",
+                 <a href="./rfc6810">RFC 6810</a>, January 2013.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Mohapatra, et al.            Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6811">RFC 6811</a>              BGP Prefix Origin Validation          January 2013</span>
+
+
+Authors' Addresses
+
+   Pradosh Mohapatra
+   Cisco Systems
+   170 W. Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: pmohapat@cisco.com
+
+
+   John Scudder
+   Juniper Networks
+   1194 N. Mathilda Ave
+   Sunnyvale, CA  94089
+   USA
+
+   EMail: jgs@juniper.net
+
+
+   David Ward
+   Cisco Systems
+   170 W. Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: dward@cisco.com
+
+
+   Randy Bush
+   Internet Initiative Japan
+   5147 Crystal Springs
+   Bainbridge Island, WA  98110
+   USA
+
+   EMail: randy@psg.com
+
+
+   Rob Austein
+   Dragon Research Labs
+
+   EMail: sra@hactrn.net
+
+
+
+
+
+
+
+
+
+Mohapatra, et al.            Standards Track                   [Page 10]
+</pre>
+</body></html>

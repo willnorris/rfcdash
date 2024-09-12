@@ -1,0 +1,726 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                         G. Renker
+Request for Comments: 6323                                  G. Fairhurst
+Updates: <a href="./rfc4342">4342</a>, <a href="./rfc5622">5622</a>                               University of Aberdeen
+Category: Standards Track                                      July 2011
+ISSN: 2070-1721
+
+
+                       <span class="h1">Sender RTT Estimate Option</span>
+          <span class="h1">for the Datagram Congestion Control Protocol (DCCP)</span>
+
+Abstract
+
+   This document specifies an update to the round-trip time (RTT)
+   estimation algorithm used for TFRC (TCP-Friendly Rate Control)
+   congestion control by the Datagram Congestion Control Protocol
+   (DCCP).  It updates specifications for the CCID-3 and CCID-4
+   Congestion Control IDs of DCCP.
+
+   The update addresses parameter-estimation problems occurring with
+   TFRC-based DCCP congestion control.  It uses a recommendation made in
+   the original TFRC specification to avoid the inherent problems of
+   receiver-based RTT sampling, by utilising higher-accuracy RTT samples
+   already available at the sender.
+
+   It is integrated into the feature set of DCCP as an end-to-end
+   negotiable extension.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6323">http://www.rfc-editor.org/info/rfc6323</a>.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2011 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Problems Caused by Sampling the RTT at the Receiver  . . . . .  <a href="#page-4">4</a>
+     2.1.  List of Problems Encountered with a Real Implementation  .  4
+     <a href="#section-2.2">2.2</a>.  Other Areas Affected by the RTT Sampling Problems  . . . .  <a href="#page-5">5</a>
+       <a href="#section-2.2.1">2.2.1</a>.  Measured Receive Rate X_recv . . . . . . . . . . . . .  <a href="#page-6">6</a>
+       <a href="#section-2.2.2">2.2.2</a>.  Disambiguation and Accuracy of Loss Intervals  . . . .  <a href="#page-6">6</a>
+       <a href="#section-2.2.3">2.2.3</a>.  Determining Quiescence . . . . . . . . . . . . . . . .  <a href="#page-6">6</a>
+       <a href="#section-2.2.4">2.2.4</a>.  Practical Considerations . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+   <a href="#section-3">3</a>.  Specification  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+     <a href="#section-3.1">3.1</a>.  Conventions  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+     <a href="#section-3.2">3.2</a>.  Options and Features . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+       <a href="#section-3.2.1">3.2.1</a>.  RTT Estimate Option  . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+       <a href="#section-3.2.2">3.2.2</a>.  Send RTT Estimate Feature  . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+     <a href="#section-3.3">3.3</a>.  Basic Usage  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+     <a href="#section-3.4">3.4</a>.  Receiver Robustness Measures . . . . . . . . . . . . . . . <a href="#page-10">10</a>
+   <a href="#section-4">4</a>.  Security Considerations  . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+   <a href="#section-5">5</a>.  IANA Considerations  . . . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+     <a href="#section-5.1">5.1</a>.  Option Types . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+     <a href="#section-5.2">5.2</a>.  Feature Numbers  . . . . . . . . . . . . . . . . . . . . . <a href="#page-12">12</a>
+   <a href="#section-6">6</a>.  References . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-12">12</a>
+     <a href="#section-6.1">6.1</a>.  Normative References . . . . . . . . . . . . . . . . . . . <a href="#page-12">12</a>
+     <a href="#section-6.2">6.2</a>.  Informative References . . . . . . . . . . . . . . . . . . <a href="#page-12">12</a>
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The Datagram Congestion Control Protocol (DCCP) [<a href="./rfc4340" title='"Datagram Congestion Control Protocol (DCCP)"'>RFC4340</a>] is a
+   transport protocol for connection-oriented, unreliable, and
+   congestion-controlled datagram delivery.  In DCCP, an application has
+   a choice of congestion control mechanisms, each specified by a
+   Congestion Control Identifier (CCID; <a href="./rfc4340#section-10">[RFC4340], Section 10</a>).
+
+   This document defines a Standards-Track update to the sender and
+   receiver sides of two rate-based DCCP congestion control IDs: CCID-3
+   [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>] and the Experimental CCID-4 variant [<a href="./rfc5622" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion ID 4: TCP-Friendly Rate Control for Small Packets (TFRC-SP)"'>RFC5622</a>].
+
+   Both CCIDs are based on the principles of TCP-Friendly Rate Control
+   (TFRC) [<a href="./rfc5348" title='"TCP Friendly Rate Control (TFRC): Protocol Specification"'>RFC5348</a>], which performs rate-based congestion control.  Its
+   feedback mechanism differs from that used by window-based congestion
+   control such as in TCP.  As a consequence, in TFRC the feedback may
+   be sent less frequently (e.g., once per round-trip time).
+   Furthermore, a measured RTT estimate is directly used as the basis
+   for computing the (TCP-friendly) transmission rate.
+
+   In TFRC-based protocols, packets are rate-paced over an RTT, instead
+   of allowing them to be sent back-to-back as they could be in TCP;
+   thus, accurate RTT estimation is important to ensure appropriate
+   pacing at the sender.
+
+   The original specifications for CCID-3 and CCID-4, in [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>] and
+   [<a href="./rfc5622" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion ID 4: TCP-Friendly Rate Control for Small Packets (TFRC-SP)"'>RFC5622</a>], both estimate the RTT at the receiver, using an algorithm
+   based on the cyclic 4-bit window counter of the DCCP CCVal header.
+   The method has implications that have been observed when using
+   applications over DCCP implementations, resulting in infrequent and
+   inaccurate RTT measurement.
+
+   This update addresses these RTT estimation problems by providing a
+   solution based on a concept first recommended in [<a href="./rfc5348" title='"TCP Friendly Rate Control (TFRC): Protocol Specification"'>RFC5348</a>], <a href="#section-3.2.1">Section</a>
+   <a href="#section-3.2.1">3.2.1</a>; i.e., to measure the RTT at the sender.  That approach results
+   in a higher reliability and frequency of samples and avoids the
+   inherent problems of receiver-based RTT sampling discussed below.
+
+   The document begins by analysing the encountered problems in the next
+   section.  The update is presented in <a href="#section-3">Section 3</a>.  We then discuss
+   security considerations in <a href="#section-4">Section 4</a> and list the resulting IANA
+   considerations in <a href="#section-5">Section 5</a>.
+
+
+
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Problems%20Caused%20by%20Sampling%20the%20RTT%20at%20the%20Receiver"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Problems Caused by Sampling the RTT at the Receiver</span>
+
+   There are at least six areas that make a TFRC receiver vulnerable to
+   inaccuracies or absence of (receiver-based) RTT samples:
+
+   o  the measured sending rate, X_recv (<a href="./rfc5348#section-6.2">[RFC5348], Section 6.2</a>);
+
+   o  synthesis of the first loss interval (<a href="./rfc5348#section-6.3.1">[RFC5348], Section 6.3.1</a>);
+
+   o  disambiguation of loss events (<a href="./rfc4342#section-10.2">[RFC4342], Section 10.2</a>);
+
+   o  validation of loss intervals (<a href="./rfc4342#section-6.1">[RFC4342], Section 6.1</a>);
+
+   o  ensuring that at least one feedback packet is sent per RTT
+      (<a href="./rfc4342#section-10.3">[RFC4342], Section 10.3</a>);
+
+   o  determining quiescence periods (<a href="./rfc4342#section-6.4">[RFC4342], Section 6.4</a>).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20List%20of%20Problems%20Encountered%20with%20a%20Real%20Implementation"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  List of Problems Encountered with a Real Implementation</span>
+
+   This section summarizes several years of experience using the Linux
+   implementation of CCID-3 and CCID-4.  It lists the problems
+   encountered with receiver-based RTT sampling over real networks, in a
+   variety of wired and wireless environments and under different link-
+   layer conditions.
+
+   The Linux DCCP/TFRC implementation is based on the RTT-sampling
+   algorithm specified in <a href="./rfc4342#section-8.1">[RFC4342], Section 8.1</a>.  This algorithm relies
+   on a coarse-grained window counter (units of RTT/4), and uses packet
+   inter-arrival times to estimate the current RTT of the network.
+
+   The algorithm is effective only for packets with modulo-16 CCVal
+   differences less than 5, due to limitations noted in Sections <a href="#section-8.1">8.1</a> and
+   10.3 of [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>].  A CCVal difference less than 4 means sampling at
+   sub-RTT scale; <a href="./rfc4342#section-8.1">[RFC4342], Section 8.1</a> thus suggests differences
+   between 2 and 4, the latter being preferable (equivalent to a full
+   RTT).  The same section limits the maximum CCVal difference between
+   data-carrying packets to 5, in order to avoid wrap-around.  As a
+   consequence, it is not possible to determine the timing interval for
+   adjacent packets with a CCVal difference greater than 4: such samples
+   have to be discarded.
+
+   A second problem arises when there are holes in the sequence space.
+   Because the 4-bit CCVal counter may cycle around multiple times, it
+   is not possible to determine window-counter wrap-around whenever
+   sequence numbers of subsequent packets are not immediately adjacent.
+   This problem occurs when packets are delayed, reordered, or lost in
+   the network.
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+   As a result, RTT sampling has to be paused during times of loss.
+   However, this aggravates the problem, since the sender now requires
+   new feedback from the receiver, but the receiver is unable to provide
+   accurate and up-to-date information: the receiver is unable to sample
+   the RTT, and accordingly is also unable to estimate X_recv correctly,
+   which then in turn affects X_Bps at the sender.
+
+   The third limitation arises from using inter-arrival times as
+   representatives of network inter-packet gaps.  It is well known that
+   the inter-packet gap of packets is not constant along a network path.
+   Furthermore, modern network interface cards do not necessarily
+   deliver each packet at the time it is received, but rather in a
+   bunch, to avoid overly frequent interrupts [<a href="#ref-MR97" title='"Eliminating Receive Livelock in an Interrupt-Driven Kernel"'>MR97</a>].  As a result,
+   inter-packet arrival times may converge to zero, when subsequent
+   packets are being delivered at virtually the same time.
+
+   The fourth problem is that of under-sampling and thus related to the
+   first limitation.  If loss occurs while the receiver has not yet had
+   a chance to sample the RTT, it needs to fall back to some fixed RTT
+   constant to plug into the equation of <a href="./rfc5348#section-6.3.1">[RFC5348], Section 6.3.1</a>.  (The
+   sender, for example, uses a fixed value of 1 second when it is unable
+   to obtain an initial RTT sample; see <a href="./rfc5348#section-4.2">[RFC5348], Section 4.2</a>).
+
+   In particular, if the loss is caused by a transient condition, this
+   fourth problem causes a subsequent deterioration of the connection
+   (rate reduction), further aggravated by the fact that TFRC takes
+   longer than common window-based protocols to recover from a reduction
+   of its allowed sending rate.
+
+   Trying to smooth over these effects by imposing heavy filtering on
+   the RTT samples did not substantially improve the situation, nor does
+   it solve the problem of under-sampling.
+
+   The TFRC sender, on the other hand, is much better equipped to
+   estimate the RTT and can do this more accurately.  This is in
+   particular due to the use of timestamps and elapsed time information
+   (<a href="./rfc5348#section-3.2.2">[RFC5348], Section 3.2.2</a>), which are mandatory in CCID-3 (Sections <a href="#section-6">6</a>
+   and 8.2 of [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>]).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Other%20Areas%20Affected%20by%20the%20RTT%20Sampling%20Problems"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Other Areas Affected by the RTT Sampling Problems</span>
+
+   Here we analyse the impact that unreliability of receiver-based RTT
+   sampling has on the areas listed at the beginning of <a href="#section-2">Section 2</a>.
+
+   In addition, benefits of sender-based RTT sampling have already been
+   pointed out in [<a href="./rfc5348" title='"TCP Friendly Rate Control (TFRC): Protocol Specification"'>RFC5348</a>] and in the specification of CCID-3 at the
+   end of <a href="./rfc4342#section-10.2">Section 10.2 of [RFC4342]</a>.
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.1.%20%20Measured%20Receive%20Rate%20X_recv"></a><a class="selflink" href="#section-2.2.1" id="section-2.2.1">2.2.1</a>.  Measured Receive Rate X_recv</span>
+
+   A key problem is that the reliability of X_recv [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>] depends
+   directly upon the reliability and accuracy of RTT samples.  This
+   means that failures propagate from one parameter to another.
+
+   Errata IDs 610 [<a href="#ref-Err610" title="RFC 4342">Err610</a>] and 611 [<a href="#ref-Err611" title="RFC 4342">Err611</a>] update [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>] to use the
+   definition of the receive rate as specified in [<a href="./rfc5348" title='"TCP Friendly Rate Control (TFRC): Protocol Specification"'>RFC5348</a>].
+
+   Having an explicit (rather than a coarse-grained) RTT estimate allows
+   measurement of X_recv with greater accuracy and isolates failure.
+
+   An explicit RTT estimate also enables the receiver to more accurately
+   perform the test in step (2) of <a href="./rfc4342#section-6.2">[RFC4342], Section 6.2</a>, i.e., to
+   check whether less or more than one RTT has passed since the last
+   feedback.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.2.%20%20Disambiguation%20and%20Accuracy%20of%20Loss%20Intervals"></a><a class="selflink" href="#section-2.2.2" id="section-2.2.2">2.2.2</a>.  Disambiguation and Accuracy of Loss Intervals</span>
+
+   Since a loss event is defined as one or more data packets in one RTT
+   that are lost or marked with Explicit Congestion Notification (ECN;
+   <a href="./rfc5348#section-5.2">[RFC5348], Section 5.2</a>), the receiver needs accurate RTT estimates to
+   validate and accurately separate loss events.  Moreover, <a href="./rfc5348#section-5.2">Section 5.2
+   of [RFC5348]</a> expressly indicates the sender RTT estimate is
+   RECOMMENDED for this purpose.
+
+   Having the sender RTT Estimate available further increases the
+   accuracy of the information reported by the receiver.  The definition
+   of Loss Intervals in <a href="./rfc4342#section-6.1">[RFC4342], Section 6.1</a> needs the RTT to separate
+   the lossy parts; in particular, lossy parts spanning a period of more
+   than one RTT are invalid.
+
+   A similar benefit arises in the computation of the loss event rate:
+   as discussed in <a href="./rfc4342#section-9.2">Section 9.2 of [RFC4342]</a>, it may happen that the
+   sender and receiver compute different loss event rates, due to
+   differences in the available timing information.  An explicit RTT
+   estimate increases the accuracy of information available at the
+   receiver; thus, the sender may not need to recompute the (less
+   reliable) loss event rate reported by the receiver.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.3.%20%20Determining%20Quiescence"></a><a class="selflink" href="#section-2.2.3" id="section-2.2.3">2.2.3</a>.  Determining Quiescence</span>
+
+   The quiescence period is defined as max(2 * RTT, 0.2 sec) in <a href="./rfc4342#section-6.4">Section</a>
+   <a href="./rfc4342#section-6.4">6.4 of [RFC4342]</a>.  An explicit RTT estimate avoids under- and over-
+   estimating quiescence periods.
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.4.%20%20Practical%20Considerations"></a><a class="selflink" href="#section-2.2.4" id="section-2.2.4">2.2.4</a>.  Practical Considerations</span>
+
+   Using explicit RTT estimates contributes to greater robustness and
+   can also result in simpler implementation.
+
+   First, it becomes easier to separate adjacent loss events.  The 4-bit
+   counter value wraps relatively frequently, which requires additional
+   procedures to avoid aliasing effects.
+
+   Second, the receiver is better able to determine when to send
+   feedback packets.  It can perform the test described in step (2) of
+   <a href="./rfc5348#section-6.2">[RFC5348], Section 6.2</a> more accurately.  Moreover, unnecessary
+   expiration of the nofeedback timer (as described in <a href="./rfc4342#section-10.3">[RFC4342],
+   Section 10.3</a>) can be avoided.
+
+   Lastly, a sender-based RTT estimate option can be used by middleboxes
+   to verify that a flow uses conforming end-to-end congestion control
+   (<a href="./rfc4342#section-10.2">[RFC4342], Section 10.2</a>).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Specification"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Specification</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Conventions"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Conventions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+   This document uses the conventions of [<a href="./rfc5348" title='"TCP Friendly Rate Control (TFRC): Protocol Specification"'>RFC5348</a>], [<a href="./rfc4340" title='"Datagram Congestion Control Protocol (DCCP)"'>RFC4340</a>],
+   [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>], and [<a href="./rfc5622" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion ID 4: TCP-Friendly Rate Control for Small Packets (TFRC-SP)"'>RFC5622</a>].
+
+   All multi-byte field descriptions presented in this document are in
+   network byte order (most significant byte first).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Options%20and%20Features"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Options and Features</span>
+
+   This document defines a single TFRC-specific option, RTT Estimate,
+   described in the next subsection.
+
+   Following the guidelines in <a href="./rfc4340#section-15">[RFC4340], Section 15</a>, the use of the RTT
+   Estimate Option is governed by an associated feature, Send RTT
+   Estimate Feature.  This feature is described in <a href="#section-3.2.2">Section 3.2.2</a>.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.1.%20%20RTT%20Estimate%20Option"></a><a class="selflink" href="#section-3.2.1" id="section-3.2.1">3.2.1</a>.  RTT Estimate Option</span>
+
+   The sender communicates its current RTT estimate to the receiver
+   using an RTT Estimate Option.
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+           +------+---------------+--------------+------------+
+           | Type | Option Length |    Meaning   | DCCP Data? |
+           +------+---------------+--------------+------------+
+           |  128 |     3/4/5     | RTT Estimate |      Y     |
+           +------+---------------+--------------+------------+
+
+         Table 1: The RTT Estimate Option Defined by This Document
+
+   Column meanings are as per <a href="./rfc4340#section-5.8">[RFC4340], Section 5.8</a> (Table 3).  This
+   option MAY be placed in any DCCP packet, has option number 128 and a
+   length of 3..5 bytes.
+
+   A Sender RTT Estimate Option is valid if it satisfies one of the
+   three following formats:
+
+      +--------+--------+--------+
+      |10000000|00000011|  RTT   |
+      +--------+--------+--------+
+       Type=128  Length=3  Estimate
+
+
+      +--------+--------+--------+--------+
+      |10000000|00000100|       RTT       |
+      +--------+--------+--------+--------+
+       Type=128  Length=4      Estimate
+
+
+      +--------+--------+--------+--------+--------+
+      |10000000|00000101|           RTT            |
+      +--------+--------+--------+--------+--------+
+       Type=128  Length=5          Estimate
+
+   The 1..3 value bytes of the option data carry the current RTT
+   estimate of the sender, using a granularity of 1 microsecond.  This
+   allows values up to 16.7 seconds (corresponding to 0xFFFFFE) to be
+   communicated.
+
+   A sender capable of sampling at sub-microsecond granularity SHOULD
+   round up RTT samples to the next microsecond, to avoid under-
+   estimating the RTT.
+
+   The value 0xFFFFFF is reserved to indicate significant delay spikes,
+   larger than 16.7 seconds.  This is qualitative rather than
+   quantitative information, to alert the receiver that there is a
+   network problem (for instance, jamming on a wireless channel).
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+   The use of the RTT Estimate Option on networks with RTTs larger than
+   16.7 seconds is not specified by this document (as per <a href="#section-3.3">Section 3.3</a>,
+   the sender would then always report 0xFFFFFF).
+
+   A value of 0 indicates the absence of a valid RTT sample.  The sender
+   MUST set the value to 0 if it does not yet have an RTT estimate.  RTT
+   estimates of less than 1 microsecond MUST be reported as 1
+   microsecond.
+
+   The sender SHOULD select the smallest format suitable to carry the
+   RTT estimate (i.e., less than 1 byte of leading zeroes).
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.2.%20%20Send%20RTT%20Estimate%20Feature"></a><a class="selflink" href="#section-3.2.2" id="section-3.2.2">3.2.2</a>.  Send RTT Estimate Feature</span>
+
+   The Send RTT Estimate feature lets endpoints negotiate whether the
+   sender MUST provide RTT Estimate options on its data packets.
+
+   Send RTT Estimate has feature number 128 and is server-priority.  It
+   takes 1-byte Boolean values; values greater than 1 are reserved.
+
+    +--------+-------------------+------------+---------------+-------+
+    | Number |      Meaning      | Rec'n Rule | Initial Value | Req'd |
+    +--------+-------------------+------------+---------------+-------+
+    |   128  | Send RTT Estimate |     SP     |       0       |   N   |
+    +--------+-------------------+------------+---------------+-------+
+
+      Table 2: The Send RTT Estimate Feature Defined by This Document
+
+   The column meanings are described in <a href="./rfc4340#section-6.4">[RFC4340], Section 6.4</a>.
+
+   The Send RTT Estimate feature is OPTIONAL.  An extension may
+   implement it, but this specification does not require the feature to
+   be understood by every DCCP implementation (see [<a href="./rfc4340" title='"Datagram Congestion Control Protocol (DCCP)"'>RFC4340</a>], <a href="#section-15">Section</a>
+   <a href="#section-15">15</a>).  The feature is off by default (initial value of 0).
+
+   DCCP B sends a "Mandatory Change R(Send RTT Estimate, 1)" to require
+   DCCP A to send RTT Estimate options as part of its data traffic (DCCP
+   A will reset the connection if it does not understand this feature).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Basic%20Usage"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Basic Usage</span>
+
+   When the Send RTT Estimate Feature is enabled, the sender MUST
+   provide an RTT Estimate Option on all of its Data, DataAck, Sync, and
+   SyncAck packets.  It MAY in addition provide the RTT Estimate Option
+   on other packet types, such as DCCP-Ack.  If the RTT is larger than
+   the maximum representable value (0xFFFFFE), the sender MUST set the
+   value of the RTT Estimate Option to 0xFFFFFF.
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+   The sender MUST implement and continue to update the CCVal window
+   counter as specified in <a href="./rfc4342#section-8.1">[RFC4342], Section 8.1</a>, even when the Send
+   RTT Estimate Feature is on.
+
+   When the Send RTT Estimate Feature is enabled, the receiver MUST use
+   the value reported by the RTT Estimate Option in all places that
+   require an RTT (listed at the begin of <a href="#section-2">Section 2</a>).  If the receiver
+   encounters an invalid RTT Estimate Option (<a href="#section-3.2.1">Section 3.2.1</a>), it MUST
+   reset the connection with Reset Code 5, "Option Error", where the
+   Data 1..3 fields are set to the first 3 bytes of the offending RTT
+   Estimate Option.
+
+   The receiver SHOULD track the long-term RTT estimate using a moving
+   average, such as the one specified in <a href="./rfc5348#section-4.3">[RFC5348], Section 4.3</a>.  This
+   long-term estimate is referred to as "receiver_RTT" below.
+
+   When the Send RTT Estimate Feature is disabled, the receiver MUST
+   estimate the RTT as previously specified in [<a href="./rfc4340" title='"Datagram Congestion Control Protocol (DCCP)"'>RFC4340</a>], [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>], and
+   [<a href="./rfc5622" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion ID 4: TCP-Friendly Rate Control for Small Packets (TFRC-SP)"'>RFC5622</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.4.%20%20Receiver%20Robustness%20Measures"></a><a class="selflink" href="#section-3.4" id="section-3.4">3.4</a>.  Receiver Robustness Measures</span>
+
+   This subsection specifies robustness measures for the receiver when
+   the Send RTT Estimate Feature is on.
+
+   The 0-valued and 0xFFFFFF-valued RTT Estimate Options are both
+   referred to as "no-number RTT options".  RTT Estimate Options with
+   values in the range of 1..0xFFFFFE are analogously called "numeric
+   RTT options".
+
+   Until the first numeric RTT option arrives, the receiver MUST use a
+   value of 0.5 seconds for receiver_RTT (to match the initial 2-second
+   timeout of the TFRC nofeedback timer; see <a href="./rfc5348#section-4.2">[RFC5348], Section 4.2</a>).
+
+   If the path RTT is known, e.g., from a previous connection [<a href="./rfc2140" title='"TCP Control Block Interdependence"'>RFC2140</a>],
+   the receiver MAY reuse the previously known path RTT value to seed
+   its long-term RTT estimate.
+
+   The sender MAY occasionally send no-number RTT options, covering for
+   transient changes and spurious disruptions.  During these times, the
+   receiver SHOULD continue to use its long-term receiver_RTT value.
+
+   To avoid under-estimating the RTT in the absence of numeric options,
+   the receiver MUST back off receiver_RTT in the following manner: if
+   the sender supplies no-number RTT options for longer than
+   receiver_RTT units of time, the receiver sets
+
+             receiver_RTT = MIN(2 * receiver_RTT, t_mbi)
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+   where t_mbi = 64 seconds is the maximum back-off interval (<a href="./rfc5348#appendix-A">[RFC5348],
+   Appendix A</a>).  For the next round of no-number RTT options, the
+   updated value of receiver_RTT applies.
+
+   This back-off mechanism ensures that short-term disruptions do not
+   have a lasting impact, whereas long-term problems will result in
+   asymptotically high receiver_RTT values.
+
+   To bail out from a hanging session, the receiver MAY close the
+   connection when receiver_RTT has reached the value MAX_RTT.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Security%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Security Considerations</span>
+
+   Security considerations for CCID-3 have been discussed in <a href="./rfc4342#section-11">Section 11
+   of [RFC4342]</a>; for CCID-4, these have been discussed in <a href="./rfc5622#section-13">Section 13 of
+   [RFC5622]</a>, referring back to the same section of [<a href="./rfc4342" title='"Profile for Datagram Congestion Control Protocol (DCCP) Congestion Control ID 3: TCP-Friendly Rate Control (TFRC)"'>RFC4342</a>].
+
+   This document introduces an extension to communicate the current RTT
+   estimate of the sender to the receiver of a TFRC communication.
+
+   By altering the value of the RTT Estimate Option, it is possible to
+   interfere with the behaviour of a flow using TFRC.  In particular,
+   since accuracy of the RTT estimate directly influences the accuracy
+   of the measured sending rate X_recv, it would be possible to obtain
+   either higher or lower sending rates than are warranted by the
+   current network conditions.
+
+   This is only possible if an attacker is on the same path as the DCCP
+   sender and receiver, and is able to guess valid sequence numbers.
+   Therefore, the considerations in <a href="./rfc4340#section-18">Section 18 of [RFC4340]</a> apply.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  IANA Considerations</span>
+
+   This document requests identical allocation in the dccp-ccid3-
+   parameters and the dccp-ccid4-parameters registries.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Option%20Types"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Option Types</span>
+
+   This document defines a single CCID-specific option (128) for
+   communicating RTT estimates from the HC-sender to the HC-receiver.
+   Following <a href="./rfc4340#section-10.3">[RFC4340], Section 10.3</a>, this requires an option number for
+   the RTT Estimate Option in the range 128..191.
+
+
+
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Feature%20Numbers"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Feature Numbers</span>
+
+   This document defines a single CCID-specific feature number (128) for
+   the Send RTT Estimate feature, which is located at the HC-sender.
+   Following <a href="./rfc4340#section-10.3">[RFC4340], Section 10.3</a>, a feature number in the range
+   128..191 is required.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Normative%20References"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC4340">RFC4340</a>]  Kohler, E., Handley, M., and S. Floyd, "Datagram
+              Congestion Control Protocol (DCCP)", <a href="./rfc4340">RFC 4340</a>, March 2006.
+
+   [<a id="ref-RFC4342">RFC4342</a>]  Floyd, S., Kohler, E., and J. Padhye, "Profile for
+              Datagram Congestion Control Protocol (DCCP) Congestion
+              Control ID 3: TCP-Friendly Rate Control (TFRC)", <a href="./rfc4342">RFC 4342</a>,
+              March 2006.
+
+   [<a id="ref-RFC5348">RFC5348</a>]  Floyd, S., Handley, M., Padhye, J., and J. Widmer, "TCP
+              Friendly Rate Control (TFRC): Protocol Specification",
+              <a href="./rfc5348">RFC 5348</a>, September 2008.
+
+   [<a id="ref-RFC5622">RFC5622</a>]  Floyd, S. and E. Kohler, "Profile for Datagram Congestion
+              Control Protocol (DCCP) Congestion ID 4: TCP-Friendly Rate
+              Control for Small Packets (TFRC-SP)", <a href="./rfc5622">RFC 5622</a>,
+              August 2009.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Informative%20References"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Informative References</span>
+
+   [<a id="ref-Err610">Err610</a>]   RFC Errata, Errata ID 610, <a href="./rfc4342">RFC 4342</a>,
+              &lt;<a href="http://www.rfc-editor.org">http://www.rfc-editor.org</a>&gt;.
+
+   [<a id="ref-Err611">Err611</a>]   RFC Errata, Errata ID 611, <a href="./rfc4342">RFC 4342</a>,
+              &lt;<a href="http://www.rfc-editor.org">http://www.rfc-editor.org</a>&gt;.
+
+   [<a id="ref-MR97">MR97</a>]     Mogul, J. and K. Ramakrishnan, "Eliminating Receive
+              Livelock in an Interrupt-Driven Kernel", ACM Transactions
+              on Computer Systems (TOCS), 15(3):217-252, August 1997.
+
+   [<a id="ref-RFC2140">RFC2140</a>]  Touch, J., "TCP Control Block Interdependence", <a href="./rfc2140">RFC 2140</a>,
+              April 1997.
+
+
+
+
+
+
+<span class="grey">Renker &amp; Fairhurst           Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc6323">RFC 6323</a>           Sender RTT Estimate Option for DCCP         July 2011</span>
+
+
+Authors' Addresses
+
+   Gerrit Renker
+   University of Aberdeen
+   School of Engineering
+   Fraser Noble Building
+   Aberdeen  AB24 3UE
+   Scotland
+
+   EMail: gerrit@erg.abdn.ac.uk
+   URI:   <a href="http://www.erg.abdn.ac.uk">http://www.erg.abdn.ac.uk</a>
+
+
+   Godred Fairhurst
+   University of Aberdeen
+   School of Engineering
+   Fraser Noble Building
+   Aberdeen  AB24 3UE
+   Scotland
+
+   EMail: gorry@erg.abdn.ac.uk
+   URI:   <a href="http://www.erg.abdn.ac.uk">http://www.erg.abdn.ac.uk</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Renker &amp; Fairhurst           Standards Track                   [Page 13]
+</pre>
+</body></html>
