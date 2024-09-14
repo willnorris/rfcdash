@@ -1,0 +1,670 @@
+<html><head></head><body><pre>Network Working Group                                           A. Zinin
+Request for Comments: 5613                                Alcatel-Lucent
+Obsoletes: <a href="./rfc4813">4813</a>                                                   A. Roy
+Category: Standards Track                                      L. Nguyen
+                                                           Cisco Systems
+                                                             B. Friedman
+                                                            Google, Inc.
+                                                                D. Yeung
+                                                           Cisco Systems
+                                                             August 2009
+
+
+                       <span class="h1">OSPF Link-Local Signaling</span>
+
+Abstract
+
+   OSPF is a link-state intra-domain routing protocol.  OSPF routers
+   exchange information on a link using packets that follow a well-
+   defined fixed format.  The format is not flexible enough to enable
+   new features that need to exchange arbitrary data.  This document
+   describes a backward-compatible technique to perform link-local
+   signaling, i.e., exchange arbitrary data on a link.  This document
+   replaces the experimental specification published in <a href="./rfc4813">RFC 4813</a> to
+   bring it on the Standards Track.
+
+Status of This Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (c) 2009 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents in effect on the date of
+   publication of this document (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>).
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.
+
+
+
+
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-2">2</a>
+     <a href="#section-1.1">1.1</a>.  Requirements Notation  . . . . . . . . . . . . . . . . . .  <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Proposed Solution  . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-2.1">2.1</a>.  L-Bit in Options Field . . . . . . . . . . . . . . . . . .  <a href="#page-4">4</a>
+     <a href="#section-2.2">2.2</a>.  LLS Data Block . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-4">4</a>
+     <a href="#section-2.3">2.3</a>.  LLS TLVs . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-5">5</a>
+     <a href="#section-2.4">2.4</a>.  Extended Options and Flags TLV . . . . . . . . . . . . . .  <a href="#page-5">5</a>
+     <a href="#section-2.5">2.5</a>.  Cryptographic Authentication TLV (OSPFv2 ONLY) . . . . . .  <a href="#page-6">6</a>
+     <a href="#section-2.6">2.6</a>.  Private TLVs . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+   <a href="#section-3">3</a>.  IANA Considerations  . . . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+   <a href="#section-4">4</a>.  Compatibility Issues . . . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+   <a href="#section-5">5</a>.  Security Considerations  . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+   <a href="#section-6">6</a>.  References . . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+     <a href="#section-6.1">6.1</a>.  Normative References . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+     <a href="#section-6.2">6.2</a>.  Informative References . . . . . . . . . . . . . . . . . . <a href="#page-10">10</a>
+   <a href="#appendix-A">Appendix A</a>.  Acknowledgements  . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+   <a href="#appendix-B">Appendix B</a>.  Changes from <a href="./rfc4813">RFC 4813</a> . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   This document describes an extension to OSPFv2 [<a href="#ref-OSPFV2" title='"OSPF Version 2"'>OSPFV2</a>] and OSPFv3
+   [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>] allowing additional information to be exchanged between
+   routers on the same link.  OSPFv2 and OSPFv3 packet formats are fixed
+   and do not allow for extension.  This document proposes appending an
+   optional data block composed of Type/Length/Value (TLV) triplets to
+   existing OSPFv2 and OSPFv3 packets to carry this additional
+   information.  Throughout this document, OSPF will be used when the
+   specification is applicable to both OSPFv2 and OSPFv3.  Similarly,
+   OSPFv2 or OSPFv3 will be used when the text is protocol specific.
+
+   One potential way of solving this task could be introducing a new
+   packet type.  However, that would mean introducing extra packets on
+   the network that may not be desirable and may cause backward
+   compatibility issues.  This document describes how to exchange data
+   using standard OSPF packet types.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="#ref-KEY" title='"Key words for use in RFCs to Indicate Requirement Levels"'>KEY</a>].
+
+
+
+
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Proposed%20Solution"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Proposed Solution</span>
+
+   To perform link-local signaling (LLS), OSPF routers add a special
+   data block to the end of OSPF packets or right after the
+   authentication data block when cryptographic authentication is used.
+   The length of the LLS block is not included into the length of the
+   OSPF packet, but is included in the IPv4/IPv6 packet length.  Figure
+   1 illustrates how the LLS data block is attached.
+
+   +---------------------+ --              --  +---------------------+
+   | IP Header           | ^               ^   | IPv6 Header         |
+   | Length = HL+X+Y+Z   | | Header Length |   | Length = HL+X+Y     |
+   |                     | v               v   |                     |
+   +---------------------+ --              --  +---------------------+
+   | OSPF Header         | ^               ^   | OSPFv3 Header       |
+   | Length = X          | |               |   | Length = X          |
+   |.....................| | X             | X |.....................|
+   |                     | |               |   |                     |
+   | OSPFv2 Data         | |               |   | OSPFv3 Data         |
+   |                     | v               v   |                     |
+   +---------------------+ --              --  +---------------------+
+   |                     | ^               ^   |                     |
+   | Authentication Data | | Y             | Y |  LLS Data           |
+   |                     | v               v   |                     |
+   +---------------------+ --              --  +---------------------+
+   |                     | ^
+   |  LLS Data           | | Z
+   |                     | v
+   +---------------------+ --
+
+               Figure 1: LLS Data Block in OSPFv2 and OSPFv3
+
+   The LLS block MAY be attached to OSPF Hello and Database Description
+   (DD) packets.  The LLS block MUST NOT be attached to any other OSPF
+   packet types on generation and MUST be ignored on reception.
+
+   The data included in the LLS block attached to a Hello packet MAY be
+   used for dynamic signaling since Hello packets may be sent at any
+   time.  However, delivery of LLS data in Hello packets is not
+   guaranteed.  The data sent with DD packets is guaranteed to be
+   delivered as part of the adjacency forming process.
+
+   This document does not specify how the data transmitted by the LLS
+   mechanism should be interpreted by OSPF routers.  As routers that do
+   not understand LLS may receive these packets, changes made due to LLS
+   block TLV's do not affect the basic routing when interacting with
+   non-LLS routers.
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20L-Bit%20in%20Options%20Field"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  L-Bit in Options Field</span>
+
+   A new L-bit (L stands for LLS) is introduced into the OSPF Options
+   field (see Figures 2a and 2b).  Routers set the L-bit in Hello and DD
+   packets to indicate that the packet contains an LLS data block.  In
+   other words, the LLS data block is only examined if the L-bit is set.
+
+             +---+---+---+---+---+---+---+---+
+             | * | O | DC| L |N/P| MC| E | * |
+             +---+---+---+---+---+---+---+-+-+
+
+              Figure 2a: OSPFv2 Options Field
+
+
+   0                   1                       2
+   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4  5 6 7  8  9  0  1  2  3
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+--+-+-+--+--+--+--+--+--+
+   | | | | | | | | | | | | | | |L|AF|*|*|DC| R| N|MC| E|V6|
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+--+-+-+--+--+--+--+--+--+
+
+              Figure 2b: OSPFv3 Options Field
+
+   The L-bit MUST NOT be set except in Hello and DD packets that contain
+   an LLS block.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20LLS%20Data%20Block"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  LLS Data Block</span>
+
+   The data block used for link-local signaling is formatted as
+   described below (see Figure 3 for illustration).
+
+   0                   1                   2                   3
+   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |            Checksum           |       LLS Data Length         |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   |                           LLS TLVs                            |
+   .                                                               .
+   .                                                               .
+   .                                                               .
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                   Figure 3: Format of LLS Data Block
+
+   The Checksum field contains the standard IP checksum for the entire
+   contents of the LLS block.  Before computing the checksum, the
+   checksum field is set to 0.  If the checksum is incorrect, the OSPF
+   packet MUST be processed, but the LLS block MUST be discarded.
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+   The 16-bit LLS Data Length field contains the length (in 32-bit
+   words) of the LLS block including the header and payload.
+
+   Note that if the OSPF packet is cryptographically authenticated, the
+   LLS data block MUST also be cryptographically authenticated.  In this
+   case, the regular LLS checksum is not calculated, but is instead set
+   to 0.
+
+   The rest of the block contains a set of Type/Length/Value (TLV)
+   triplets as described in <a href="#section-2.3">Section 2.3</a>.  All TLVs MUST be 32-bit
+   aligned (with padding if necessary).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20LLS%20TLVs"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  LLS TLVs</span>
+
+   The contents of an LLS data block are constructed using TLVs.  See
+   Figure 4 for the TLV format.
+
+   The Type field contains the TLV ID, which is unique for each type of
+   TLV.  The Length field contains the length of the Value field (in
+   bytes).  The Value field is variable and contains arbitrary data.
+
+   0                   1                   2                   3
+   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |            Type               |           Length              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   .                                                               .
+   .                             Value                             .
+   .                                                               .
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                      Figure 4: Format of LLS TLVs
+
+   Note that TLVs are always padded to a 32-bit boundary, but padding
+   bytes are not included in the TLV Length field (though they are
+   included in the LLS Data Length field in the LLS block header).
+   Unrecognized TLV types are ignored.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20Extended%20Options%20and%20Flags%20TLV"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  Extended Options and Flags TLV</span>
+
+   This subsection describes a TLV called the Extended Options and Flags
+   (EOF) TLV.  The format of the EOF-TLV is shown in Figure 5.
+
+   Bits in the Value field do not have any semantics from the point of
+   view of the LLS mechanism.  Bits MAY be allocated to announce OSPF
+   link-local capabilities.  Bits MAY also be allocated to perform
+   boolean link-local signaling.
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+   The length of the Value field in the EOF-TLV is 4 bytes.
+
+   The value of the Type field in the EOF-TLV is 1.  The EOF-TLV MUST
+   only appear once in the LLS data block.
+
+   0                   1                   2                   3
+   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |             1                 |            4                  |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                  Extended Options and Flags                   |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                        Figure 5: Format of the EOF-TLV
+
+   Currently, [<a href="#ref-OOB" title='"OSPF Out-of-Band Link State Database (LSDB) Resynchronization"'>OOB</a>] and [<a href="#ref-RESTART" title='"OSPF Restart Signaling"'>RESTART</a>] use bits in the Extended Options field
+   of the EOF-TLV.
+
+   The Extended Options and Flags bits are defined in <a href="#section-3">Section 3</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.5.%20%20Cryptographic%20Authentication%20TLV%20%28OSPFv2%20ONLY%29"></a><a class="selflink" href="#section-2.5" id="section-2.5">2.5</a>.  Cryptographic Authentication TLV (OSPFv2 ONLY)</span>
+
+   This document defines a special TLV that is used for cryptographic
+   authentication (CA-TLV) of the LLS data block.  This TLV MUST only be
+   included in the LLS block when cryptographic authentication is
+   enabled on the corresponding interface.  The message digest of the
+   LLS block MUST be calculated using the same key and authentication
+   algorithm as used for the OSPFv2 packet.  The cryptographic sequence
+   number is included in the TLV and MUST be the same as the one in the
+   OSPFv2 authentication data for the LLS block to be considered
+   authentic.
+
+   The TLV is constructed as shown in Figure 6.
+
+   0                   1                   2                   3
+   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |              2                |         AuthLen               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                         Sequence Number                       |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                                                               |
+   .                                                               .
+   .                           AuthData                            .
+   .                                                               .
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+         Figure 6: Format of Cryptographic Authentication TLV
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+   The value of the Type field for the CA-TLV is 2.
+
+   The Length field in the header contains the length of the data
+   portion of the TLV including 4 bytes for Sequence Number and the
+   length of the message digest block for the whole LLS block in bytes.
+
+   The Sequence Number field contains the cryptographic sequence number
+   that is used to prevent simple replay attacks.  For the LLS block to
+   be considered authentic, the Sequence Number in the CA-TLV MUST match
+   the Sequence Number in the OSPFv2 packet header Authentication field
+   (which MUST be present).  In the event of Sequence Number mismatch or
+   Authentication failure, the whole LLS block MUST be ignored.
+
+   The CA-TLV MUST NOT appear more than once in the LLS block.  Also,
+   when present, this TLV MUST be the last TLV in the LLS block.  If it
+   appears more than once, only the first occurrence is processed and
+   any others MUST be ignored.
+
+   The AuthData field contains the message digest calculated for the LLS
+   data block up to the CA-TLV AuthData field (i.e., excludes the CA-TLV
+   AuthData).
+
+   The CA-TLV is not applicable to OSPFv3 and it MUST NOT be added to
+   any OSPFv3 packet.  If found on reception, this TLV MUST be ignored.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.6.%20%20Private%20TLVs"></a><a class="selflink" href="#section-2.6" id="section-2.6">2.6</a>.  Private TLVs</span>
+
+   LLS type values in the range of 32768-65536 are reserved for private
+   use.  The first four octets of the Value field MUST be the private
+   enterprise code [<a href="#ref-ENTNUM" title='"PRIVATE ENTERPRISE NUMBERS"'>ENTNUM</a>].  This allows multiple vendor private
+   extensions to coexist in a network.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  IANA Considerations</span>
+
+   This document uses the registry that was originally created in
+   [<a href="./rfc4813" title='"OSPF Link-Local Signaling"'>RFC4813</a>].  IANA updated the following registry to point to this
+   document instead:
+
+   o  "Open Shortest Path First (OSPF) Link-Local Signalling (LLS) -
+      Type/Length/Value Identifiers (TLV)"
+
+   IANA allocated L-bit in the "OSPFv2 Options Registry" and "OSPFv3
+   Options Registry" as per <a href="#section-2.1">Section 2.1</a>.
+
+   LLS TLV types are maintained by the IANA.  Extensions to OSPF that
+   require a new LLS TLV type MUST be reviewed by a Designated Expert
+   from the routing area.
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+   The criteria for allocating LLS TLVs are:
+
+   o  LLS should not be used for information that would be better suited
+      to be advertised in a link-local link state advertisement (LSA).
+
+   o  LLS should be confined to signaling between direct neighbors.
+
+   o  Discretion should be used in the volume of information signaled
+      using LLS due to the obvious MTU and performance implications.
+
+   Following the policies outlined in [<a href="#ref-IANA" title="">IANA</a>], LLS type values in the
+   range of 0-32767 are allocated through an IETF Review and LLS type
+   values in the range of 32768-65535 are reserved for private use.
+
+   This document assigns the following LLS TLV types in OSPFv2/OSPFv3.
+
+   TLV Type    Name                                      Reference
+   0           Reserved
+   1           Extended Options and Flags                [<a href="./rfc5613">RFC5613</a>]
+   2           Cryptographic Authentication+             [<a href="./rfc5613">RFC5613</a>]
+   3-32767     Reserved for assignment by the IANA
+   32768-65535 Private Use
+
+   + Cryptographic Authentication TLV is only defined for OSPFv2
+
+   IANA renamed the sub-registry from "LLS Type 1 Extended Options" to
+   "LLS Type 1 Extended Options and Flags".
+
+   This document also assigns the following bits in the EOF-TLV outlined
+   in <a href="#section-2.5">Section 2.5</a>:
+
+   Bit                     Name                        Reference
+   0x00000001              LSDB Resynchronization (LR) [<a href="./rfc4811">RFC4811</a>]
+   0x00000002              Restart Signal (RS-bit)     [<a href="./rfc4812">RFC4812</a>]
+
+   Future allocation of Extended Options and Flags bits MUST be reviewed
+   by a Designated Expert from the routing area.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Compatibility%20Issues"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Compatibility Issues</span>
+
+   The modifications to OSPF packet formats are compatible with standard
+   OSPF since OSPF routers not supporting LLS will ignore the LLS data
+   block after the OSPF packet or cryptographic message digest.  As of
+   this writing, there are implementations deployed with [<a href="./rfc4813" title='"OSPF Link-Local Signaling"'>RFC4813</a>]-
+   compliant software.  Routers not implementing [<a href="./rfc4813" title='"OSPF Link-Local Signaling"'>RFC4813</a>] ignore the
+   LLS data at the end of the OSPF packet.
+
+   Careful consideration should be given to carrying additional LLS
+   data, as it may affect the OSPF adjacency bring-up time due to
+   additional propagation delay and/or processing time.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Security%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Security Considerations</span>
+
+   Security considerations inherited from OSPFv2 are described in
+   [<a href="#ref-OSPFV2" title='"OSPF Version 2"'>OSPFV2</a>].  This technique provides the same level of security as the
+   basic OSPFv2 protocol by allowing LLS data to be authenticated using
+   the same cryptographic authentication that OSPFv2 uses (see
+   <a href="#section-2.5">Section 2.5</a> for more details).
+
+   Security considerations inherited from OSPFv3 are described in
+   [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>] and [<a href="#ref-OSPFV3AUTH" title='"Authentication/Confidentiality for OSPFv3"'>OSPFV3AUTH</a>].  OSPFv3 utilizes IPsec for authentication
+   and encryption.  With IPsec, the AH (Authentication Header), ESP
+   (Encapsulating Security Payload), or both are applied to the entire
+   OSPFv3 payload including the LLS block.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Normative%20References"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Normative References</span>
+
+   [<a id="ref-IANA">IANA</a>]        Narten, T. and H. Alvestrand, "Guidelines for Writing
+                 an IANA Considerations Section in RFCs", <a href="https://www.rfc-editor.org/bcp/bcp26">BCP 26</a>,
+                 <a href="./rfc5226">RFC 5226</a>, May 2008.
+
+   [<a id="ref-KEY">KEY</a>]         Bradner, S., "Key words for use in RFCs to Indicate
+                 Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-OSPFV2">OSPFV2</a>]      Moy, J., "OSPF Version 2", STD 54, <a href="./rfc2328">RFC 2328</a>,
+                 April 1998.
+
+   [<a id="ref-OSPFV3">OSPFV3</a>]      Coltun, R., Ferguson, D., Moy, J., and A. Lindem, "OSPF
+                 for IPv6", <a href="./rfc5340">RFC 5340</a>, July 2008.
+
+   [<a id="ref-OSPFV3AUTH">OSPFV3AUTH</a>]  Gupta, M. and N. Melam, "Authentication/Confidentiality
+                 for OSPFv3", <a href="./rfc4552">RFC 4552</a>, June 2006.
+
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Informative%20References"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Informative References</span>
+
+   [<a id="ref-ENTNUM">ENTNUM</a>]      IANA, "PRIVATE ENTERPRISE NUMBERS",
+                 <a href="http://www.iana.org">http://www.iana.org</a>.
+
+   [<a id="ref-OOB">OOB</a>]         Nguyen, L., Roy, A., and A. Zinin, "OSPF Out-of-Band
+                 Link State Database (LSDB) Resynchronization",
+                 <a href="./rfc4811">RFC 4811</a>, March 2007.
+
+   [<a id="ref-RESTART">RESTART</a>]     Nguyen, L., Roy, A., and A. Zinin, "OSPF Restart
+                 Signaling", <a href="./rfc4812">RFC 4812</a>, March 2007.
+
+   [<a id="ref-RFC4813">RFC4813</a>]     Friedman, B., Nguyen, L., Roy, A., Yeung, D., and A.
+                 Zinin, "OSPF Link-Local Signaling", <a href="./rfc4813">RFC 4813</a>,
+                 March 2007.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Acknowledgements"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Acknowledgements</span>
+
+   The authors would like to acknowledge Russ White, Acee Lindem, and
+   Manral Vishwas for their review of this document.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20B.%20%20Changes%20from%20RFC%204813"></a><a class="selflink" href="#appendix-B" id="appendix-B">Appendix B</a>.  Changes from <a href="./rfc4813">RFC 4813</a></span>
+
+   This section describes the substantive change from [<a href="./rfc4813" title='"OSPF Link-Local Signaling"'>RFC4813</a>].
+
+   o  Added OSPFv3 support
+
+   o  Private TLVs MUST use private enterprise code
+
+   o  Clarified requirement levels at several places
+
+   o  Changed from Experimental to Standards Track
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Zinin, et al.               Standards Track                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc5613">RFC 5613</a>               OSPF Link-Local Signaling             August 2009</span>
+
+
+Authors' Addresses
+
+   Alex Zinin
+   Alcatel-Lucent
+   Singapore
+
+   EMail: alex.zinin@alcatel-lucent.com
+
+
+   Abhay Roy
+   Cisco Systems
+   170 West Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: akr@cisco.com
+
+
+   Liem Nguyen
+   Cisco Systems
+   170 West Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: lhnguyen@cisco.com
+
+
+   Barry Friedman
+   Google, Inc.
+   1600 Amphitheatre Parkway
+   Mountain View, CA  94043
+   USA
+
+   EMail: barryf@google.com
+
+
+   Derek Yeung
+   Cisco Systems
+   170 West Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: myeung@cisco.com
+
+
+
+
+
+
+
+
+Zinin, et al.               Standards Track                    [Page 12]
+</pre>
+</body></html>

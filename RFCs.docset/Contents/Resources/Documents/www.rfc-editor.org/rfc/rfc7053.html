@@ -1,0 +1,446 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                         M. Tuexen
+Request for Comments: 7053                                  I. Ruengeler
+Updates: <a href="./rfc4960">4960</a>                           Muenster Univ. of Appl. Sciences
+Category: Standards Track                                     R. Stewart
+ISSN: 2070-1721                                           Adara Networks
+                                                           November 2013
+
+
+                     <span class="h1">SACK-IMMEDIATELY Extension for</span>
+                <span class="h1">the Stream Control Transmission Protocol</span>
+
+Abstract
+
+   This document updates <a href="./rfc4960">RFC 4960</a> by defining a method for the sender of
+   a DATA chunk to indicate that the corresponding Selective
+   Acknowledgment (SACK) chunk should be sent back immediately and
+   should not be delayed.  It is done by specifying a bit in the DATA
+   chunk header, called the (I)mmediate bit, which can get set by either
+   the Stream Control Transmission Protocol (SCTP) implementation or the
+   application using an SCTP stack.  Since unknown flags in chunk
+   headers are ignored by SCTP implementations, this extension does not
+   introduce any interoperability problems.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc7053">http://www.rfc-editor.org/info/rfc7053</a>.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2013 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Conventions . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  The (I)mmediate Bit in the DATA Chunk Header  . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-4">4</a>.  Use Cases . . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-4">4</a>
+     <a href="#section-4.1">4.1</a>.  Triggering at the Application Level . . . . . . . . . . . . <a href="#page-4">4</a>
+     <a href="#section-4.2">4.2</a>.  Triggering at the SCTP Level  . . . . . . . . . . . . . . . <a href="#page-4">4</a>
+   <a href="#section-5">5</a>.  Procedures  . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+     <a href="#section-5.1">5.1</a>.  Sender-Side Considerations  . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+     <a href="#section-5.2">5.2</a>.  Receiver Side Considerations  . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+   <a href="#section-6">6</a>.  Interoperability Considerations . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+   <a href="#section-7">7</a>.  Socket API Considerations . . . . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+   <a href="#section-8">8</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . . . <a href="#page-6">6</a>
+   <a href="#section-9">9</a>.  Security Considerations . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-10">10</a>. Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-11">11</a>. References  . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+     <a href="#section-11.1">11.1</a>. Normative References  . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+     <a href="#section-11.2">11.2</a>. Informative References  . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   According to [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>], the receiver of a DATA chunk should use
+   delayed SACKs.  This delay is completely controlled by the receiver
+   of the DATA chunk and remains the default behavior.
+
+   In specific situations, the delaying of SACKs results in reduced
+   performance of the protocol:
+
+   1.  If such a situation can be detected by the receiver, the
+       corresponding SACK can be sent immediately.  For example,
+       [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] recommends immediately sending the SACK if the receiver
+       has detected message loss or message duplication.
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+   2.  However, if the situation can only be detected by the sender of
+       the DATA chunk, [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] provides no method of avoiding a delay
+       in sending the SACK.  Examples of these situations include ones
+       that require interaction with the application (e.g., applications
+       using the SCTP_SENDER_DRY_EVENT, see <a href="#section-4.1">Section 4.1</a>) and ones that
+       can be detected by the SCTP stack itself (e.g., closing the
+       association, hitting window limits, or resetting streams, see
+       <a href="#section-4.2">Section 4.2</a>).
+
+   To overcome the limitation described in the second case, this
+   document describes a simple extension of the SCTP DATA chunk by
+   defining a new flag, the "I bit".  By setting this bit, the sender of
+   a DATA chunk indicates that the corresponding SACK chunk should not
+   be delayed.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Conventions"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Conventions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20The%20%28I%29mmediate%20Bit%20in%20the%20DATA%20Chunk%20Header"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  The (I)mmediate Bit in the DATA Chunk Header</span>
+
+   Figure 1 shows the extended DATA chunk.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |   Type = 0    |  Res  |I|U|B|E|           Length              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                              TSN                              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |        Stream Identifier      |     Stream Sequence Number    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                  Payload Protocol Identifier                  |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                           User Data                           /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                   Figure 1: Extended DATA chunk format
+
+   The only difference between the DATA chunk in Figure 1 and the DATA
+   chunk defined in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] is the addition of the I bit in the flags
+   field of the DATA chunk header.
+
+
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+   [<a id="ref-RFC4960">RFC4960</a>] defines the Reserved field and specifies that these bits
+   should be set to 0 by the sender and ignored by the receiver.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Use%20Cases"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Use Cases</span>
+
+   The setting of the I bit can either be triggered by the application
+   using SCTP or by the SCTP stack itself.  The following two
+   subsections provide a non-exhaustive list of examples of how the I
+   bit may be set.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Triggering%20at%20the%20Application%20Level"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Triggering at the Application Level</span>
+
+   One example of a situation in which it may be desirable for an
+   application to trigger the setting of the I bit involves the
+   SCTP_SENDER_DRY_EVENT in the SCTP socket API [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>].  Upper layers
+   of SCTP that use the socket API as defined in [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] may subscribe
+   to the SCTP_SENDER_DRY_EVENT to be notified as soon as no user data
+   is outstanding.  To avoid an unnecessary delay, the application can
+   request that the I bit be set when sending the last user message
+   before waiting for the event.  This results in setting the I bit of
+   the last DATA chunk corresponding to the user message; this is
+   possible using the extension of the socket API described in
+   <a href="#section-7">Section 7</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Triggering%20at%20the%20SCTP%20Level"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Triggering at the SCTP Level</span>
+
+   There are also situations in which the SCTP implementation can set
+   the I bit without interacting with the upper layer.
+
+   If the association is in the SHUTDOWN-PENDING state, setting the I
+   bit reduces the number of simultaneous associations for a busy server
+   handling short-lived associations.
+
+   Another case is where the sending of a DATA chunk fills the
+   congestion or receiver window.  Setting the I bit in these cases
+   improves the throughput of the transfer.
+
+   If an SCTP association supports the SCTP Stream Reconfiguration
+   extension defined in [<a href="./rfc6525" title='"Stream Control Transmission Protocol (SCTP) Stream Reconfiguration"'>RFC6525</a>], the performance can be improved by
+   setting the I bit when there are pending reconfiguration requests
+   that require that there be no outstanding DATA chunks.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Procedures"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Procedures</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Sender-Side%20Considerations"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Sender-Side Considerations</span>
+
+   Whenever the sender of a DATA chunk can benefit from the
+   corresponding SACK chunk being sent back without delay, the sender
+   MAY set the I bit in the DATA chunk header.  Please note that why the
+   sender has set the I bit is irrelevant to the receiver.
+
+   Reasons for setting the I bit include, but are not limited to (see
+   <a href="#section-4">Section 4</a> for the benefits):
+
+   o  The application requests to set the I bit of the last DATA chunk
+      of a user message when providing the user message to the SCTP
+      implementation (see <a href="#section-7">Section 7</a>).
+
+   o  The sender is in the SHUTDOWN-PENDING state.
+
+   o  The sending of a DATA chunk fills the congestion or receiver
+      window.
+
+   o  The sending of an Outgoing SSN Reset Request Parameter or an SSN/
+      TSN Reset Request Parameter is pending, if the association
+      supports the Stream Reconfiguration extension defined in
+      [<a href="./rfc6525" title='"Stream Control Transmission Protocol (SCTP) Stream Reconfiguration"'>RFC6525</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Receiver%20Side%20Considerations"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Receiver Side Considerations</span>
+
+   Upon receipt of an SCTP packet containing a DATA chunk with the I bit
+   set, the receiver SHOULD NOT delay the sending of the corresponding
+   SACK chunk, i.e., the receiver SHOULD immediately respond with the
+   corresponding SACK chunk.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Interoperability%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Interoperability Considerations</span>
+
+   According to [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>], the receiver of a DATA chunk with the I bit
+   set should ignore this bit when it does not support the extension
+   described in this document.  Since the sender of the DATA chunk is
+   able to handle this case, there is no requirement for negotiating the
+   support of the feature described in this document.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Socket%20API%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Socket API Considerations</span>
+
+   This section describes how the socket API defined in [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] is
+   extended to provide a way for the application to set the I bit.
+
+   Please note that this section is informational only.
+
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+   A socket API implementation based on [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] needs to be extended
+   to allow the application to set the I bit of the last DATA chunk when
+   sending each user message.
+
+   This can be done by setting a flag called SCTP_SACK_IMMEDIATELY in
+   the snd_flags field of the struct sctp_sndinfo structure when using
+   sctp_sendv() or sendmsg().  If the deprecated struct sctp_sndrcvinfo
+   structure is used instead when calling sctp_send(), sctp_sendx(), or
+   sendmsg(), the SCTP_SACK_IMMEDIATELY flag can be set in the
+   sinfo_flags field.  When using the deprecated function
+   sctp_sendmsg(), the SCTP_SACK_IMMEDIATELY flag can be in the flags
+   parameter.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  IANA Considerations</span>
+
+   Following the chunk flag registration procedure defined in [<a href="./rfc6096" title='"Stream Control Transmission Protocol (SCTP) Chunk Flags Registration"'>RFC6096</a>],
+   IANA has registered a new bit, the I bit, for the DATA chunk.
+
+   The "Chunk Flags" registry for SCTP has been updated as described in
+   the following table.
+
+                             DATA Chunk Flags
+
+            +------------------+-----------------+-----------+
+            | Chunk Flag Value | Chunk Flag Name | Reference |
+            +------------------+-----------------+-----------+
+            | 0x01             | E bit           | [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] |
+            | 0x02             | B bit           | [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] |
+            | 0x04             | U bit           | [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] |
+            | 0x08             | I bit           | [<a href="./rfc7053">RFC7053</a>] |
+            | 0x10             | Unassigned      |           |
+            | 0x20             | Unassigned      |           |
+            | 0x40             | Unassigned      |           |
+            | 0x80             | Unassigned      |           |
+            +------------------+-----------------+-----------+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Security%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Security Considerations</span>
+
+   See [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] for general security considerations for SCTP.  In
+   addition, a malicious sender can force its peer to send packets
+   containing a SACK chunk for each received packet containing DATA
+   chunks instead of every other received packet containing DATA chunks.
+   This could impact the network, resulting in more packets sent on the
+   network, or the peer, because the generating and sending of the
+   packets has some processing cost.  However, the additional packets
+   can only contain the simplest SACK chunk (no gap reports, no
+   duplicate TSNs), since in cases of packet drops or reordering in the
+   network a SACK chunk would be sent immediately anyway.  Therefore,
+   this does not introduce a significant additional processing cost on
+   the receiver side.  This also does not result in more traffic in the
+   network, because a receiver sending a SACK for every packet is
+   already permitted.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20Acknowledgments"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  Acknowledgments</span>
+
+   The authors wish to thank Mark Allmann, Brian Bidulock, David Black,
+   Anna Brunstrom, Gorry Fairhurst, Janardhan Iyengar, Kacheong Poon,
+   and Michael Welzl for their invaluable comments.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20References"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.1.%20%20Normative%20References"></a><a class="selflink" href="#section-11.1" id="section-11.1">11.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC4960">RFC4960</a>]  Stewart, R., "Stream Control Transmission Protocol",
+              <a href="./rfc4960">RFC 4960</a>, September 2007.
+
+   [<a id="ref-RFC6096">RFC6096</a>]  Tuexen, M. and R. Stewart, "Stream Control Transmission
+              Protocol (SCTP) Chunk Flags Registration", <a href="./rfc6096">RFC 6096</a>,
+              January 2011.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.2.%20%20Informative%20References"></a><a class="selflink" href="#section-11.2" id="section-11.2">11.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC6458">RFC6458</a>]  Stewart, R., Tuexen, M., Poon, K., Lei, P., and V.
+              Yasevich, "Sockets API Extensions for the Stream Control
+              Transmission Protocol (SCTP)", <a href="./rfc6458">RFC 6458</a>, December 2011.
+
+   [<a id="ref-RFC6525">RFC6525</a>]  Stewart, R., Tuexen, M., and P. Lei, "Stream Control
+              Transmission Protocol (SCTP) Stream Reconfiguration",
+              <a href="./rfc6525">RFC 6525</a>, February 2012.
+
+
+
+
+
+<span class="grey">Tuexen, et al.               Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc7053">RFC 7053</a>                    SACK-IMMEDIATELY               November 2013</span>
+
+
+Authors' Addresses
+
+   Michael Tuexen
+   Muenster University of Applied Sciences
+   Stegerwaldstr. 39
+   48565 Steinfurt
+   DE
+
+   EMail: tuexen@fh-muenster.de
+
+
+   Irene Ruengeler
+   Muenster University of Applied Sciences
+   Stegerwaldstr. 39
+   48565 Steinfurt
+   DE
+
+   EMail: i.ruengeler@fh-muenster.de
+
+
+   Randall R. Stewart
+   Adara Networks
+   Chapin, SC  29036
+   US
+
+   EMail: randall@lakerest.net
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tuexen, et al.               Standards Track                    [Page 8]
+</pre>
+</body></html>

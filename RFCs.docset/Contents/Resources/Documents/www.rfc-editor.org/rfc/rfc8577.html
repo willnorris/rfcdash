@@ -1,0 +1,1342 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                      H. Sitaraman
+Request for Comments: 8577                                     V. Beeram
+Category: Standards Track                               Juniper Networks
+ISSN: 2070-1721                                                T. Parikh
+                                                                 Verizon
+                                                                 T. Saad
+                                                           Cisco Systems
+                                                              April 2019
+
+
+      <span class="h1">Signaling RSVP-TE Tunnels on a Shared MPLS Forwarding Plane</span>
+
+Abstract
+
+   As the scale of MPLS RSVP-TE networks has grown, the number of Label
+   Switched Paths (LSPs) supported by individual network elements has
+   increased.  Various implementation recommendations have been proposed
+   to manage the resulting increase in the amount of control-plane state
+   information.
+
+   However, those changes have had no effect on the number of labels
+   that a transit Label Switching Router (LSR) has to support in the
+   forwarding plane.  That number is governed by the number of LSPs
+   transiting or terminated at the LSR and is directly related to the
+   total LSP state in the control plane.
+
+   This document defines a mechanism to prevent the maximum size of the
+   label space limit on an LSR from being a constraint to control-plane
+   scaling on that node.  It introduces the notion of preinstalled
+   'per-TE link labels' that can be shared by MPLS RSVP-TE LSPs that
+   traverse these TE links.  This approach significantly reduces the
+   forwarding-plane state required to support a large number of LSPs.
+   This couples the feature benefits of the RSVP-TE control plane with
+   the simplicity of the Segment Routing (SR) MPLS forwarding plane.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8577">https://www.rfc-editor.org/info/rfc8577</a>.
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2019 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-2">2</a>.  Terminology . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+     <a href="#section-2.1">2.1</a>.  Requirements Language . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-3">3</a>.  Allocation of TE Link Labels  . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-4">4</a>.  Segment Routed RSVP-TE Tunnel Setup . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-5">5</a>.  Delegating Label Stack Imposition . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+     <a href="#section-5.1">5.1</a>.  Stacking at the Ingress . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+       <a href="#section-5.1.1">5.1.1</a>.  Stack to Reach Delegation Hop . . . . . . . . . . . .   <a href="#page-9">9</a>
+       <a href="#section-5.1.2">5.1.2</a>.  Stack to Reach Egress . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+     <a href="#section-5.2">5.2</a>.  Explicit Delegation . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+     <a href="#section-5.3">5.3</a>.  Automatic Delegation  . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+       <a href="#section-5.3.1">5.3.1</a>.  Effective Transport Label-Stack Depth (ETLD)  . . . .  <a href="#page-11">11</a>
+   6.  Mixing TE Link Labels and Regular Labels in an RSVP-TE Tunnel  13
+   <a href="#section-7">7</a>.  Construction of Label Stacks  . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+   <a href="#section-8">8</a>.  Facility Backup Protection  . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+     <a href="#section-8.1">8.1</a>.  Link Protection . . . . . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+   <a href="#section-9">9</a>.  Protocol Extensions . . . . . . . . . . . . . . . . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-9.1">9.1</a>.  Requirements  . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-9.2">9.2</a>.  Attribute Flags TLV: TE Link Label  . . . . . . . . . . .  <a href="#page-16">16</a>
+     <a href="#section-9.3">9.3</a>.  RRO Label Sub-object Flag: TE Link Label  . . . . . . . .  <a href="#page-16">16</a>
+     <a href="#section-9.4">9.4</a>.  Attribute Flags TLV: LSI-D  . . . . . . . . . . . . . . .  <a href="#page-16">16</a>
+     <a href="#section-9.5">9.5</a>.  RRO Label Sub-object Flag: Delegation Label . . . . . . .  <a href="#page-17">17</a>
+     <a href="#section-9.6">9.6</a>.  Attributes Flags TLV: LSI-D-S2E . . . . . . . . . . . . .  <a href="#page-17">17</a>
+     <a href="#section-9.7">9.7</a>.  Attributes TLV: ETLD  . . . . . . . . . . . . . . . . . .  <a href="#page-18">18</a>
+   <a href="#section-10">10</a>. OAM Considerations  . . . . . . . . . . . . . . . . . . . . .  <a href="#page-18">18</a>
+   <a href="#section-11">11</a>. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  <a href="#page-19">19</a>
+     <a href="#section-11.1">11.1</a>.  Attribute Flags: TE Link Label, LSI-D, LSI-D-S2E . . . .  <a href="#page-19">19</a>
+     <a href="#section-11.2">11.2</a>.  Attribute TLV: ETLD  . . . . . . . . . . . . . . . . . .  <a href="#page-19">19</a>
+     11.3.  Record Route Label Sub-object Flags: TE Link Label,
+            Delegation Label . . . . . . . . . . . . . . . . . . . .  <a href="#page-20">20</a>
+     <a href="#section-11.4">11.4</a>.  Error Codes and Error Values . . . . . . . . . . . . . .  <a href="#page-20">20</a>
+   <a href="#section-12">12</a>. Security Considerations . . . . . . . . . . . . . . . . . . .  <a href="#page-20">20</a>
+   <a href="#section-13">13</a>. References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-21">21</a>
+     <a href="#section-13.1">13.1</a>.  Normative References . . . . . . . . . . . . . . . . . .  <a href="#page-21">21</a>
+     <a href="#section-13.2">13.2</a>.  Informative References . . . . . . . . . . . . . . . . .  <a href="#page-22">22</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-23">23</a>
+   Contributors  . . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-23">23</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-24">24</a>
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The scaling of RSVP-TE [<a href="./rfc3209" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>RFC3209</a>] control-plane implementations can be
+   improved by adopting the guidelines and mechanisms described in
+   [<a href="./rfc2961" title='"RSVP Refresh Overhead Reduction Extensions"'>RFC2961</a>] and [<a href="./rfc8370" title='"Techniques to Improve the Scalability of RSVP-TE Deployments"'>RFC8370</a>].  These documents do not affect the
+   forwarding-plane state required to handle the control-plane state.
+   The forwarding-plane state remains unchanged and is directly
+   proportional to the total number of Label Switching Paths (LSPs)
+   supported by the control plane.
+
+   This document describes a mechanism that prevents the size of the
+   platform-specific label space on a Label Switching Router (LSR) from
+   being a constraint to pushing the limits of control-plane scaling on
+   that node.
+
+   This work introduces the notion of preinstalled 'per-TE link labels'
+   that are allocated by an LSR.  Each such label is installed in the
+   MPLS forwarding plane with a 'pop' operation and instructions to
+   forward the received packet over the TE link.  An LSR advertises this
+   label in the Label object of a Resv message as LSPs are set up, and
+   they are recorded hop by hop in the Record Route Object (RRO) of the
+   Resv message as it traverses the network.  The ingress Label Edge
+   Router (LER) constructs and pushes a stack of labels [<a href="./rfc3031" title='"Multiprotocol Label Switching Architecture"'>RFC3031</a>] using
+   the labels received in the RRO.  These 'TE link labels' can be shared
+   by MPLS RSVP-TE LSPs that traverse the same TE link.
+
+   This forwarding-plane behavior fits in the MPLS architecture
+   [<a href="./rfc3031" title='"Multiprotocol Label Switching Architecture"'>RFC3031</a>] and is the same as that exhibited by Segment Routing (SR)
+   [<a href="./rfc8402" title='"Segment Routing Architecture"'>RFC8402</a>] when using an MPLS forwarding plane and a series of
+   adjacency segments [<a href="#ref-SEG-ROUTING">SEG-ROUTING</a>].  This work couples the feature
+   benefits of the RSVP-TE control plane with the simplicity of the SR
+   MPLS forwarding plane.
+
+   RSVP-TE using a shared MPLS forwarding plane offers the following
+   benefits:
+
+   1.  Shared labels: The transit label on a TE link is shared among
+       RSVP-TE tunnels traversing the link and is used independently of
+       the ingress and egress of the LSPs.
+
+   2.  Faster LSP setup time: No forwarding-plane state needs to be
+       programmed during LSP setup and teardown, resulting in faster
+       provisioning and deprovisioning of LSPs.
+
+   3.  Hitless rerouting: New transit labels are not required during
+       make-before-break (MBB) in scenarios where the new LSP instance
+       traverses the exact same path as the old LSP instance.  This
+       saves the ingress LER and the services that use the tunnel from
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+       needing to update the forwarding plane with new tunnel labels,
+       thereby making MBB events faster.  Periodic MBB events are
+       relatively common in networks that deploy the 'auto-bandwidth'
+       feature on RSVP-TE LSPs to monitor bandwidth utilization and
+       periodically adjust LSP bandwidth.
+
+   4.  Mix-and-match labels: Both 'TE link labels' and regular labels
+       can be used on transit hops for a single RSVP-TE tunnel (see
+       <a href="#section-6">Section 6</a>).  This allows backward compatibility with transit LSRs
+       that provide regular labels in Resv messages.
+
+   No additional extensions to routing protocols are required in order
+   to support key functionalities such as bandwidth admission control,
+   LSP priorities, preemption, and auto-bandwidth on this shared MPLS
+   forwarding plane.  This document also discusses how Fast Reroute
+   [<a href="./rfc4090" title='"Fast Reroute Extensions to RSVP-TE for LSP Tunnels"'>RFC4090</a>] via facility backup link protection using regular bypass
+   tunnels can be supported on this forwarding plane.
+
+   The signaling procedures and extensions discussed in this document do
+   not apply to Point to Multipoint (P2MP) RSVP-TE tunnels.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Terminology"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Terminology</span>
+
+   The following terms are used in this document:
+
+   TE link label:   An incoming label at an LSR that will be popped by
+      the LSR with the packet being forwarded over a specific outgoing
+      TE link to a neighbor.
+
+   Shared MPLS forwarding plane:   An MPLS forwarding plane where every
+      participating LSR uses TE link labels on every LSP.
+
+   Segment Routed RSVP-TE tunnel:   An MPLS RSVP-TE tunnel that requests
+      the use of a shared MPLS forwarding plane at every hop of the LSP.
+      The corresponding LSPs are referred to as "Segment Routed RSVP-TE
+      LSPs".
+
+   Delegation hop:   A transit hop of a Segment Routed RSVP-TE LSP that
+      is selected to assist in the imposition of the label stack in
+      scenarios where the ingress LER cannot impose the full label
+      stack.  There can be multiple delegation hops along the path of a
+      Segment Routed RSVP-TE LSP.
+
+   Delegation label:   A label assigned at the delegation hop to
+      represent a set of labels that will be pushed at this hop.
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Requirements%20Language"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Requirements Language</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Allocation%20of%20TE%20Link%20Labels"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Allocation of TE Link Labels</span>
+
+   An LSR that participates in a shared MPLS forwarding plane MUST
+   allocate a unique TE link label for each TE link.  When an LSR
+   encounters a TE link label at the top of the label stack, it MUST pop
+   the label and forward the packet over the TE link to the downstream
+   neighbor on the RSVP-TE tunnel.
+
+   Multiple TE link labels MAY be allocated for the TE link to
+   accommodate tunnels requesting protection.
+
+   Implementations that maintain per-label bandwidth accounting at each
+   hop must aggregate the reservations made for all the LSPs using the
+   shared TE link label.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Segment%20Routed%20RSVP-TE%20Tunnel%20Setup"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Segment Routed RSVP-TE Tunnel Setup</span>
+
+   This section provides an example of how the RSVP-TE signaling
+   procedure works to set up a tunnel utilizing a shared MPLS forwarding
+   plane.  The sample topology below is used to explain the example.
+   Labels shown at each node are TE link labels that, when present at
+   the top of the label stack, indicate that they should be popped and
+   that the packet should be forwarded on the TE link to the neighbor.
+
+    +---+100  +---+150  +---+200  +---+250  +---+
+    | A |-----| B |-----| C |-----| D |-----| E |
+    +---+     +---+     +---+     +---+     +---+
+      |110      |450      |550      |650      |850
+      |         |         |         |         |
+      |         |400      |500      |600      |800
+      |       +---+     +---+     +---+     +---+
+      +-------| F |-----|G  |-----|H  |-----|I  |
+              +---+300  +---+350  +---+700  +---+
+
+                Figure 1: Sample Topology -- TE Link Labels
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   Consider two tunnels:
+
+      RSVP-TE tunnel T1: From A to E on path A-B-C-D-E
+
+      RSVP-TE tunnel T2: From F to E on path F-B-C-D-E
+
+   Both tunnels share the TE links B-C, C-D, and D-E.
+
+   RSVP-TE is used to signal the setup of tunnel T1 (using the TE link
+   label attributes flag defined in <a href="#section-9.2">Section 9.2</a>).  When LSR D receives
+   the Resv message from the egress LER E, it checks the next-hop TE
+   link (D-E) and provides the TE link label (250) in the Resv message
+   for the tunnel placing the label value in the Label object.  It also
+   provides the TE link label (250) in the Label sub-object carried in
+   the RRO and sets the TE link label flag as defined in <a href="#section-9.3">Section 9.3</a>.
+
+   Similarly, LSR C provides the TE link label (200) for the TE link
+   C-D, and LSR B provides the TE link label (150) for the TE link B-C.
+
+   For tunnel T2, the transit LSRs provide the same TE link labels as
+   described for tunnel T1 as the links B-C, C-D, and D-E are common
+   between the two LSPs.
+
+   The ingress LERs (A and F) will push the same stack of labels (from
+   top of stack to bottom of stack) {150, 200, 250} for tunnels T1 and
+   T2, respectively.
+
+   It should be noted that a transit LSR does not swap the top TE link
+   label on an incoming packet (the label that it advertised in the Resv
+   message it sent); all it has to do is pop the top label and forward
+   the packet.
+
+   The values in the Label sub-objects in the RRO are of interest to the
+   ingress LERs when constructing the stack of labels to impose on the
+   packets.
+
+   If, in this example, there were another RSVP-TE tunnel T3 from F to I
+   on path F-B-C-D-E-I, then this tunnel would also share the TE links
+   B-C, C-D, and D-E and traverse link E-I.  The label stack used by F
+   would be {150, 200, 250, 850}.  Hence, regardless of where the LSPs
+   start and end, they will share LSR labels at shared hops in the
+   shared MPLS forwarding plane.
+
+   There MAY be a local operator policy at the ingress LER that
+   influences the maximum depth of the label stack that can be pushed
+   for a Segment Routed RSVP-TE tunnel.  Prior to signaling the LSP, the
+   ingress LER may determine that it is unable to push a label stack
+   containing one label for each hop along the path.  In some scenarios,
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   the ingress LER may not have sufficient information to make that
+   determination.  In these cases, the LER SHOULD adopt the techniques
+   described in <a href="#section-5">Section 5</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Delegating%20Label%20Stack%20Imposition"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Delegating Label Stack Imposition</span>
+
+   One or more transit LSRs can assist the ingress LER by imposing part
+   of the label stack required for the path.  Consider the example in
+   Figure 2 with an RSVP-TE tunnel from A to L on path
+   A-B-C-D-E-F-G-H-I-J-K-L.  In this case, the LSP is too long for LER A
+   to impose the full label stack, so it uses the assistance of
+   delegation hops LSR D and LSR I to impose parts of the label stack.
+
+   Each delegation hop allocates a delegation label to represent a set
+   of labels that will be pushed at this hop.  When a packet arrives at
+   a delegation hop LSR with a delegation label, the LSR pops the label
+   and pushes a set of labels before forwarding the packet.
+
+
+                                   1250d
+    +---+100p  +---+150p  +---+200p  +---+250p  +---+300p  +---+
+    | A |------| B |------| C |------| D |------| E |------| F |
+    +---+      +---+      +---+      +---+      +---+      +---+
+                                                             |350p
+                                                             |
+                                   1500d                     |
+    +---+  600p+---+  550p+---+  500p+---+  450p+---+  400p+---+
+    | L |------| K |------| J |------| I |------| H |------+ G +
+    +---+      +---+      +---+      +---+      +---+      +---+
+
+           Notation: &lt;Label&gt;p - TE link label
+                      &lt;Label&gt;d - Delegation label
+
+                Figure 2: Delegating Label Stack Imposition
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Stacking%20at%20the%20Ingress"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Stacking at the Ingress</span>
+
+   When delegation labels come into play, there are two stacking
+   approaches from which the ingress can choose.  <a href="#section-7">Section 7</a> explains how
+   the label stack can be constructed.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.1.%20%20Stack%20to%20Reach%20Delegation%20Hop"></a><a class="selflink" href="#section-5.1.1" id="section-5.1.1">5.1.1</a>.  Stack to Reach Delegation Hop</span>
+
+   In this approach, the stack pushed by the ingress carries a set of
+   labels that will take the packet to the first delegation hop.  When
+   this approach is employed, the set of labels represented by a
+   delegation label at a given delegation hop will include the
+   corresponding delegation label from the next delegation hop.  As a
+   result, this delegation label can only be shared among LSPs that are
+   destined to the same egress and traverse the same downstream path.
+
+   This approach is shown in Figure 3.  The delegation label 1250
+   represents the stack {300, 350, 400, 450, 1500}, and the delegation
+   label 1500 represents the label stack {550, 600}.
+
+
+    +---+               +---+               +---+
+    | A |-----.....-----| D |-----.....-----| I |-----.....
+    +---+               +---+               +---+
+
+                   Pop 1250 &amp;           Pop 1500 &amp;
+     Push                Push                Push
+    ......              ......              ......
+    : 150:        1250-&gt;: 300:        1500-&gt;: 550:
+    : 200:              : 350:              : 600:
+    :1250:              : 400:              ......
+    ......              : 450:
+                        :1500:
+                        ......
+
+                  Figure 3: Stack to Reach Delegation Hop
+
+   With this approach, the ingress LER A will push {150, 200, 1250} for
+   the tunnel in Figure 2.  At LSR D, the delegation label 1250 will get
+   popped, and {300, 350, 400, 450, 1500} will get pushed.  At LSR I,
+   the delegation label 1500 will get popped, and the remaining set of
+   labels {550, 600} will get pushed.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.2.%20%20Stack%20to%20Reach%20Egress"></a><a class="selflink" href="#section-5.1.2" id="section-5.1.2">5.1.2</a>.  Stack to Reach Egress</span>
+
+   In this approach, the stack pushed by the ingress carries a set of
+   labels that will take the packet all the way to the egress so that
+   all the delegation labels are part of the stack.  When this approach
+   is employed, the set of labels represented by a delegation label at a
+   given delegation hop will not include the corresponding delegation
+   label from the next delegation hop.  As a result, this delegation
+   label can be shared among all LSPs traversing the segment between the
+   two delegation hops.
+
+   The downside of this approach is that the number of hops that the LSP
+   can traverse is dictated by the label stack push limit of the
+   ingress.
+
+   This approach is shown in Figure 4.  The delegation label 1250
+   represents the stack {300, 350, 400, 450}, and the delegation label
+   1500 represents the label stack {550, 600}.
+
+    +---+               +---+               +---+
+    | A |-----.....-----| D |-----.....-----| I |-----.....
+    +---+               +---+               +---+
+
+                   Pop 1250 &amp;           Pop 1500 &amp;
+     Push                Push                Push
+    ......              ......              ......
+    : 150:        1250-&gt;: 300:        1500-&gt;: 550:
+    : 200:              : 350:              : 600:
+    :1250:              : 400:              ......
+    :1500:              : 450:
+    ......              ......
+                        |1500|
+                        ......
+
+                      Figure 4: Stack to Reach Egress
+
+   With this approach, the ingress LER A will push {150, 200, 1250,
+   1500} for the tunnel in Figure 2.  At LSR D, the delegation label
+   1250 will get popped, and {300, 350, 400, 450} will get pushed.  At
+   LSR I, the delegation label 1500 will get popped, and the remaining
+   set of labels {550, 600} will get pushed.  The signaling extension
+   required for the ingress to indicate the chosen stacking approach is
+   defined in <a href="#section-9.6">Section 9.6</a>.
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Explicit%20Delegation"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Explicit Delegation</span>
+
+   In this delegation option, the ingress LER can explicitly delegate
+   one or more specific transit LSRs to handle pushing labels for a
+   certain number of their downstream hops.  In order to accurately pick
+   the delegation hops, the ingress needs to be aware of the label stack
+   depth push limit (total number of MPLS labels that can be imposed,
+   including all service/transport/special labels) of each of the
+   transit LSRs prior to initiating the signaling sequence.  The
+   mechanism by which the ingress or controller (hosting the path
+   computation element) learns this information is outside the scope of
+   this document.  Base MPLS Imposition MSD (BMI-MSD) advertisement,
+   specified in [<a href="./rfc8491" title='"Signaling Maximum SID Depth (MSD) Using IS-IS"'>RFC8491</a>], is an example of such a mechanism.
+
+   The signaling extension required for the ingress LER to explicitly
+   delegate one or more specific transit hops is defined in <a href="#section-9.4">Section 9.4</a>.
+   The extension required for the delegation hop to indicate that the
+   recorded label is a delegation label is defined in <a href="#section-9.5">Section 9.5</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.%20%20Automatic%20Delegation"></a><a class="selflink" href="#section-5.3" id="section-5.3">5.3</a>.  Automatic Delegation</span>
+
+   In this approach, the ingress LER lets the downstream LSRs
+   automatically pick suitable delegation hops during the initial
+   signaling sequence.  The ingress does not need to be aware up front
+   of the label stack depth push limit of each of the transit LSRs.
+   This approach SHOULD be used if there are loose hops [<a href="./rfc3209" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>RFC3209</a>] in the
+   explicit route.  The delegation hops are picked based on a per-hop
+   signaled attribute called the Effective Transport Label-Stack Depth
+   (ETLD), as described in the next section.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.1.%20%20Effective%20Transport%20Label-Stack%20Depth%20%28ETLD%29"></a><a class="selflink" href="#section-5.3.1" id="section-5.3.1">5.3.1</a>.  Effective Transport Label-Stack Depth (ETLD)</span>
+
+   The ETLD is signaled as a per-hop recorded attribute in the Path
+   message [<a href="./rfc7570" title='"Label Switched Path (LSP) Attribute in the Explicit Route Object (ERO)"'>RFC7570</a>].  When automatic delegation is requested, the
+   ingress MUST populate the ETLD with the maximum number of transport
+   labels that it can potentially send to its downstream hop.  This
+   value is then decremented at each successive hop.  If a node is
+   reached and it is determined that this hop cannot support automatic
+   delegation, then it MUST NOT use TE link labels and use regular
+   labels instead.  If a node is reached where the ETLD set from the
+   previous hop is 1, then that node MUST select itself as the
+   delegation hop.  If a node is reached and it is determined that this
+   hop cannot receive more than one transport label, then that node MUST
+   select itself as the delegation hop.  If there is a node or a
+   sequence of nodes along the path of the LSP that do not support ETLD,
+   then the immediate hop that supports ETLD MUST select itself as the
+   delegation hop.  The ETLD MUST be decremented at each non-delegation
+   transit hop by either 1 or some appropriate number based on the local
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   policy.  For example, consider a transit node with a local policy
+   that mandates it to take the label stack read limit into account when
+   decrementing the ETLD.  With this policy, the ETLD is decremented in
+   such a way that the transit hop does not receive more labels in the
+   stack than it can read.  At each delegation hop, the ETLD MUST be
+   reset to the maximum number of transport labels that the hop can
+   send, and the ETLD decrements start again at each successive hop
+   until either a new delegation hop is selected or the egress is
+   reached.  As a result, by the time the Path message reaches the
+   egress, all delegation hops are selected.  During the Resv
+   processing, at each delegation hop, a suitable delegation label is
+   selected (either an existing label is reused or a new label is
+   allocated) and recorded in the Resv message.
+
+   Consider the example shown in Figure 5.  Let's assume ingress LER A
+   can push up to three transport labels while the remaining nodes can
+   push up to five transport labels.  The ingress LER A signals the
+   initial Path message with ETLD set to 3.  The ETLD value is adjusted
+   at each successive hop and signaled downstream as shown.  By the time
+   the Path message reaches the egress LER L, LSRs D and I are
+   automatically selected as delegation hops.
+
+          ETLD:3    ETLD:2    ETLD:1    ETLD:5    ETLD:4
+          -----&gt;    -----&gt;    -----&gt;    -----&gt;    -----&gt;
+                                    1250d
+      +---+100p +---+150p +---+200p +---+250p +---+300p +---+
+      | A |-----| B |-----| C |-----| D |-----| E |-----| F |  ETLD:3
+      +---+     +---+     +---+     +---+     +---+     +---+    |
+                                                          |350p  |
+                                                          |      |
+                                    1500d                 |      |
+      +---+ 600p+---+ 550p+---+ 500p+---+ 450p+---+ 400p+---+    v
+      | L |-----| K |-----| J |-----| I |-----| H |-----+ G +
+      +---+     +---+     +---+     +---+     +---+     +---+
+
+          ETLD:3    ETLD:4    ETLD:5    ETLD:1    ETLD:2
+          &lt;-----    &lt;-----    &lt;-----    &lt;-----    &lt;-----
+
+                              Figure 5: ETLD
+
+   When an LSP that requests automatic delegation also requests facility
+   backup protection [<a href="./rfc4090" title='"Fast Reroute Extensions to RSVP-TE for LSP Tunnels"'>RFC4090</a>], the ingress or the delegation hop MUST
+   account for the bypass tunnel's label(s) when populating the ETLD.
+   Hence, when a regular bypass tunnel is used to protect the facility,
+   the ETLD that gets populated on these nodes is one less than what
+   gets populated for a corresponding unprotected LSP.
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   Signaling extension for the ingress LER to request automatic
+   delegation is defined in <a href="#section-9.4">Section 9.4</a>.  The extension for signaling
+   the ETLD is defined in <a href="#section-9.7">Section 9.7</a>.  The extension required for the
+   delegation hop to indicate that the recorded label is a delegation
+   label is defined in <a href="#section-9.5">Section 9.5</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Mixing%20TE%20Link%20Labels%20and%20Regular%20Labels%20in%20an%20RSVP-TE%20Tunnel"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Mixing TE Link Labels and Regular Labels in an RSVP-TE Tunnel</span>
+
+   Labels can be mixed across transit hops in a single MPLS RSVP-TE LSP.
+   Certain LSRs can use TE link labels and others can use regular
+   labels.  The ingress can construct a label stack appropriately based
+   on what type of label is recorded from every transit LSR.
+
+                             (#)       (#)
+    +---+100  +---+150  +---+200  +---+250  +---+
+    | A |-----| B |-----| C |-----| D |-----| E |
+    +---+     +---+     +---+     +---+     +---+
+      |110      |450      |550      |650      |850
+      |         |         |         |         |
+      |         |400      |500      |600      |800
+      |       +---+     +---+     +---+     +---+
+      +-------| F |-----|G  |-----|H  |-----|I  |
+              +---+300  +---+350  +---+700  +---+
+
+            Notation: (#) denotes regular labels
+                       Other labels are TE link labels
+
+      Figure 6: Sample Topology -- TE Link Labels and Regular Labels
+
+   If the transit LSR allocates a regular label to be sent upstream in
+   the Resv, then the label operation at the LSR is a swap to the label
+   received from the downstream LSR.  If the transit LSR is using a TE
+   link label to be sent upstream in the Resv, then the label operation
+   at the LSR is a pop and forward regardless of any label received from
+   the downstream LSR.  There is no change in the behavior of a
+   penultimate hop popping (PHP) LSR [<a href="./rfc3031" title='"Multiprotocol Label Switching Architecture"'>RFC3031</a>].
+
+   <a href="#section-7">Section 7</a> explains how the label stack can be constructed.  For
+   example, the LSP from A to I using path A-B-C-D-E-I will use a label
+   stack of {150, 200}.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Construction%20of%20Label%20Stacks"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Construction of Label Stacks</span>
+
+   The ingress LER or delegation hop MUST check the type of label
+   received from each transit hop as recorded in the RRO in the Resv
+   message and generate the appropriate label stack to reach the next
+   delegation hop or the egress.
+
+   The following logic is used by the node constructing the label stack:
+
+      Each RRO label sub-object MUST be processed starting with the
+      label sub-object from the first downstream hop.  Any label
+      provided by the first downstream hop MUST always be pushed on the
+      label stack regardless of the label type.  If the label type is a
+      TE link label, then any label from the next downstream hop MUST
+      also be pushed on the constructed label stack.  If the label type
+      is a regular label, then any label from the next downstream hop
+      MUST NOT be pushed on the constructed label stack.  If the label
+      type is a delegation label, then the type of stacking approach
+      chosen by the ingress for this LSP (<a href="#section-5.1">Section 5.1</a>) MUST be used to
+      determine how the delegation labels are pushed in the label stack.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Facility%20Backup%20Protection"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Facility Backup Protection</span>
+
+   The following section describes how link protection works with
+   facility backup protection [<a href="./rfc4090" title='"Fast Reroute Extensions to RSVP-TE for LSP Tunnels"'>RFC4090</a>] using regular bypass tunnels for
+   the Segment Routed RSVP-TE tunnels.  The procedures for supporting
+   node protection are not discussed in this document.  The use of
+   Segment Routed bypass tunnels for providing facility protection is
+   left for further study.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Link%20Protection"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Link Protection</span>
+
+   To provide link protection at a Point of Local Repair (PLR) with a
+   shared MPLS forwarding plane, the LSR MUST allocate a separate TE
+   link label for the TE link that will be used for RSVP-TE tunnels that
+   request link protection from the ingress.  No signaling extensions
+   are required to support link protection for RSVP-TE tunnels over the
+   shared MPLS forwarding plane.
+
+   At each LSR, link-protected TE link labels can be allocated for each
+   TE link, and a link-protecting facility backup LSP can be created to
+   protect the TE link.  The link-protected TE link label can be sent by
+   the LSR for LSPs requesting link protection over the specific TE
+   link.  Since the facility backup terminates at the next hop (merge
+   point), the incoming label on the packet will be what the merge point
+   expects.
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   Consider the network shown in Figure 7.  LSR B can install a facility
+   backup LSP for the link-protected TE link label 151.  When the TE
+   link B-C is up, LSR B will pop 151 and send the packet to C.  If the
+   TE link B-C is down, the LSR can pop 151 and send the packet via the
+   facility backup to C.
+
+         101(*)     151(*)     201(*)     251(*)
+    +---+100   +---+150   +---+200   +---+250   +---+
+    | A |------| B |------| C |------| D |------| E |
+    +---+      +---+      +---+      +---+      +---+
+      |110       |450       |550       |650       |850
+      |          |          |          |          |
+      |          |400       |500       |600       |800
+      |        +---+      +---+      +---+      +---+
+      +--------| F |------|G  |------|H  |------|I  |
+               +---+300   +---+350   +---+700   +---+
+
+     Notation: (*) denotes link-protected TE link labels
+
+                    Figure 7: Link Protection Topology
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Protocol%20Extensions"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Protocol Extensions</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Requirements"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Requirements</span>
+
+   The functionality discussed in this document imposes the following
+   requirements on the signaling protocol.
+
+   o  The ingress of the LSP needs to have the ability to mandate/
+      request the use and recording of TE link labels at all hops along
+      the path of the LSP.
+
+   o  When the use of TE link labels is mandated/requested for the path:
+
+      *  the node recording the TE link label needs to have the ability
+         to indicate whether the recorded label is a TE link label.
+
+      *  the ingress needs to have the ability to delegate label stack
+         imposition by:
+
+         +  explicitly mandating specific hops to be delegation hops, or
+
+         +  requesting automatic delegation.
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+      *  When explicit delegation is mandated or automatic delegation is
+         requested:
+
+         +  the ingress needs to have the ability to indicate the chosen
+            stacking approach, and
+
+         +  the delegation hop needs to have the ability to indicate
+            that the recorded label is a delegation label.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20Attribute%20Flags%20TLV%3A%20TE%20Link%20Label"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  Attribute Flags TLV: TE Link Label</span>
+
+   Bit Number 16: TE Link Label
+
+   The presence of this flag in the LSP_ATTRIBUTES/
+   LSP_REQUIRED_ATTRIBUTES object [<a href="./rfc5420" title='"Encoding of Attributes for MPLS LSP Establishment Using Resource Reservation Protocol Traffic Engineering (RSVP-TE)"'>RFC5420</a>] of a Path message indicates
+   that the ingress has requested/mandated the use and recording of TE
+   link labels at all hops along the path of this LSP.  When a node that
+   recognizes this flag but does not cater to the mandate because of
+   local policy receives a Path message carrying the
+   LSP_REQUIRED_ATTRIBUTES object with this flag set, it MUST send a
+   PathErr message with an error code of 'Routing Problem (24)' and an
+   error value of 'TE link label usage failure (70)'.  A transit hop
+   that caters to this request/mandate MUST also check for the presence
+   of other Attribute Flags introduced in this document (Sections <a href="#section-9.4">9.4</a>
+   and 9.6) and process them as specified.  An ingress LER that sets
+   this bit MUST also set the "label recording desired" flag [<a href="./rfc3209" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>RFC3209</a>]
+   in the SESSION_ATTRIBUTE object.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.3.%20%20RRO%20Label%20Sub-object%20Flag%3A%20TE%20Link%20Label"></a><a class="selflink" href="#section-9.3" id="section-9.3">9.3</a>.  RRO Label Sub-object Flag: TE Link Label</span>
+
+   Flag (0x02): TE Link Label
+
+   The presence of this flag indicates that the recorded label is a TE
+   link label.  This flag MUST be used by a node only if the use and
+   recording of TE link labels are requested/mandated for the LSP.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.4.%20%20Attribute%20Flags%20TLV%3A%20LSI-D"></a><a class="selflink" href="#section-9.4" id="section-9.4">9.4</a>.  Attribute Flags TLV: LSI-D</span>
+
+   Bit Number 17: Label Stack Imposition - Delegation (LSI-D)
+
+   Automatic Delegation: The presence of this flag in the LSP_ATTRIBUTES
+   object of a Path message indicates that the ingress has requested
+   automatic delegation of label stack imposition.  This flag MUST be
+   set in the LSP_ATTRIBUTES object of a Path message only if the use
+   and recording of TE link labels are requested/mandated for this LSP.
+   If the transit hop does not support this flag, it MUST NOT use TE
+   link labels and use regular labels instead.  If the use of TE link
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   labels was mandated in the LSP_REQUIRED_ATTRIBUTES object, it MUST
+   send a PathErr message with an error code of 'Routing Problem (24)'
+   and an error value of 'TE link label usage failure (70)'.
+
+   Explicit Delegation: The presence of this flag in the HOP_ATTRIBUTES
+   sub-object [<a href="./rfc7570" title='"Label Switched Path (LSP) Attribute in the Explicit Route Object (ERO)"'>RFC7570</a>] of an Explicit Route Object (ERO) in the Path
+   message indicates that the hop identified by the preceding IPv4 or
+   IPv6 or Unnumbered Interface ID sub-object has been picked as an
+   explicit delegation hop.  The HOP_ATTRIBUTES sub-object carrying this
+   flag MUST have the R (Required) bit set.  This flag MUST be set in
+   the HOP_ATTRIBUTES sub-object of an ERO object in the Path message
+   only if the use and recording of TE link labels are requested/
+   mandated for this LSP.  If the hop recognizes this flag but is not
+   able to comply with this mandate because of local policy, it MUST
+   send a PathErr message with an error code of 'Routing Problem (24)'
+   and an error value of 'Label stack imposition failure (71)'.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.5.%20%20RRO%20Label%20Sub-object%20Flag%3A%20Delegation%20Label"></a><a class="selflink" href="#section-9.5" id="section-9.5">9.5</a>.  RRO Label Sub-object Flag: Delegation Label</span>
+
+   Flag (0x04): Delegation Label
+
+   The presence of this flag indicates that the recorded label is a
+   delegation label.  This flag MUST be used by a node only if the use
+   and recording of TE link labels and delegation are requested/mandated
+   for the LSP.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.6.%20%20Attributes%20Flags%20TLV%3A%20LSI-D-S2E"></a><a class="selflink" href="#section-9.6" id="section-9.6">9.6</a>.  Attributes Flags TLV: LSI-D-S2E</span>
+
+   Bit Number 18: Label Stack Imposition - Delegation - Stack to Reach
+   Egress (LSI-D-S2E)
+
+   The presence of this flag in the LSP_ATTRIBUTES object of a Path
+   message indicates that the ingress has chosen to use the "Stack to
+   reach egress" approach for stacking.  The absence of this flag in the
+   LSP_ATTRIBUTES object of a Path message indicates that the ingress
+   has chosen to use the "Stack to reach delegation hop" approach for
+   stacking.  This flag MUST be set in the LSP_ATTRIBUTES object of a
+   Path message only if the use and recording of TE link labels and
+   delegation are requested/mandated for this LSP.  If the transit hop
+   is not able to support the "Stack to reach egress" approach, it MUST
+   send a PathErr message with an error code of 'Routing Problem (24)'
+   and an error value of 'Label stack imposition failure (71)'.
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.7.%20%20Attributes%20TLV%3A%20ETLD"></a><a class="selflink" href="#section-9.7" id="section-9.7">9.7</a>.  Attributes TLV: ETLD</span>
+
+   The format of the ETLD Attributes TLV is shown in Figure 8.  The
+   Attribute TLV Type is 6.
+
+       0                   1                   2                   3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |         Reserved                              |     ETLD      |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                     Figure 8: The ETLD Attributes TLV
+
+   The presence of this TLV in the HOP_ATTRIBUTES sub-object of an RRO
+   object in the Path message indicates that the hop identified by the
+   preceding IPv4 or IPv6 or Unnumbered Interface ID sub-object supports
+   automatic delegation.  This attribute MUST be used only if the use
+   and recording of TE link labels are requested/mandated and automatic
+   delegation is requested for the LSP.
+
+   The ETLD field specifies the effective number of transport labels
+   that this hop (in relation to its position in the path) can
+   potentially send to its downstream hop.  It MUST be set to a non-zero
+   value.
+
+   The Reserved field is for future specification.  It SHOULD be set to
+   zero on transmission and MUST be ignored on receipt to ensure future
+   compatibility.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20OAM%20Considerations"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  OAM Considerations</span>
+
+   MPLS LSP ping and traceroute [<a href="./rfc8029" title='"Detecting Multiprotocol Label Switched (MPLS) Data-Plane Failures"'>RFC8029</a>] are applicable for Segment
+   Routed RSVP-TE tunnels.  The existing procedures allow for the label
+   stack imposed at a delegation hop to be reported back in the Label
+   Stack Sub-TLV in the MPLS echo reply for traceroute.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  IANA Considerations</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.1.%20%20Attribute%20Flags%3A%20TE%20Link%20Label%2C%20LSI-D%2C%20LSI-D-S2E"></a><a class="selflink" href="#section-11.1" id="section-11.1">11.1</a>.  Attribute Flags: TE Link Label, LSI-D, LSI-D-S2E</span>
+
+   IANA manages the 'Attribute Flags' subregistry as part of the
+   'Resource Reservation Protocol-Traffic Engineering (RSVP-TE)
+   Parameters' registry located at &lt;<a href="http://www.iana.org/assignments/rsvp-te-parameters">http://www.iana.org/assignments/</a>
+   <a href="http://www.iana.org/assignments/rsvp-te-parameters">rsvp-te-parameters</a>&gt;.  This document introduces three new Attribute
+   Flags:
+
+   Bit  Name              Attribute   Attribute  RRO ERO Reference
+   No                     Flags Path  Flags Resv
+
+   16   TE Link Label     Yes         No         No  No  <a href="./rfc8577#section-9.2">[RFC8577],
+                                                         Section 9.2</a>
+
+   17   LSI-D             Yes         No         No  Yes <a href="./rfc8577#section-9.4">[RFC8577],
+                                                         Section 9.4</a>
+
+   18   LSI-D-S2E         Yes         No         No  No  <a href="./rfc8577#section-9.6">[RFC8577],
+                                                         Section 9.6</a>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.2.%20%20Attribute%20TLV%3A%20ETLD"></a><a class="selflink" href="#section-11.2" id="section-11.2">11.2</a>.  Attribute TLV: ETLD</span>
+
+   IANA manages the "Attribute TLV Space" registry as part of the
+   'Resource Reservation Protocol-Traffic Engineering (RSVP-TE)
+   Parameters' registry located at &lt;<a href="http://www.iana.org/assignments/rsvp-te-parameters">http://www.iana.org/assignments/</a>
+   <a href="http://www.iana.org/assignments/rsvp-te-parameters">rsvp-te-parameters</a>&gt;.  This document introduces a new Attribute TLV.
+
+   Type  Name  Allowed on     Allowed on    Allowed on  Reference
+               LSP_ATTRIBUTES LSP_REQUIRED  LSP Hop
+                              _ATTRIBUTES   Attributes
+
+   6     ETLD      No               No         Yes       <a href="./rfc8577#section-9.7">[RFC8577],
+                                                         Section 9.7</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.3.%20%20Record%20Route%20Label%20Sub-object%20Flags%3A%20TE%20Link%20Label%2C%20Delegation"></a><a class="selflink" href="#section-11.3" id="section-11.3">11.3</a>.  Record Route Label Sub-object Flags: TE Link Label, Delegation</span>
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/Label"></a>       Label</span>
+
+   IANA manages the "Record Route Object Sub-object Flags" registry as
+   part of the "Resource Reservation Protocol-Traffic Engineering (RSVP-
+   TE) Parameters" registry located at &lt;<a href="http://www.iana.org/assignments/rsvp-te-parameters">http://www.iana.org/assignments/</a>
+   <a href="http://www.iana.org/assignments/rsvp-te-parameters">rsvp-te-parameters</a>&gt;.  Prior to this document, this registry did not
+   include Label Sub-object Flags.  This document creates the addition
+   of a new subregistry for Label Sub-object Flags as shown below.
+
+      Flag  Name                    Reference
+
+      0x1   Global Label            [<a href="./rfc3209" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>RFC3209</a>]
+      0x02  TE Link Label           <a href="./rfc8577#section-9.3">[RFC8577], Section 9.3</a>
+      0x04  Delegation Label        <a href="./rfc8577#section-9.5">[RFC8577], Section 9.5</a>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.4.%20%20Error%20Codes%20and%20Error%20Values"></a><a class="selflink" href="#section-11.4" id="section-11.4">11.4</a>.  Error Codes and Error Values</span>
+
+   IANA maintains a registry called "Resource Reservation Protocol
+   (RSVP) Parameters" with a subregistry called "Error Codes and
+   Globally-Defined Error Value Sub-Codes".  Within this subregistry is
+   a definition of the "Routing Problem" Error Code (24).  The
+   definition lists a number of error values that may be used with this
+   error code.  IANA has allocated further error values for use with
+   this Error Code as described in this document.  The resulting entry
+   in the registry is as follows.
+
+      24  Routing Problem                             [<a href="./rfc3209" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>RFC3209</a>]
+
+          This Error Code has the following globally defined Error
+          Value sub-codes:
+
+           70 = TE link label usage failure        [<a href="./rfc8577">RFC8577</a>]
+           71 = Label stack imposition failure     [<a href="./rfc8577">RFC8577</a>]
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.%20%20Security%20Considerations"></a><a class="selflink" href="#section-12" id="section-12">12</a>.  Security Considerations</span>
+
+   This document does not introduce new security issues.  The security
+   considerations pertaining to the original RSVP protocol [<a href="./rfc2205" title='"Resource ReSerVation Protocol (RSVP) -- Version 1 Functional Specification"'>RFC2205</a>] and
+   RSVP-TE [<a href="./rfc3209" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>RFC3209</a>] and those that are described in [<a href="./rfc5920" title='"Security Framework for MPLS and GMPLS Networks"'>RFC5920</a>] remain
+   relevant.
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/13.%20%20References"></a><a class="selflink" href="#section-13" id="section-13">13</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/13.1.%20%20Normative%20References"></a><a class="selflink" href="#section-13.1" id="section-13.1">13.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC2205">RFC2205</a>]  Braden, R., Ed., Zhang, L., Berson, S., Herzog, S., and
+              S. Jamin, "Resource ReSerVation Protocol (RSVP) -- Version
+              1 Functional Specification", <a href="./rfc2205">RFC 2205</a>,
+              DOI 10.17487/RFC2205, September 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2205">https://www.rfc-editor.org/info/rfc2205</a>&gt;.
+
+   [<a id="ref-RFC3031">RFC3031</a>]  Rosen, E., Viswanathan, A., and R. Callon, "Multiprotocol
+              Label Switching Architecture", <a href="./rfc3031">RFC 3031</a>,
+              DOI 10.17487/RFC3031, January 2001,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3031">https://www.rfc-editor.org/info/rfc3031</a>&gt;.
+
+   [<a id="ref-RFC3209">RFC3209</a>]  Awduche, D., Berger, L., Gan, D., Li, T., Srinivasan, V.,
+              and G. Swallow, "RSVP-TE: Extensions to RSVP for LSP
+              Tunnels", <a href="./rfc3209">RFC 3209</a>, DOI 10.17487/RFC3209, December 2001,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3209">https://www.rfc-editor.org/info/rfc3209</a>&gt;.
+
+   [<a id="ref-RFC4090">RFC4090</a>]  Pan, P., Ed., Swallow, G., Ed., and A. Atlas, Ed., "Fast
+              Reroute Extensions to RSVP-TE for LSP Tunnels", <a href="./rfc4090">RFC 4090</a>,
+              DOI 10.17487/RFC4090, May 2005,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4090">https://www.rfc-editor.org/info/rfc4090</a>&gt;.
+
+   [<a id="ref-RFC5420">RFC5420</a>]  Farrel, A., Ed., Papadimitriou, D., Vasseur, JP., and
+              A. Ayyangarps, "Encoding of Attributes for MPLS LSP
+              Establishment Using Resource Reservation Protocol Traffic
+              Engineering (RSVP-TE)", <a href="./rfc5420">RFC 5420</a>, DOI 10.17487/RFC5420,
+              February 2009, &lt;<a href="https://www.rfc-editor.org/info/rfc5420">https://www.rfc-editor.org/info/rfc5420</a>&gt;.
+
+   [<a id="ref-RFC7570">RFC7570</a>]  Margaria, C., Ed., Martinelli, G., Balls, S., and
+              B. Wright, "Label Switched Path (LSP) Attribute in the
+              Explicit Route Object (ERO)", <a href="./rfc7570">RFC 7570</a>,
+              DOI 10.17487/RFC7570, July 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7570">https://www.rfc-editor.org/info/rfc7570</a>&gt;.
+
+   [<a id="ref-RFC8029">RFC8029</a>]  Kompella, K., Swallow, G., Pignataro, C., Ed., Kumar, N.,
+              Aldrin, S., and M. Chen, "Detecting Multiprotocol Label
+              Switched (MPLS) Data-Plane Failures", <a href="./rfc8029">RFC 8029</a>,
+              DOI 10.17487/RFC8029, March 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8029">https://www.rfc-editor.org/info/rfc8029</a>&gt;.
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/13.2.%20%20Informative%20References"></a><a class="selflink" href="#section-13.2" id="section-13.2">13.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC2961">RFC2961</a>]  Berger, L., Gan, D., Swallow, G., Pan, P., Tommasi, F.,
+              and S. Molendini, "RSVP Refresh Overhead Reduction
+              Extensions", <a href="./rfc2961">RFC 2961</a>, DOI 10.17487/RFC2961, April 2001,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2961">https://www.rfc-editor.org/info/rfc2961</a>&gt;.
+
+   [<a id="ref-RFC5920">RFC5920</a>]  Fang, L., Ed., "Security Framework for MPLS and GMPLS
+              Networks", <a href="./rfc5920">RFC 5920</a>, DOI 10.17487/RFC5920, July 2010,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5920">https://www.rfc-editor.org/info/rfc5920</a>&gt;.
+
+   [<a id="ref-RFC8370">RFC8370</a>]  Beeram, V., Ed., Minei, I., Shakir, R., Pacella, D., and
+              T. Saad, "Techniques to Improve the Scalability of RSVP-TE
+              Deployments", <a href="./rfc8370">RFC 8370</a>, DOI 10.17487/RFC8370, May 2018,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8370">https://www.rfc-editor.org/info/rfc8370</a>&gt;.
+
+   [<a id="ref-RFC8402">RFC8402</a>]  Filsfils, C., Ed., Previdi, S., Ed., Ginsberg, L.,
+              Decraene, B., Litkowski, S., and R. Shakir, "Segment
+              Routing Architecture", <a href="./rfc8402">RFC 8402</a>, DOI 10.17487/RFC8402,
+              July 2018, &lt;<a href="https://www.rfc-editor.org/info/rfc8402">https://www.rfc-editor.org/info/rfc8402</a>&gt;.
+
+   [<a id="ref-RFC8491">RFC8491</a>]  Tantsura, J., Chunduri, U., Aldrin, S., and L. Ginsberg,
+              "Signaling Maximum SID Depth (MSD) Using IS-IS", <a href="./rfc8491">RFC 8491</a>,
+              DOI 10.17487/RFC8491, November 2018,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8491">https://www.rfc-editor.org/info/rfc8491</a>&gt;.
+
+   [<a id="ref-SEG-ROUTING">SEG-ROUTING</a>]
+              Bashandy, A., Ed., Filsfils, C., Ed., Previdi, S.,
+              Decraene, B., Litkowski, S., and R. Shakir, "Segment
+              Routing with MPLS data plane", Work in Progress,
+              <a href="./draft-ietf-spring-segment-routing-mpls-18">draft-ietf-spring-segment-routing-mpls-18</a>, December 2018.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+Acknowledgements
+
+   The authors would like to thank Adrian Farrel, Kireeti Kompella,
+   Markus Jork, and Ross Callon for their input from discussions.
+   Adrian Farrel provided a review and a text suggestion for clarity and
+   readability.
+
+Contributors
+
+   The following individuals contributed to this document:
+
+   Raveendra Torvi
+   Juniper Networks
+   Email: rtorvi@juniper.net
+
+   Chandra Ramachandran
+   Juniper Networks
+   Email: csekar@juniper.net
+
+   George Swallow
+   Email: swallow.ietf@gmail.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Sitaraman, et al.            Standards Track                   [Page 23]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-24"></span>
+<span class="grey"><a href="./rfc8577">RFC 8577</a>                  RSVP-TE Shared Labels               April 2019</span>
+
+
+Authors' Addresses
+
+   Harish Sitaraman
+   Juniper Networks
+   1133 Innovation Way
+   Sunnyvale, CA  94089
+   United States of America
+
+   Email: harish.ietf@gmail.com
+
+
+   Vishnu Pavan Beeram
+   Juniper Networks
+   10 Technology Park Drive
+   Westford, MA  01886
+   United States of America
+
+   Email: vbeeram@juniper.net
+
+
+   Tejal Parikh
+   Verizon
+   400 International Parkway
+   Richardson, TX  75081
+   United States of America
+
+   Email: tejal.parikh@verizon.com
+
+
+   Tarek Saad
+   Cisco Systems
+   2000 Innovation Drive
+   Kanata, Ontario  K2K 3E8
+   Canada
+
+   Email: tsaad.net@gmail.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Sitaraman, et al.            Standards Track                   [Page 24]
+</pre>
+</body></html>

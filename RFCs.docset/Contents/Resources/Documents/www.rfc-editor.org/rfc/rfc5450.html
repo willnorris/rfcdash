@@ -1,0 +1,446 @@
+<html><head></head><body><pre>Network Working Group                                          D. Singer
+Request for Comments: 5450                           Apple Computer Inc.
+Category: Standards Track                                    H. Desineni
+                                                                Qualcomm
+                                                              March 2009
+
+
+                <span class="h1">Transmission Time Offsets in RTP Streams</span>
+
+Status of This Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (c) 2009 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents in effect on the date of
+   publication of this document (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>).
+   Please review these documents carefully, as they describe your rights
+   and restrictions with respect to this document.
+
+   This document may contain material from IETF Documents or IETF
+   Contributions published or made publicly available before November
+   10, 2008.  The person(s) controlling the copyright in some of this
+   material may not have granted the IETF Trust the right to allow
+   modifications of such material outside the IETF Standards Process.
+   Without obtaining an adequate license from the person(s) controlling
+   the copyright in such materials, this document may not be modified
+   outside the IETF Standards Process, and derivative works of it may
+   not be created outside the IETF Standards Process, except to format
+   it for publication as an RFC or to translate it into languages other
+   than English.
+
+Abstract
+
+   This document describes a method to inform Real-time Transport
+   Protocol (RTP) clients when RTP packets are transmitted at a time
+   other than their 'nominal' transmission time.  It also provides a
+   mechanism to provide improved inter-arrival jitter reports from the
+   clients, that take into account the reported transmission times.
+
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Requirements Notation . . . . . . . . . . . . . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  Transmission Offset . . . . . . . . . . . . . . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-4">4</a>.  Extended Jitter Reports . . . . . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+   <a href="#section-5">5</a>.  Signaling (Setup) Information . . . . . . . . . . . . . . . . . <a href="#page-6">6</a>
+   <a href="#section-6">6</a>.  Security Considerations . . . . . . . . . . . . . . . . . . . . <a href="#page-6">6</a>
+   <a href="#section-7">7</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-8">8</a>.  Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+   <a href="#section-9">9</a>.  Normative References  . . . . . . . . . . . . . . . . . . . . . <a href="#page-7">7</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   In the Real-time Transport Protocol (RTP) specification [<a href="./rfc3550" title='"RTP: A Transport Protocol for Real-Time Applications"'>RFC3550</a>],
+   network jitter calculations are based on the presumption that packets
+   are transmitted essentially in accordance with their RTP timestamps.
+   This must be true, of course, on average over longer time intervals,
+   as the client is playing the packets out according to those
+   timestamps.  However, for individual packets, this may not be true
+   under some circumstances, such as:
+
+   o  When the data rate of the stream is bursty, such as with video
+      where I-frames may be significantly larger than P or B frames,
+      traffic smoothing may need to be applied to maintain an
+      appropriate data rate.
+
+   o  In video that has forward-decode dependencies, frames may need to
+      be transmitted in decoding order (the sequence number order) but
+      with, of course, presentation timestamps.  Under these
+      circumstances, the transmission time of a frame sent early in
+      sequence does not correspond to its RTP timestamp.
+
+   o  When retransmissions are sent, the retransmitted packet clearly
+      has a different actual transmission time from the original, even
+      though they share the same timestamp.
+
+   Under some circumstances, it can help the receiver, or intermediate
+   network elements, to know the actual transmission time of the packet.
+   This RTP header extension element allows the communication of this
+   information.
+
+   The RTP specification does not define a transmission timestamp; nor
+   does this specification.  This specification merely provides
+   information on the relationship between the relative transmission
+   times and relative RTP timestamps.
+
+
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+   This specification allows the transmitter to indicate to the receiver
+   any known variation between the spacing of transmission times and the
+   spacing of RTP timestamps; any unreported variation introduced at or
+   after the point of measurement of the transmission time will be
+   treated as network jitter by the receiver.  The definition of the
+   point where the transmission time is measured or defined is left to
+   the transmitter, though it should, of course, be consistent from
+   packet to packet.
+
+   This information can also be of use to report the inter-arrival
+   jitter caused by the network, excluding that introduced by the
+   source.  A new RTP Control Protocol (RTCP) packet is defined to
+   enable this reporting.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Transmission%20Offset"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Transmission Offset</span>
+
+   Classically, a pair of RTP packets with timestamps S2 and S1 are
+   transmitted with a time interval between them of (S2 - S1).  This
+   specification permits sending an offset value O in each packet, O1
+   and O2.  One characteristic of these offsets is that the original
+   transmission interval can be deduced to be (S2 + O2) - (S1 + O1).
+
+   More precisely, the offset is defined as follows (with the function
+   RtoN converting from RTP to Network Time Protocol (NTP) times, and
+   NtoR doing the reverse):
+
+   o  Take an RTP stream that has a recent RTCP sender report relating
+      RTP timestamp S0 to NTP timestamp N0;
+
+   o  Consider a packet sent after that with RTP timestamp S1.
+      Nominally, this is sent at N1 = (N0 + RtoN(S1 - S0));
+
+   o  If it was actually sent at a different time, Na, then the offset
+      value O1 is O1 = NtoR(Na - N1).
+
+   The transmission time is signaled to the receiver in-band using the
+   general mechanism for RTP header extensions [<a href="./rfc5285" title='"A General Mechanism for RTP Header Extensions"'>RFC5285</a>].  The payload
+   of this extension (the transmitted value) is a 24-bit signed integer.
+   When added to the RTP timestamp of the packet, it represents the
+   "effective" RTP transmission time of the packet, on the RTP
+   timescale.  The reported transmission time T1 of a packet with
+
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+   timestamp S1 and an offset of O1, from the above equations, is T1 =
+   S1+O1 (though of course the transmission time values only have
+   meaning when two or more are compared).
+
+   The form of the transmission offset extension block is as follows:
+
+       0                   1                   2                   3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |  ID   | len=2 |              transmission offset              |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+   The length field takes the value 2 to indicate that 3 bytes follow.
+
+   The sign of the offset value depends greatly on the choice of the
+   initial mapping of RTP to NTP times.  In general, without scanning a
+   stream entirely it is not possible to ensure that this mapping would
+   keep all the offsets positive; therefore, this specification allows
+   negative values.
+
+   Imagine a stream with the following timestamps and sizes (in KB):
+
+   200    2 KB
+   300    4 KB
+   400    2 KB
+   500   12 KB
+   600   ...effective end of stream
+
+   This has 20 KB spread over 400 time units, i.e., on average, 1 KB per
+   20 time units.  We traffic-smooth this, and establish that given a
+   transmission time of x for the first packet, we would transmit the
+   following packets at the given intervals later:
+
+   x + 000   2 KB
+   x + 040   4 KB
+   x + 120   2 KB
+   x + 160  12 KB
+   x + 400 ...effective end of stream
+
+   The choice of x is essentially arbitrary: only relative values of
+   timestamps matter.  Now, let's say I claim on the first packet that
+   it went out *at* its RTP timestamp, i.e., with an offset of 0,
+   meaning that x is 200.  Then the offset values are:
+
+      0
+    -60
+    -80
+   -140
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+   This is because in this case, I traffic-smooth by conceptually
+   sending the small packets 'early'.  But since only the relative
+   values are significant, it is just as valid to say x is 400,
+   whereupon the offset values are:
+
+   200
+   140
+   120
+    60
+
+   In a stream where this extension is not in effect (i.e., not declared
+   or negotiated), the actual transmission offset is therefore unknown.
+   However, when the extension is in effect for the stream, it MAY be
+   omitted in those packets for which the offset is 0 (zero); that is,
+   packets sent at their nominal time do not need this to be tagged with
+   this extension.  Therefore, the implied transmission time of an un-
+   tagged RTP packet depends on whether the extension is in effect for
+   the stream (and therefore the transmission offset is 0) or not
+   (whereupon the transmission offset is unknown).
+
+   The jitter calculations performed by an RTP client MUST NOT use these
+   transmission offsets.  In general, the sender (or intermediate
+   network elements doing RTP analysis) cannot always know whether the
+   offsets have been taken into account or not.  Therefore, for
+   consistency, the jitter calculation should continue to operate on the
+   'raw' reception times.  However, see <a href="#section-4">Section 4</a> on extended jitter
+   reports, below.
+
+   There are no extensionattributes defined for this extension.
+
+   It is structurally possible to have more than one extension of the
+   same type in a packet.  However, this extension is only defined for
+   the source to report.  Intermediate network nodes that are not the
+   source of the RTP session MUST NOT add this extension (whether or not
+   it was previously present) and MUST NOT alter the existing
+   transmission offset value in a packet, if the extension is already
+   present.
+
+   (Of course, it is clear that network elements that terminate an RTP
+   flow, and are the source for a new RTP flow, can add a transmission
+   offset extension header to the RTP packets of the new flow, if
+   desired.)
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Extended%20Jitter%20Reports"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Extended Jitter Reports</span>
+
+   The inter-arrival jitter computed as defined in Section 6.4.1 of <a href="./rfc3550">RFC</a>
+   <a href="./rfc3550">3550</a> provides inter-arrival jitter reports that include any source-
+   introduced jitter (transmission time offsets).  If it is desired to
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+   indicate the actual network jitter, excluding the source-introduced
+   jitter, the new RTCP packet type defined here may be used.
+
+   It has the following form:
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   hdr |V=2|P|    RC   |   PT=IJ=195   |             length            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                      inter-arrival jitter                     |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       .                                                               .
+       .                                                               .
+       .                                                               .
+       |                      inter-arrival jitter                     |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+   If present, this RTCP packet must be placed after a receiver report
+   (inside a compound RTCP packet), and MUST have the same value for RC
+   (reception report count) as the receiver report.  The content is
+   exactly that number of inter-arrival jitter calculations, calculated
+   using the same formula as for sender and receiver reports, but taking
+   into account the transmission offsets for the streams (if any).  That
+   is, the formula uses the values T1=S1+O1, T2, etc., as defined above,
+   instead of S1, S2, etc.  (If no transmission offset information is
+   given for a stream, then the value of inter-arrival jitter in this
+   packet and in the receiver report will be identical).
+
+   Precisely, the replacement equation for the equation in the RTP
+   specification is as follows, where Rj is the most recent arrival
+   time:
+
+   D(i,j) = (Rj - Ri) - ((Sj + Oj) - (Si + Oi))
+          = (Rj - (Sj + Oj)) - (Ri - (Si + Oi))
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Signaling%20%28Setup%29%20Information"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Signaling (Setup) Information</span>
+
+   The URI for declaring this header extension in an extmap attribute is
+   "urn:ietf:params:rtp-hdrext:toffset".  There is no additional setup
+   information needed for this extension (no extensionattributes).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   The given transmission offsets are only informative, and it is hard
+   to see security considerations from associating them with media
+   streams.
+
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+   The underlying security considerations of [<a href="./rfc3550" title='"RTP: A Transport Protocol for Real-Time Applications"'>RFC3550</a>] should be taken
+   into account.
+
+   It is possible that malicious senders (or systems tampering with
+   packets in transit) could send offsets that are implausible, could
+   confuse the receiver, or result in calculated jitter values that
+   might mislead the sender.  Both the sender and receiver of the
+   transmission offsets and jitter values should take care that such
+   behavior does not result in denial of service or other problems.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  IANA Considerations</span>
+
+   The RTCP packet type used for the adjusted inter-arrival jitter has
+   been registered, in accordance with <a href="./rfc3550#section-15">Section 15 of [RFC3550]</a>.  IANA
+   has added a new value to the RTCP Control Packet types subregistry of
+   the Real-Time Transport Protocol (RTP) Parameters registry, according
+   to the following data:
+
+   abbrev.  name                                  value   Reference
+   -------  ------------------------------------  ------  ---------
+   IJ       Extended inter-arrival jitter report  195     <a href="./rfc5450">RFC 5450</a>
+
+   Additionally, IANA has registered a new extension URI to the RTP
+   Compact Header Extensions subregistry of the Real-Time Transport
+   Protocol (RTP) Parameters registry, according to the following data:
+
+      Extension URI: urn:ietf:params:rtp-hdrext:toffset
+      Description:   Transmission Time offsets
+      Contact:       singer@apple.com
+      Reference:     <a href="./rfc5450">RFC 5450</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Acknowledgments"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Acknowledgments</span>
+
+   Ron Frederick, Colin Perkins, and Steve Casner all contributed
+   substantially to this document, and their help and contributions
+   helped turn an idea into a specification.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Normative%20References"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC3550">RFC3550</a>]  Schulzrinne, H., Casner, S., Frederick, R., and V.
+              Jacobson, "RTP: A Transport Protocol for Real-Time
+              Applications", STD 64, <a href="./rfc3550">RFC 3550</a>, July 2003.
+
+   [<a id="ref-RFC5285">RFC5285</a>]  Singer, D. and H. Desineni, "A General Mechanism for RTP
+              Header Extensions", <a href="./rfc5285">RFC 5285</a>, July 2008.
+
+
+
+<span class="grey">Singer &amp; Desineni           Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc5450">RFC 5450</a>                RTP Transmission Offsets              March 2009</span>
+
+
+Authors' Addresses
+
+   David Singer
+   Apple Computer Inc.
+   1 Infinite Loop
+   Cupertino, CA  95014
+   US
+
+   Phone: +1 408 996 1010
+   EMail: singer@apple.com
+
+
+   Harikishan Desineni
+   Qualcomm
+   5775 Morehouse Drive
+   San Diego, CA  92121
+   US
+
+   Phone: +1 858 845 8996
+   EMail: hd@qualcomm.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Singer &amp; Desineni           Standards Track                     [Page 8]
+</pre>
+</body></html>

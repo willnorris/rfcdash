@@ -1,0 +1,278 @@
+<html><head></head><body><pre>Network Working Group                                          I. Miller
+Request for Comments: 3128                                Singularis Ltd
+Updates: <a href="./rfc1858">1858</a>                                                  June 2001
+Category: Informational
+
+
+        <span class="h1">Protection Against a Variant of the Tiny Fragment Attack</span>
+
+Status of this Memo
+
+   This memo provides information for the Internet community.  It does
+   not specify an Internet standard of any kind.  Distribution of this
+   memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2001).  All Rights Reserved.
+
+Abstract
+
+   This document discusses how <a href="./rfc1858">RFC 1858</a> compliant filters can be
+   vulnerable to a variant of the "Tiny Fragment Attack" described in
+   <a href="#section-3.1">section 3.1</a> of the RFC.  This document describes the attack and
+   recommends corrective action.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>. Introduction</span>
+
+   <a href="./rfc1858">RFC 1858</a> provides an excellent description of a class of attack on
+   Internet firewalls and proposes countermeasures.  However one of
+   these countmeasures, the "Indirect Method" (<a href="#section-3.2.2">section 3.2.2</a>) is
+   vulnerable to a combination of two of the attacks described.
+
+   The attack combines the features of the "Tiny Fragment Attack"
+   (<a href="#section-3">section 3</a>) and the "Overlapping Fragment Attack" (<a href="#section-4">section 4</a>).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1%20The%20scope%20of%20the%20attack"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a> The scope of the attack</span>
+
+   Where the filtering rules allow incoming connections to a machine AND
+   there other ports which allow only outgoing connections on the same
+   host, the attack allows incoming connections to the supposedly
+   outgoing-only ports.
+
+   Note that only the initial connection message need be fragmented.
+   Once the connection is established further traffic on it is legal.
+   The significance of this weakness will depend on the security policy
+   in force.
+
+
+
+
+
+<span class="grey">Miller                       Informational                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc3128">RFC 3128</a>       Protection Against a Tiny Fragment Attack       June 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20The%20Tiny%20Overlapping%20Fragment%20Attack"></a><a class="selflink" href="#section-2" id="section-2">2</a>. The Tiny Overlapping Fragment Attack</span>
+
+   The attack typically consists of sending three fragments.
+
+   Fragment 1: (Fragment offset = 0; length &gt;= 16)
+      Includes whole header and is entirely legal.  Typically it
+      describes a SYN packet initiating a new TCP connection to a port
+      on the target host that is allowed to receive incoming
+      connections.
+      e.g., Incoming connection to port 25 SMTP.
+
+   Fragment 2: (Fragment offset = 0; length = 8)
+      Is only the first 8 bytes and could be legal depending on the
+      other 8-bytes of the header, but is NOT legal combined with the
+      corresponding bytes from Fragment 1.  Such a fragment includes
+      only the port numbers and sequence number from the TCP header.
+      Typically this packet replaces the destination port number with a
+      port number on which the destination host that is not allowed to
+      receive incoming connections.
+
+   Fragment 3:  (Fragment offset &gt;= 2; length = rest of message)
+      Contains no header and completes the message.  (This third
+      fragment is not part of the attack.  However Fragment 1 cannot be
+      the complete message or it would be passed up to the application
+      before Fragment 2 arrived so a third fragment is necessary.)
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1%20Example%20of%20the%20attack"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a> Example of the attack</span>
+
+   Consider the following trivial set of rules for incoming packets:
+
+   +---+-------+-------+-------+-------+-----------------------+
+   | No|Action | Source| Dest. | Flags | Purpose               |
+   |   |       | Port  | Port  |       |                       |
+   +===+=======+=======+=======+=======+=======================+
+   | 1 |Permit | &gt;1023 | SMTP  |  ANY  | Incoming E-mail       |
+   +---+-------+-------+-------+-------+-----------------------+
+   | 2 |Permit | &gt;1023 |  ANY  |  Ack=1| Existing FTP data     |
+   |   |               |       |       | channel connections.  |
+   +---+-------+-------+-------+-------+-----------------------+
+   | 3 |Deny   | ANY   |  ANY  |  ANY  | Default deny          |
+   +---+-------+-------+-------+-------+-----------------------+
+
+   Fragment 1: attacker(1234) -&gt; target(SMTP) Ack=0
+      This is a new SMTP connection and is permitted by rule 1.
+
+   Fragment 2: attacker(1234) -&gt; target(Telnet=23) Ack=absent
+      All fields present conform to rule 2, as it could be the start of
+      an FTP packet.
+
+
+
+<span class="grey">Miller                       Informational                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc3128">RFC 3128</a>       Protection Against a Tiny Fragment Attack       June 2001</span>
+
+
+   Depending on the precise implementation of the fragment reassembly in
+   the target machine's IP stack, fragment B may overwrite fragment A to
+   produce:-
+
+      attacker(1234) -&gt; target(Telnet) Ack=0
+          (new telnet connection)
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2%20The%20failure%20of%20%22Indirect%20Method%22"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a> The failure of "Indirect Method"</span>
+
+   The Indirect Method attempts to solve both Tiny Fragment and
+   Overlapping Fragment attacks, solely by rejecting packets with FO=1.
+   However none of the above fragments have FO=1, so none are rejected.
+
+   The failure is clear on careful reading.  In <a href="#section-3.2.2">section 3.2.2</a> "Indirect
+   Method", <a href="./rfc1858">RFC 1858</a> states:-
+
+      The indirect method relies on the observation that when a TCP
+      packet is fragmented so as to force "interesting" header fields
+      out of the zero-offset fragment, there must exist a fragment with
+      FO equal to 1.
+
+   This is normally true where the fragments are genuine fragments,
+   generally by bona fide software, but it is simply not true that a
+   hacker forging fragments is forced to produce an FO=1 fragment simply
+   because (s)he has produced an 8-byte FO=0 fragment.  The
+   vulnerability flows from this false premise.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20Countermeasures"></a><a class="selflink" href="#section-3" id="section-3">3</a>. Countermeasures</span>
+
+   Whereas apparently very elegant, <a href="./rfc1858">RFC 1858</a>'s Indirect Method is not
+   robust.  In addition to blocking FO=1 packets, it is also necessary
+   to block FO=0 that hold less than a complete header.
+
+      if FO=0 and PROTOCOL=TCP and TRANSPORTLEN &lt; tmin then
+              DROP PACKET
+      if FO=1 and PROTOCOL=TCP then
+              DROP PACKET
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20Security%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>. Security Considerations</span>
+
+   This memo is concerned entirely with the security implications of
+   filtering fragmented IP packets.
+
+
+
+
+
+
+
+
+
+<span class="grey">Miller                       Informational                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc3128">RFC 3128</a>       Protection Against a Tiny Fragment Attack       June 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20Author%27s%20Address"></a><a class="selflink" href="#section-5" id="section-5">5</a>. Author's Address</span>
+
+   Ian Miller
+   Singularis Ltd
+   32 Stockwell Street
+   Cambridge
+   CB1 3ND  UK
+
+   Phone: +44 1223 511943
+   EMail: Ian_Miller@singularis.ltd.uk
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Miller                       Informational                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc3128">RFC 3128</a>       Protection Against a Tiny Fragment Attack       June 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20Full%20Copyright%20Statement"></a><a class="selflink" href="#section-6" id="section-6">6</a>. Full Copyright Statement</span>
+
+   Copyright (C) The Internet Society (2001).  All Rights Reserved.
+
+   This document and translations of it may be copied and furnished to
+   others, and derivative works that comment on or otherwise explain it
+   or assist in its implementation may be prepared, copied, published
+   and distributed, in whole or in part, without restriction of any
+   kind, provided that the above copyright notice and this paragraph are
+   included on all such copies and derivative works.  However, this
+   document itself may not be modified in any way, such as by removing
+   the copyright notice or references to the Internet Society or other
+   Internet organizations, except as needed for the purpose of
+   developing Internet standards in which case the procedures for
+   copyrights defined in the Internet Standards process must be
+   followed, or as required to translate it into languages other than
+   English.
+
+   The limited permissions granted above are perpetual and will not be
+   revoked by the Internet Society or its successors or assigns.
+
+   This document and the information contained herein is provided on an
+   "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+   TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+   BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+   HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is currently provided by the
+   Internet Society.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Miller                       Informational                      [Page 5]
+</pre>
+</body></html>

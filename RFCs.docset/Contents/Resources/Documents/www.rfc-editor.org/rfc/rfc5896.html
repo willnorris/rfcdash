@@ -1,0 +1,334 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)              L. Hornquist Astrand
+Request for Comments: 5896                                   Apple, Inc.
+Updates: <a href="./rfc4120">4120</a>                                                 S. Hartman
+Category: Standards Track                         Painless Security, LLC
+ISSN: 2070-1721                                                June 2010
+
+
+   <span class="h1">Generic Security Service Application Program Interface (GSS-API):</span>
+                     <span class="h1">Delegate if Approved by Policy</span>
+
+Abstract
+
+   Several Generic Security Service Application Program Interface
+   (GSS-API) applications work in a multi-tiered architecture, where the
+   server takes advantage of delegated user credentials to act on behalf
+   of the user and contact additional servers.  In effect, the server
+   acts as an agent on behalf of the user.  Examples include web
+   applications that need to access e-mail or file servers, including
+   CIFS (Common Internet File System) file servers.  However, delegating
+   the user credentials to a party who is not sufficiently trusted is
+   problematic from a security standpoint.  Kerberos provides a flag
+   called OK-AS-DELEGATE that allows the administrator of a Kerberos
+   realm to communicate that a particular service is trusted for
+   delegation.  This specification adds support for this flag and
+   similar facilities in other authentication mechanisms to GSS-API (<a href="./rfc2743">RFC</a>
+   <a href="./rfc2743">2743</a>).
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc5896">http://www.rfc-editor.org/info/rfc5896</a>.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand &amp; Hartman  Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc5896">RFC 5896</a>         GSS-API: Delegate if Approved by Policy       June 2010</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2010 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Requirements Notation . . . . . . . . . . . . . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  GSS-API flag, C binding . . . . . . . . . . . . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-4">4</a>.  GSS-API Behavior  . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-3">3</a>
+   <a href="#section-5">5</a>.  Kerberos GSS-API Behavior . . . . . . . . . . . . . . . . . . . <a href="#page-4">4</a>
+   <a href="#section-6">6</a>.  Rationale . . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-4">4</a>
+   <a href="#section-7">7</a>.  Security Considerations . . . . . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+   <a href="#section-8">8</a>.  Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+   <a href="#section-9">9</a>.  Normative References  . . . . . . . . . . . . . . . . . . . . . <a href="#page-5">5</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   Several GSS-API applications work in a multi-tiered architecture,
+   where the server takes advantage of delegated user credentials to act
+   on behalf of the user and contact additional servers.  In effect, the
+   server acts as an agent on behalf of the user.  Examples include web
+   applications that need to access e-mail or file servers, including
+   CIFS file servers.  However, delegating user credentials to a party
+   who is not sufficiently trusted is problematic from a security
+   standpoint.
+
+   Today, GSS-API [<a href="./rfc2743" title='"Generic Security Service Application Program Interface Version 2, Update 1"'>RFC2743</a>] leaves the determination of whether
+   delegation is desired to the client application.  An application
+   requests delegation by setting the deleg_req_flag when calling
+   init_sec_context.  This requires client applications to know what
+   services should be trusted for delegation.
+
+   However, blindly delegating to services for applications that do not
+   need delegation is problematic.  In some cases, a central authority
+   is in a better position than the client application to know what
+   services should receive delegation.  Some GSS-API mechanisms have a
+
+
+
+<span class="grey">Hornquist Astrand &amp; Hartman  Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc5896">RFC 5896</a>         GSS-API: Delegate if Approved by Policy       June 2010</span>
+
+
+   facility to allow an administrator to communicate that a particular
+   service is an appropriate target for delegation.  For example, a
+   Kerberos [<a href="./rfc4121" title='"The Kerberos Version 5 Generic Security Service Application Program Interface (GSS-API) Mechanism: Version 2"'>RFC4121</a>] KDC can set the OK-AS-DELEGATE flag in issued
+   tickets as such an indication.  It is desirable to expose this
+   knowledge to the GSS-API client so the client can request delegation
+   if and only if central policy recommends delegation to the given
+   service.
+
+   This specification adds a new input flag to gss_init_sec_context() to
+   request delegation when approved by central policy.  In addition, a
+   constant value to be used in the GSS-API C bindings [<a href="./rfc2744" title='"Generic Security Service API Version 2 : C-bindings"'>RFC2744</a>] is
+   defined.  Finally, the behavior for the Kerberos mechanism [<a href="./rfc4121" title='"The Kerberos Version 5 Generic Security Service Application Program Interface (GSS-API) Mechanism: Version 2"'>RFC4121</a>]
+   is specified.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20GSS-API%20flag%2C%20C%20binding"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  GSS-API flag, C binding</span>
+
+   The gss_init_sec_context API is extended to gain a new input flag,
+   deleg_policy_req_flag, and a new output flag, deleg_policy_state
+   BOOLEAN.  If the deleg_policy_req_flag is set, then delegation SHOULD
+   be performed if recommended by central policy.  When delegation was
+   recommended by the central policy and when delegation was done, the
+   output flag deleg_policy_state will be set.
+
+   In addition, the C bindings are extended to define the following
+   constant to represent both deleg_policy_req_flag and
+   deleg_policy_state (just like GSS_C_DELEG_FLAG maps to two flags).
+
+   #define GSS_C_DELEG_POLICY_FLAG 32768
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20GSS-API%20Behavior"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  GSS-API Behavior</span>
+
+   As before, if the deleg_req_flag is set, the GSS-API mechanism will
+   attempt delegation of user credentials.  When delegation is
+   successful, deleg_state will return TRUE in both the initiator and
+   acceptor output state (gss_init_sec_context and
+   gss_accept_sec_context, respectively).
+
+   Similarly, if the deleg_policy_req_flag is set, then the GSS-API
+   mechanism will attempt delegation if the mechanism-specific policy
+   recommends to do so.  When delegation is allowed and successful,
+   deleg_state will return TRUE in both initiator and acceptor output
+
+
+
+
+<span class="grey">Hornquist Astrand &amp; Hartman  Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc5896">RFC 5896</a>         GSS-API: Delegate if Approved by Policy       June 2010</span>
+
+
+   state.  In addition, deleg_policy_state will be set in the initiator
+   output state.
+
+   If the initiator sets both the deleg_req_flag and
+   deleg_policy_req_flag, delegation will be attempted unconditionally.
+   When delegation is successful, deleg_state will return TRUE in the
+   initiator and acceptor.  When delegation was successful, the
+   deleg_state will return TRUE in the initiator and acceptor.
+   Additionally, if the mechanism-specific policy recommended
+   delegation, the deleg_policy_state will additionally return TRUE for
+   the initiator (only).
+
+   Note that deleg_policy_req_flag and deleg_policy_state apply the
+   initiator only.  Their state is never sent over the wire.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Kerberos%20GSS-API%20Behavior"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Kerberos GSS-API Behavior</span>
+
+   If the initiator sets the deleg_policy_req_flag (and not
+   deleg_req_flag), the Kerberos GSS-API mechanism MUST only delegate if
+   OK-AS-DELEGATE is set [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>] in the service ticket.  Other policy
+   checks MAY be applied.  If the initiator sets deleg_req_flag (and not
+   deleg_policy_req_flag), the behavior will be as defined by [<a href="./rfc2743" title='"Generic Security Service Application Program Interface Version 2, Update 1"'>RFC2743</a>].
+   If the initiator set both the deleg_req_flag and
+   deleg_policy_req_flag, delegation will be attempted unconditionally.
+
+   [<a id="ref-RFC4120">RFC4120</a>] does not adequately describe the behavior of the OK-AS-
+   DELEGATE flag in a cross realm environment.  This document clarifies
+   that behavior.  If the initiator sets the deleg_policy_req_flag, the
+   GSS-API Kerberos mechanism MUST examine the OK-AS-DELEGATE flag in
+   the service ticket, and it MUST examine all cross realm tickets in
+   the traversal from the user's initial ticket-granting-ticket (TGT) to
+   the service ticket.  If any of the intermediate cross realm TGTs do
+   not have the OK-AS-DELEGATE flag set, the mechanism MUST NOT delegate
+   credentials.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Rationale"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Rationale</span>
+
+   Strictly speaking, the deleg_req_flag behavior in [<a href="./rfc2743" title='"Generic Security Service Application Program Interface Version 2, Update 1"'>RFC2743</a>] could be
+   interpreted the same as deleg_policy_req_flag is described in this
+   document.  However, in practice, the new flag is required because
+   existing applications and user expectations depend upon GSS-API
+   mechanism implementations without the described behavior, i.e., they
+   do not respect OK-AS-DELEGATE.
+
+   In hind sight, the deleg_req_flag should not have been implemented to
+   mean unconditional delegation.  Such promiscuous delegation reduces
+   overall security by unnecessarily exposing user credentials,
+   including to hosts and services that the user has no reason to trust.
+
+
+
+<span class="grey">Hornquist Astrand &amp; Hartman  Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc5896">RFC 5896</a>         GSS-API: Delegate if Approved by Policy       June 2010</span>
+
+
+   Today there are Kerberos implementations that do not support the OK-
+   AS-DELEGATE flag in the Kerberos database.  If the implementation of
+   the deleg_req_flag were changed to honor the OK-AS-DELEGATE flag,
+   users who deploy new client software would never achieve credential
+   delegation because the KDC would never issue a ticket with the OK-AS-
+   DELEGATE flag set.  Changing the client software behavior in this way
+   would cause a negative user experience for those users.  This is
+   compounded by the fact that users often deploy new software without
+   coordinating with site administrators.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Security Considerations</span>
+
+   This document introduces a flag that allows the client to get help
+   from the KDC in determining to which servers one should delegate
+   credentials, and the servers to which the client can delegate.
+
+   The new flag deleg_policy_req_flag is not communicated over the wire,
+   and thus does not present a new opportunity for spoofing or
+   downgrading policy in and of itself.
+
+   Mechanisms should use a trusted/authenticated means of determining
+   delegation policy, and it must not be spoofable on the network.
+
+   Delegating the user's TGT is still too powerful and dangerous.
+   Ideally, one would delegate specific service tickets, but this is out
+   of scope of this document.
+
+   A client's failure to specify deleg_policy_req_flag can at worst
+   result in NOT delegating credentials.  This means that the client
+   does not expand its trust, which is generally safer than the
+   alternative.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Acknowledgements"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Acknowledgements</span>
+
+   Thanks to Disco Vince Giffin, Thomas Maslen, Ken Raeburn, Martin Rex,
+   Alexey Melnikov, Jacques Vidrine, Tom Yu, Hilarie Orman, and Shawn
+   Emery for reviewing the document and providing suggestions for
+   improvements.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Normative%20References"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC2743">RFC2743</a>]  Linn, J., "Generic Security Service Application Program
+              Interface Version 2, Update 1", <a href="./rfc2743">RFC 2743</a>, January 2000.
+
+
+
+
+
+<span class="grey">Hornquist Astrand &amp; Hartman  Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc5896">RFC 5896</a>         GSS-API: Delegate if Approved by Policy       June 2010</span>
+
+
+   [<a id="ref-RFC2744">RFC2744</a>]  Wray, J., "Generic Security Service API Version 2 :
+              C-bindings", <a href="./rfc2744">RFC 2744</a>, January 2000.
+
+   [<a id="ref-RFC4120">RFC4120</a>]  Neuman, C., Yu, T., Hartman, S., and K. Raeburn, "The
+              Kerberos Network Authentication Service (V5)", <a href="./rfc4120">RFC 4120</a>,
+              July 2005.
+
+   [<a id="ref-RFC4121">RFC4121</a>]  Zhu, L., Jaganathan, K., and S. Hartman, "The Kerberos
+              Version 5 Generic Security Service Application Program
+              Interface (GSS-API) Mechanism: Version 2", <a href="./rfc4121">RFC 4121</a>,
+              July 2005.
+
+Authors' Addresses
+
+   Love Hornquist Astrand
+   Apple, Inc.
+
+   EMail: lha@apple.com
+
+
+   Sam Hartman
+   Painless Security, LLC
+
+   EMail: hartmans-ietf@mit.edu
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hornquist Astrand &amp; Hartman  Standards Track                    [Page 6]
+</pre>
+</body></html>

@@ -1,0 +1,334 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                          S. Ludin
+Request for Comments: 8586                           Akamai Technologies
+Category: Standards Track                                  M. Nottingham
+ISSN: 2070-1721                                                   Fastly
+                                                             N. Sullivan
+                                                              Cloudflare
+                                                              April 2019
+
+
+           <span class="h1">Loop Detection in Content Delivery Networks (CDNs)</span>
+
+Abstract
+
+   This document defines the CDN-Loop request header field for HTTP.
+   CDN-Loop addresses an operational need that occurs when an HTTP
+   request is intentionally forwarded between Content Delivery Networks
+   (CDNs), but is then accidentally or maliciously re-routed back into
+   the original CDN causing a non-terminating loop.  The new header
+   field can be used to identify the error and terminate the loop.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8586">https://www.rfc-editor.org/info/rfc8586</a>.
+
+Copyright Notice
+
+   Copyright (c) 2019 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+<span class="grey">Ludin, et al.                Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8586">RFC 8586</a>                   CDN Loop Detection                 April 2019</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+     <a href="#section-1.1">1.1</a>.  Relationship to Via . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+     <a href="#section-1.2">1.2</a>.  Conventions and Definitions . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  The CDN-Loop Request Header Field . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-4">4</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+   <a href="#section-5">5</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+     <a href="#section-5.1">5.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+     <a href="#section-5.2">5.2</a>.  Informative References  . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   In modern deployments of HTTP servers, it is common to interpose
+   Content Delivery Networks (CDNs) in front of origin servers to
+   improve latency perceived by end users, reduce operational costs, and
+   improve scalability and reliability of services.
+
+   Often, more than one CDN is in use by a given origin.  This happens
+   for a variety of reasons, such as cost savings, arranging for
+   failover should one CDN have issues, or direct comparison of the
+   CDNs' services.
+
+   As a result, it is possible for forwarding CDNs to be configured in a
+   "loop" accidentally; because routing is achieved through a
+   combination of DNS and forwarding rules, and site configurations are
+   sometimes complex and managed by several parties.
+
+   When this happens, it is difficult to debug.  Additionally, it
+   sometimes isn't accidental; loops between multiple CDNs can be used
+   as an attack vector (e.g., see [<a href="#ref-loop-attack">loop-attack</a>]), especially if one CDN
+   unintentionally strips the loop detection headers of another.
+
+   This specification defines the CDN-Loop HTTP request header field to
+   help detect such attacks and accidents among forwarding CDNs that
+   have implemented it; the header field may not be modified by their
+   customers.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Relationship%20to%20Via"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Relationship to Via</span>
+
+   HTTP defines the Via header field in <a href="./rfc7230#section-5.7.1">Section 5.7.1 of [RFC7230]</a> for
+   "tracking message forwards, avoiding request loops, and identifying
+   the protocol capabilities of senders along the request/response
+   chain."
+
+
+
+
+
+<span class="grey">Ludin, et al.                Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8586">RFC 8586</a>                   CDN Loop Detection                 April 2019</span>
+
+
+   In theory, Via could be used to identify these loops.  However, in
+   practice it is not used in this fashion, because some HTTP servers
+   use Via for other purposes -- in particular, some implementations
+   disable some HTTP/1.1 features when the Via header is present.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.2.%20%20Conventions%20and%20Definitions"></a><a class="selflink" href="#section-1.2" id="section-1.2">1.2</a>.  Conventions and Definitions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+   This specification uses the Augmented Backus-Naur Form (ABNF)
+   notation of [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>] with a list extension, defined in <a href="./rfc7230#section-7">Section 7 of
+   [RFC7230]</a>, that allows for compact definition of comma-separated
+   lists using a '#' operator (similar to how the '*' operator indicates
+   repetition).  Additionally, it uses a token (OWS), uri-host, and port
+   rules from [<a href="./rfc7230" title='"Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing"'>RFC7230</a>] and the parameter rule from [<a href="./rfc7231" title='"Hypertext Transfer Protocol (HTTP/1.1): Semantics and Content"'>RFC7231</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20The%20CDN-Loop%20Request%20Header%20Field"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  The CDN-Loop Request Header Field</span>
+
+   The CDN-Loop request header field is intended to help a Content
+   Delivery Network identify when an incoming request has already passed
+   through that CDN's servers to detect loops.
+
+   CDN-Loop  = #cdn-info
+   cdn-info  = cdn-id *( OWS ";" OWS parameter )
+   cdn-id    = ( uri-host [ ":" port ] ) / pseudonym
+   pseudonym = token
+
+   The cdn-id identifies the CDN using either a hostname under its
+   control or a pseudonym.  Hostnames are preferred, to help avoid
+   accidental collisions.  If a pseudonym is used, unintentional
+   collisions are more likely, and therefore values should be carefully
+   chosen to prevent them; for example, using a well-known value (such
+   as the recognized name of the CDN in question), or a generated value
+   with enough entropy to make collisions unlikely (such as a UUID
+   [<a href="./rfc4122" title='"A Universally Unique IDentifier (UUID) URN Namespace"'>RFC4122</a>]).
+
+   Optionally, cdn-info can have semicolon-separated key/value
+   parameters to accommodate additional information for the CDN's use.
+
+   Conforming Content Delivery Networks SHOULD add a cdn-info to this
+   header field in all requests they generate or forward (creating the
+   header field if necessary).
+
+
+
+
+
+<span class="grey">Ludin, et al.                Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8586">RFC 8586</a>                   CDN Loop Detection                 April 2019</span>
+
+
+   As with all HTTP header fields defined using the "#" rule, the
+   CDN-Loop header field can be added to by comma-separating values, or
+   by creating a new header field with the desired value.
+
+   For example:
+
+   GET /image.jpg HTTP/1.1
+   Host: cdn-customer.example
+   User-Agent: ExampleBrowser/5
+   CDN-Loop: foo123.foocdn.example, barcdn.example; trace="abcdef"
+   CDN-Loop: AnotherCDN; abc=123; def="456"
+
+   Note that the pseudonym syntax does not allow whitespace, DQUOTE, or
+   any of the characters "(),/:;&lt;=&gt;?@[]{}".  See <a href="./rfc7230#section-3.2.6">Section 3.2.6 of
+   [RFC7230]</a>.  Likewise, note the rules for when parameter values need
+   to be quoted in <a href="./rfc7231#section-3.1.1">Section 3.1.1 of [RFC7231]</a>.
+
+   The effectiveness of this mechanism relies on all intermediaries
+   preserving the header field, since removing (or allowing it to be
+   removed, e.g., by customer configuration) would prevent downstream
+   CDNs from using it to detect looping.  In general, unknown header
+   fields are not removed by intermediaries, but there may be a need to
+   add CDN-Loop to an implementation's list of header fields that are
+   not to be removed under any circumstances.  The header field SHOULD
+   NOT be used for other purposes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Security%20Considerations"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Security Considerations</span>
+
+   The threat model that the CDN-Loop header field addresses is a
+   customer who is attacking a service provider by configuring a
+   forwarding loop by accident or malice.  For it to function, CDNs
+   cannot allow customers to modify or remove it in their configuration
+   (see <a href="#section-2">Section 2</a>).
+
+   Note that a CDN that allows customers to remove or modify the
+   CDN-Loop header field (i.e., they do not implement this
+   specification) remains an attack vector against both implementing and
+   non-implementing CDNs.
+
+   A CDN's use of the CDN-Loop header field might expose its presence.
+   For example, if CDN A is configured to forward its requests to CDN B
+   for a given origin, CDN B's presence can be revealed if it behaves
+   differently based upon the presence of the CDN-Loop header field.
+
+   The CDN-Loop header field can be generated by any client, and
+   therefore its contents cannot be trusted.  CDNs who modify their
+   behavior based upon its contents should assure that this does not
+   become an attack vector (e.g., for Denial of Service).
+
+
+
+<span class="grey">Ludin, et al.                Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8586">RFC 8586</a>                   CDN Loop Detection                 April 2019</span>
+
+
+   It is possible to sign the contents of the header field (either by
+   putting the signature directly into the field's content or using
+   another header field), but such use is not defined (or required) by
+   this specification.
+
+   Depending on how it is used, CDN-Loop can expose information about
+   the internal configuration of the CDN; for example, the number of
+   hops inside the CDN, and the hostnames of nodes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  IANA Considerations</span>
+
+   This document registers the "CDN-Loop" header field in the "Permanent
+   Message Header Field Names" registry.
+
+   o  Header Field Name: CDN-Loop
+
+   o  Protocol: http
+
+   o  Status: standard
+
+   o  Reference: <a href="./rfc8586">RFC 8586</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20References"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Normative%20References"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC5234">RFC5234</a>]  Crocker, D., Ed. and P. Overell, "Augmented BNF for Syntax
+              Specifications: ABNF", STD 68, <a href="./rfc5234">RFC 5234</a>,
+              DOI 10.17487/RFC5234, January 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5234">https://www.rfc-editor.org/info/rfc5234</a>&gt;.
+
+   [<a id="ref-RFC7230">RFC7230</a>]  Fielding, R., Ed. and J. Reschke, Ed., "Hypertext Transfer
+              Protocol (HTTP/1.1): Message Syntax and Routing",
+              <a href="./rfc7230">RFC 7230</a>, DOI 10.17487/RFC7230, June 2014,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7230">https://www.rfc-editor.org/info/rfc7230</a>&gt;.
+
+   [<a id="ref-RFC7231">RFC7231</a>]  Fielding, R., Ed. and J. Reschke, Ed., "Hypertext Transfer
+              Protocol (HTTP/1.1): Semantics and Content", <a href="./rfc7231">RFC 7231</a>,
+              DOI 10.17487/RFC7231, June 2014,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7231">https://www.rfc-editor.org/info/rfc7231</a>&gt;.
+
+
+
+
+
+
+<span class="grey">Ludin, et al.                Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8586">RFC 8586</a>                   CDN Loop Detection                 April 2019</span>
+
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Informative%20References"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Informative References</span>
+
+   [<a id="ref-loop-attack">loop-attack</a>]
+              Chen, J., Jiang, J., Zheng, X., Duan, H., Liang, J., Li,
+              K., Wan, T., and V. Paxson, "Forwarding-Loop Attacks in
+              Content Delivery Networks", February 2016,
+              &lt;<a href="http://www.icir.org/vern/papers/cdn-loops.NDSS16.pdf">http://www.icir.org/vern/papers/cdn-loops.NDSS16.pdf</a>&gt;.
+
+   [<a id="ref-RFC4122">RFC4122</a>]  Leach, P., Mealling, M., and R. Salz, "A Universally
+              Unique IDentifier (UUID) URN Namespace", <a href="./rfc4122">RFC 4122</a>,
+              DOI 10.17487/RFC4122, July 2005,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4122">https://www.rfc-editor.org/info/rfc4122</a>&gt;.
+
+Authors' Addresses
+
+   Stephen Ludin
+   Akamai Technologies
+
+   Email: sludin@akamai.com
+
+
+   Mark Nottingham
+   Fastly
+
+   Email: mnot@fastly.com
+
+
+   Nick Sullivan
+   Cloudflare
+
+   Email: nick@cloudflare.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Ludin, et al.                Standards Track                    [Page 6]
+</pre>
+</body></html>

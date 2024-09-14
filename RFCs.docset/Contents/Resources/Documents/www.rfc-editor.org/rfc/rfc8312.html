@@ -1,0 +1,1006 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                           I. Rhee
+Request for Comments: 8312                                          NCSU
+Category: Informational                                            L. Xu
+ISSN: 2070-1721                                                      UNL
+                                                                   S. Ha
+                                                                Colorado
+                                                           A. Zimmermann
+
+                                                               L. Eggert
+                                                        R. Scheffenegger
+                                                                  NetApp
+                                                           February 2018
+
+
+                 <span class="h1">CUBIC for Fast Long-Distance Networks</span>
+
+Abstract
+
+   CUBIC is an extension to the current TCP standards.  It differs from
+   the current TCP standards only in the congestion control algorithm on
+   the sender side.  In particular, it uses a cubic function instead of
+   a linear window increase function of the current TCP standards to
+   improve scalability and stability under fast and long-distance
+   networks.  CUBIC and its predecessor algorithm have been adopted as
+   defaults by Linux and have been used for many years.  This document
+   provides a specification of CUBIC to enable third-party
+   implementations and to solicit community feedback through
+   experimentation on the performance of CUBIC.
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for informational purposes.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Not all documents
+   approved by the IESG are a candidate for any level of Internet
+   Standard; see <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8312">https://www.rfc-editor.org/info/rfc8312</a>.
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-3">3</a>
+   <a href="#section-2">2</a>. Conventions .....................................................<a href="#page-3">3</a>
+   <a href="#section-3">3</a>. Design Principles of CUBIC ......................................<a href="#page-4">4</a>
+   <a href="#section-4">4</a>. CUBIC Congestion Control ........................................<a href="#page-6">6</a>
+      <a href="#section-4.1">4.1</a>. Window Increase Function ...................................<a href="#page-6">6</a>
+      <a href="#section-4.2">4.2</a>. TCP-Friendly Region ........................................<a href="#page-7">7</a>
+      <a href="#section-4.3">4.3</a>. Concave Region .............................................<a href="#page-8">8</a>
+      <a href="#section-4.4">4.4</a>. Convex Region ..............................................<a href="#page-8">8</a>
+      <a href="#section-4.5">4.5</a>. Multiplicative Decrease ....................................<a href="#page-8">8</a>
+      <a href="#section-4.6">4.6</a>. Fast Convergence ...........................................<a href="#page-9">9</a>
+      <a href="#section-4.7">4.7</a>. Timeout ...................................................<a href="#page-10">10</a>
+      <a href="#section-4.8">4.8</a>. Slow Start ................................................<a href="#page-10">10</a>
+   <a href="#section-5">5</a>. Discussion .....................................................<a href="#page-10">10</a>
+      <a href="#section-5.1">5.1</a>. Fairness to Standard TCP ..................................<a href="#page-11">11</a>
+      <a href="#section-5.2">5.2</a>. Using Spare Capacity ......................................<a href="#page-13">13</a>
+      <a href="#section-5.3">5.3</a>. Difficult Environments ....................................<a href="#page-13">13</a>
+      <a href="#section-5.4">5.4</a>. Investigating a Range of Environments .....................<a href="#page-13">13</a>
+      <a href="#section-5.5">5.5</a>. Protection against Congestion Collapse ....................<a href="#page-14">14</a>
+      5.6. Fairness within the Alternative Congestion Control
+           Algorithm .................................................<a href="#page-14">14</a>
+      <a href="#section-5.7">5.7</a>. Performance with Misbehaving Nodes and Outside Attackers ..14
+      <a href="#section-5.8">5.8</a>. Behavior for Application-Limited Flows ....................<a href="#page-14">14</a>
+      <a href="#section-5.9">5.9</a>. Responses to Sudden or Transient Events ...................<a href="#page-14">14</a>
+      <a href="#section-5.10">5.10</a>. Incremental Deployment ...................................<a href="#page-14">14</a>
+   <a href="#section-6">6</a>. Security Considerations ........................................<a href="#page-15">15</a>
+   <a href="#section-7">7</a>. IANA Considerations ............................................<a href="#page-15">15</a>
+   <a href="#section-8">8</a>. References .....................................................<a href="#page-15">15</a>
+      <a href="#section-8.1">8.1</a>. Normative References ......................................<a href="#page-15">15</a>
+      <a href="#section-8.2">8.2</a>. Informative References ....................................<a href="#page-16">16</a>
+   Acknowledgements ..................................................<a href="#page-17">17</a>
+   Authors' Addresses ................................................<a href="#page-18">18</a>
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The low utilization problem of TCP in fast long-distance networks is
+   well documented in [<a href="#ref-K03" title='"Scalable TCP: Improving Performance in HighSpeed Wide Area Networks"'>K03</a>] and [<a href="./rfc3649" title='"HighSpeed TCP for Large Congestion Windows"'>RFC3649</a>].  This problem arises from a
+   slow increase of the congestion window following a congestion event
+   in a network with a large bandwidth-delay product (BDP).  [<a href="#ref-HKLRX06" title='"A Step toward Realistic Performance Evaluation of High-Speed TCP Variants"'>HKLRX06</a>]
+   indicates that this problem is frequently observed even in the range
+   of congestion window sizes over several hundreds of packets.  This
+   problem is equally applicable to all Reno-style TCP standards and
+   their variants, including TCP-RENO [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>], TCP-NewReno [<a href="./rfc6582" title="&quot;The NewReno Modification to TCP's Fast Recovery Algorithm&quot;">RFC6582</a>]
+   [<a href="./rfc6675" title='"A Conservative Loss Recovery Algorithm Based on Selective Acknowledgment (SACK) for TCP"'>RFC6675</a>], SCTP [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>], and TFRC [<a href="./rfc5348" title='"TCP Friendly Rate Control (TFRC): Protocol Specification"'>RFC5348</a>], which use the same
+   linear increase function for window growth, which we refer to
+   collectively as "Standard TCP" below.
+
+   CUBIC, originally proposed in [<a href="#ref-HRX08" title='"CUBIC: A New TCP-Friendly High-Speed TCP Variant"'>HRX08</a>], is a modification to the
+   congestion control algorithm of Standard TCP to remedy this problem.
+   This document describes the most recent specification of CUBIC.
+   Specifically, CUBIC uses a cubic function instead of a linear window
+   increase function of Standard TCP to improve scalability and
+   stability under fast and long-distance networks.
+
+   Binary Increase Congestion Control (BIC-TCP) [<a href="#ref-XHR04" title='"Binary Increase Congestion Control for Fast, Long Distance Networks"'>XHR04</a>], a predecessor
+   of CUBIC, was selected as the default TCP congestion control
+   algorithm by Linux in the year 2005 and has been used for several
+   years by the Internet community at large.  CUBIC uses a similar
+   window increase function as BIC-TCP and is designed to be less
+   aggressive and fairer to Standard TCP in bandwidth usage than BIC-TCP
+   while maintaining the strengths of BIC-TCP such as stability, window
+   scalability, and RTT fairness.  CUBIC has already replaced BIC-TCP as
+   the default TCP congestion control algorithm in Linux and has been
+   deployed globally by Linux.  Through extensive testing in various
+   Internet scenarios, we believe that CUBIC is safe for testing and
+   deployment in the global Internet.
+
+   In the following sections, we first briefly explain the design
+   principles of CUBIC, then provide the exact specification of CUBIC,
+   and finally discuss the safety features of CUBIC following the
+   guidelines specified in [<a href="./rfc5033" title='"Specifying New Congestion Control Algorithms"'>RFC5033</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Conventions"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Conventions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Design%20Principles%20of%20CUBIC"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Design Principles of CUBIC</span>
+
+   CUBIC is designed according to the following design principles:
+
+      Principle 1: For better network utilization and stability, CUBIC
+      uses both the concave and convex profiles of a cubic function to
+      increase the congestion window size, instead of using just a
+      convex function.
+
+      Principle 2: To be TCP-friendly, CUBIC is designed to behave like
+      Standard TCP in networks with short RTTs and small bandwidth where
+      Standard TCP performs well.
+
+      Principle 3: For RTT-fairness, CUBIC is designed to achieve linear
+      bandwidth sharing among flows with different RTTs.
+
+      Principle 4: CUBIC appropriately sets its multiplicative window
+      decrease factor in order to balance between the scalability and
+      convergence speed.
+
+   Principle 1: For better network utilization and stability, CUBIC
+   [<a href="#ref-HRX08" title='"CUBIC: A New TCP-Friendly High-Speed TCP Variant"'>HRX08</a>] uses a cubic window increase function in terms of the elapsed
+   time from the last congestion event.  While most alternative
+   congestion control algorithms to Standard TCP increase the congestion
+   window using convex functions, CUBIC uses both the concave and convex
+   profiles of a cubic function for window growth.  After a window
+   reduction in response to a congestion event is detected by duplicate
+   ACKs or Explicit Congestion Notification-Echo (ECN-Echo) ACKs
+   [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>], CUBIC registers the congestion window size where it got
+   the congestion event as W_max and performs a multiplicative decrease
+   of congestion window.  After it enters into congestion avoidance, it
+   starts to increase the congestion window using the concave profile of
+   the cubic function.  The cubic function is set to have its plateau at
+   W_max so that the concave window increase continues until the window
+   size becomes W_max.  After that, the cubic function turns into a
+   convex profile and the convex window increase begins.  This style of
+   window adjustment (concave and then convex) improves the algorithm
+   stability while maintaining high network utilization [<a href="#ref-CEHRX07" title='"Stochastic Ordering for Internet Congestion Control and its Applications"'>CEHRX07</a>].  This
+   is because the window size remains almost constant, forming a plateau
+   around W_max where network utilization is deemed highest.  Under
+   steady state, most window size samples of CUBIC are close to W_max,
+   thus promoting high network utilization and stability.  Note that
+   those congestion control algorithms using only convex functions to
+   increase the congestion window size have the maximum increments
+   around W_max, and thus introduce a large number of packet bursts
+   around the saturation point of the network, likely causing frequent
+   global loss synchronizations.
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   Principle 2: CUBIC promotes per-flow fairness to Standard TCP.  Note
+   that Standard TCP performs well under short RTT and small bandwidth
+   (or small BDP) networks.  There is only a scalability problem in
+   networks with long RTTs and large bandwidth (or large BDP).  An
+   alternative congestion control algorithm to Standard TCP designed to
+   be friendly to Standard TCP on a per-flow basis must operate to
+   increase its congestion window less aggressively in small BDP
+   networks than in large BDP networks.  The aggressiveness of CUBIC
+   mainly depends on the maximum window size before a window reduction,
+   which is smaller in small BDP networks than in large BDP networks.
+   Thus, CUBIC increases its congestion window less aggressively in
+   small BDP networks than in large BDP networks.  Furthermore, in cases
+   when the cubic function of CUBIC increases its congestion window less
+   aggressively than Standard TCP, CUBIC simply follows the window size
+   of Standard TCP to ensure that CUBIC achieves at least the same
+   throughput as Standard TCP in small BDP networks.  We call this
+   region where CUBIC behaves like Standard TCP, the "TCP-friendly
+   region".
+
+   Principle 3: Two CUBIC flows with different RTTs have their
+   throughput ratio linearly proportional to the inverse of their RTT
+   ratio, where the throughput of a flow is approximately the size of
+   its congestion window divided by its RTT.  Specifically, CUBIC
+   maintains a window increase rate independent of RTTs outside of the
+   TCP-friendly region, and thus flows with different RTTs have similar
+   congestion window sizes under steady state when they operate outside
+   the TCP-friendly region.  This notion of a linear throughput ratio is
+   similar to that of Standard TCP under high statistical multiplexing
+   environments where packet losses are independent of individual flow
+   rates.  However, under low statistical multiplexing environments, the
+   throughput ratio of Standard TCP flows with different RTTs is
+   quadratically proportional to the inverse of their RTT ratio [<a href="#ref-XHR04" title='"Binary Increase Congestion Control for Fast, Long Distance Networks"'>XHR04</a>].
+   CUBIC always ensures the linear throughput ratio independent of the
+   levels of statistical multiplexing.  This is an improvement over
+   Standard TCP.  While there is no consensus on particular throughput
+   ratios of different RTT flows, we believe that under wired Internet,
+   use of a linear throughput ratio seems more reasonable than equal
+   throughputs (i.e., the same throughput for flows with different RTTs)
+   or a higher-order throughput ratio (e.g., a quadratical throughput
+   ratio of Standard TCP under low statistical multiplexing
+   environments).
+
+   Principle 4: To balance between the scalability and convergence
+   speed, CUBIC sets the multiplicative window decrease factor to 0.7
+   while Standard TCP uses 0.5.  While this improves the scalability of
+   CUBIC, a side effect of this decision is slower convergence,
+   especially under low statistical multiplexing environments.  This
+   design choice is following the observation that the author of
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   HighSpeed TCP (HSTCP) [<a href="./rfc3649" title='"HighSpeed TCP for Large Congestion Windows"'>RFC3649</a>] has made along with other researchers
+   (e.g., [<a href="#ref-GV02" title='"Extended Analysis of Binary Adjustment Algorithms"'>GV02</a>]): the current Internet becomes more asynchronous with
+   less frequent loss synchronizations with high statistical
+   multiplexing.  Under this environment, even strict Multiplicative-
+   Increase Multiplicative-Decrease (MIMD) can converge.  CUBIC flows
+   with the same RTT always converge to the same throughput independent
+   of statistical multiplexing, thus achieving intra-algorithm fairness.
+   We also find that under the environments with sufficient statistical
+   multiplexing, the convergence speed of CUBIC flows is reasonable.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20CUBIC%20Congestion%20Control"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  CUBIC Congestion Control</span>
+
+   The unit of all window sizes in this document is segments of the
+   maximum segment size (MSS), and the unit of all times is seconds.
+   Let cwnd denote the congestion window size of a flow, and ssthresh
+   denote the slow-start threshold.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Window%20Increase%20Function"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Window Increase Function</span>
+
+   CUBIC maintains the acknowledgment (ACK) clocking of Standard TCP by
+   increasing the congestion window only at the reception of an ACK.  It
+   does not make any change to the fast recovery and retransmit of TCP,
+   such as TCP-NewReno [<a href="./rfc6582" title="&quot;The NewReno Modification to TCP's Fast Recovery Algorithm&quot;">RFC6582</a>] [<a href="./rfc6675" title='"A Conservative Loss Recovery Algorithm Based on Selective Acknowledgment (SACK) for TCP"'>RFC6675</a>].  During congestion avoidance
+   after a congestion event where a packet loss is detected by duplicate
+   ACKs or a network congestion is detected by ACKs with ECN-Echo flags
+   [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>], CUBIC changes the window increase function of Standard
+   TCP.  Suppose that W_max is the window size just before the window is
+   reduced in the last congestion event.
+
+   CUBIC uses the following window increase function:
+
+       W_cubic(t) = C*(t-K)^3 + W_max (Eq. 1)
+
+   where C is a constant fixed to determine the aggressiveness of window
+   increase in high BDP networks, t is the elapsed time from the
+   beginning of the current congestion avoidance, and K is the time
+   period that the above function takes to increase the current window
+   size to W_max if there are no further congestion events and is
+   calculated using the following equation:
+
+       K = cubic_root(W_max*(1-beta_cubic)/C) (Eq. 2)
+
+   where beta_cubic is the CUBIC multiplication decrease factor, that
+   is, when a congestion event is detected, CUBIC reduces its cwnd to
+   W_cubic(0)=W_max*beta_cubic.  We discuss how we set beta_cubic in
+   <a href="#section-4.5">Section 4.5</a> and how we set C in <a href="#section-5">Section 5</a>.
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   Upon receiving an ACK during congestion avoidance, CUBIC computes the
+   window increase rate during the next RTT period using Eq. 1.  It sets
+   W_cubic(t+RTT) as the candidate target value of the congestion
+   window, where RTT is the weighted average RTT calculated by Standard
+   TCP.
+
+   Depending on the value of the current congestion window size cwnd,
+   CUBIC runs in three different modes.
+
+   1.  The TCP-friendly region, which ensures that CUBIC achieves at
+       least the same throughput as Standard TCP.
+
+   2.  The concave region, if CUBIC is not in the TCP-friendly region
+       and cwnd is less than W_max.
+
+   3.  The convex region, if CUBIC is not in the TCP-friendly region and
+       cwnd is greater than W_max.
+
+   Below, we describe the exact actions taken by CUBIC in each region.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20TCP-Friendly%20Region"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  TCP-Friendly Region</span>
+
+   Standard TCP performs well in certain types of networks, for example,
+   under short RTT and small bandwidth (or small BDP) networks.  In
+   these networks, we use the TCP-friendly region to ensure that CUBIC
+   achieves at least the same throughput as Standard TCP.
+
+   The TCP-friendly region is designed according to the analysis
+   described in [<a href="#ref-FHP00" title='"A Comparison of Equation-Based and AIMD Congestion Control"'>FHP00</a>].  The analysis studies the performance of an
+   Additive Increase and Multiplicative Decrease (AIMD) algorithm with
+   an additive factor of alpha_aimd (segments per RTT) and a
+   multiplicative factor of beta_aimd, denoted by AIMD(alpha_aimd,
+   beta_aimd).  Specifically, the average congestion window size of
+   AIMD(alpha_aimd, beta_aimd) can be calculated using Eq. 3.  The
+   analysis shows that AIMD(alpha_aimd, beta_aimd) with
+   alpha_aimd=3*(1-beta_aimd)/(1+beta_aimd) achieves the same average
+   window size as Standard TCP that uses AIMD(1, 0.5).
+
+       AVG_W_aimd = [ alpha_aimd * (1+beta_aimd) /
+                      (2*(1-beta_aimd)*p) ]^0.5 (Eq. 3)
+
+   Based on the above analysis, CUBIC uses Eq. 4 to estimate the window
+   size W_est of AIMD(alpha_aimd, beta_aimd) with
+   alpha_aimd=3*(1-beta_cubic)/(1+beta_cubic) and beta_aimd=beta_cubic,
+   which achieves the same average window size as Standard TCP.  When
+   receiving an ACK in congestion avoidance (cwnd could be greater than
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   or less than W_max), CUBIC checks whether W_cubic(t) is less than
+   W_est(t).  If so, CUBIC is in the TCP-friendly region and cwnd SHOULD
+   be set to W_est(t) at each reception of an ACK.
+
+       W_est(t) = W_max*beta_cubic +
+                   [3*(1-beta_cubic)/(1+beta_cubic)] * (t/RTT) (Eq. 4)
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Concave%20Region"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Concave Region</span>
+
+   When receiving an ACK in congestion avoidance, if CUBIC is not in the
+   TCP-friendly region and cwnd is less than W_max, then CUBIC is in the
+   concave region.  In this region, cwnd MUST be incremented by
+   (W_cubic(t+RTT) - cwnd)/cwnd for each received ACK, where
+   W_cubic(t+RTT) is calculated using Eq. 1.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.4.%20%20Convex%20Region"></a><a class="selflink" href="#section-4.4" id="section-4.4">4.4</a>.  Convex Region</span>
+
+   When receiving an ACK in congestion avoidance, if CUBIC is not in the
+   TCP-friendly region and cwnd is larger than or equal to W_max, then
+   CUBIC is in the convex region.  The convex region indicates that the
+   network conditions might have been perturbed since the last
+   congestion event, possibly implying more available bandwidth after
+   some flow departures.  Since the Internet is highly asynchronous,
+   some amount of perturbation is always possible without causing a
+   major change in available bandwidth.  In this region, CUBIC is being
+   very careful by very slowly increasing its window size.  The convex
+   profile ensures that the window increases very slowly at the
+   beginning and gradually increases its increase rate.  We also call
+   this region the "maximum probing phase" since CUBIC is searching for
+   a new W_max.  In this region, cwnd MUST be incremented by
+   (W_cubic(t+RTT) - cwnd)/cwnd for each received ACK, where
+   W_cubic(t+RTT) is calculated using Eq. 1.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.5.%20%20Multiplicative%20Decrease"></a><a class="selflink" href="#section-4.5" id="section-4.5">4.5</a>.  Multiplicative Decrease</span>
+
+   When a packet loss is detected by duplicate ACKs or a network
+   congestion is detected by ECN-Echo ACKs, CUBIC updates its W_max,
+   cwnd, and ssthresh as follows.  Parameter beta_cubic SHOULD be set to
+   0.7.
+
+      W_max = cwnd;                 // save window size before reduction
+      ssthresh = cwnd * beta_cubic; // new slow-start threshold
+      ssthresh = max(ssthresh, 2);  // threshold is at least 2 MSS
+      cwnd = cwnd * beta_cubic;     // window reduction
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   A side effect of setting beta_cubic to a value bigger than 0.5 is
+   slower convergence.  We believe that while a more adaptive setting of
+   beta_cubic could result in faster convergence, it will make the
+   analysis of CUBIC much harder.  This adaptive adjustment of
+   beta_cubic is an item for the next version of CUBIC.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.6.%20%20Fast%20Convergence"></a><a class="selflink" href="#section-4.6" id="section-4.6">4.6</a>.  Fast Convergence</span>
+
+   To improve the convergence speed of CUBIC, we add a heuristic in
+   CUBIC.  When a new flow joins the network, existing flows in the
+   network need to give up some of their bandwidth to allow the new flow
+   some room for growth if the existing flows have been using all the
+   bandwidth of the network.  To speed up this bandwidth release by
+   existing flows, the following mechanism called "fast convergence"
+   SHOULD be implemented.
+
+   With fast convergence, when a congestion event occurs, before the
+   window reduction of the congestion window, a flow remembers the last
+   value of W_max before it updates W_max for the current congestion
+   event.  Let us call the last value of W_max to be W_last_max.
+
+      if (W_max &lt; W_last_max){ // should we make room for others
+          W_last_max = W_max;             // remember the last W_max
+          W_max = W_max*(1.0+beta_cubic)/2.0; // further reduce W_max
+      } else {
+          W_last_max = W_max              // remember the last W_max
+      }
+
+   At a congestion event, if the current value of W_max is less than
+   W_last_max, this indicates that the saturation point experienced by
+   this flow is getting reduced because of the change in available
+   bandwidth.  Then we allow this flow to release more bandwidth by
+   reducing W_max further.  This action effectively lengthens the time
+   for this flow to increase its congestion window because the reduced
+   W_max forces the flow to have the plateau earlier.  This allows more
+   time for the new flow to catch up to its congestion window size.
+
+   The fast convergence is designed for network environments with
+   multiple CUBIC flows.  In network environments with only a single
+   CUBIC flow and without any other traffic, the fast convergence SHOULD
+   be disabled.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.7.%20%20Timeout"></a><a class="selflink" href="#section-4.7" id="section-4.7">4.7</a>.  Timeout</span>
+
+   In case of timeout, CUBIC follows Standard TCP to reduce cwnd
+   [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>], but sets ssthresh using beta_cubic (same as in
+   <a href="#section-4.5">Section 4.5</a>) that is different from Standard TCP [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>].
+
+   During the first congestion avoidance after a timeout, CUBIC
+   increases its congestion window size using Eq. 1, where t is the
+   elapsed time since the beginning of the current congestion avoidance,
+   K is set to 0, and W_max is set to the congestion window size at the
+   beginning of the current congestion avoidance.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.8.%20%20Slow%20Start"></a><a class="selflink" href="#section-4.8" id="section-4.8">4.8</a>.  Slow Start</span>
+
+   CUBIC MUST employ a slow-start algorithm, when the cwnd is no more
+   than ssthresh.  Among the slow-start algorithms, CUBIC MAY choose the
+   standard TCP slow start [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>] in general networks, or the limited
+   slow start [<a href="./rfc3742" title='"Limited Slow-Start for TCP with Large Congestion Windows"'>RFC3742</a>] or hybrid slow start [<a href="#ref-HR08" title='"Hybrid Slow Start for High-Bandwidth and Long-Distance Networks"'>HR08</a>] for fast and long-
+   distance networks.
+
+   In the case when CUBIC runs the hybrid slow start [<a href="#ref-HR08" title='"Hybrid Slow Start for High-Bandwidth and Long-Distance Networks"'>HR08</a>], it may exit
+   the first slow start without incurring any packet loss and thus W_max
+   is undefined.  In this special case, CUBIC switches to congestion
+   avoidance and increases its congestion window size using Eq. 1, where
+   t is the elapsed time since the beginning of the current congestion
+   avoidance, K is set to 0, and W_max is set to the congestion window
+   size at the beginning of the current congestion avoidance.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Discussion"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Discussion</span>
+
+   In this section, we further discuss the safety features of CUBIC
+   following the guidelines specified in [<a href="./rfc5033" title='"Specifying New Congestion Control Algorithms"'>RFC5033</a>].
+
+   With a deterministic loss model where the number of packets between
+   two successive packet losses is always 1/p, CUBIC always operates
+   with the concave window profile, which greatly simplifies the
+   performance analysis of CUBIC.  The average window size of CUBIC can
+   be obtained by the following function:
+
+       AVG_W_cubic = [C*(3+beta_cubic)/(4*(1-beta_cubic))]^0.25 *
+                       (RTT^0.75) / (p^0.75) (Eq. 5)
+
+   With beta_cubic set to 0.7, the above formula is reduced to:
+
+       AVG_W_cubic = (C*3.7/1.2)^0.25 * (RTT^0.75) / (p^0.75) (Eq. 6)
+
+   We will determine the value of C in the following subsection using
+   Eq. 6.
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Fairness%20to%20Standard%20TCP"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Fairness to Standard TCP</span>
+
+   In environments where Standard TCP is able to make reasonable use of
+   the available bandwidth, CUBIC does not significantly change this
+   state.
+
+   Standard TCP performs well in the following two types of networks:
+
+   1.  networks with a small bandwidth-delay product (BDP)
+
+   2.  networks with a short RTTs, but not necessarily a small BDP
+
+   CUBIC is designed to behave very similarly to Standard TCP in the
+   above two types of networks.  The following two tables show the
+   average window sizes of Standard TCP, HSTCP, and CUBIC.  The average
+   window sizes of Standard TCP and HSTCP are from [<a href="./rfc3649" title='"HighSpeed TCP for Large Congestion Windows"'>RFC3649</a>].  The
+   average window size of CUBIC is calculated using Eq. 6 and the CUBIC
+   TCP-friendly region for three different values of C.
+
+   +--------+----------+-----------+------------+-----------+----------+
+   |   Loss |  Average |   Average |      CUBIC |     CUBIC |    CUBIC |
+   | Rate P |    TCP W |   HSTCP W |   (C=0.04) |   (C=0.4) |    (C=4) |
+   +--------+----------+-----------+------------+-----------+----------+
+   |  10^-2 |       12 |        12 |         12 |        12 |       12 |
+   |  10^-3 |       38 |        38 |         38 |        38 |       59 |
+   |  10^-4 |      120 |       263 |        120 |       187 |      333 |
+   |  10^-5 |      379 |      1795 |        593 |      1054 |     1874 |
+   |  10^-6 |     1200 |     12279 |       3332 |      5926 |    10538 |
+   |  10^-7 |     3795 |     83981 |      18740 |     33325 |    59261 |
+   |  10^-8 |    12000 |    574356 |     105383 |    187400 |   333250 |
+   +--------+----------+-----------+------------+-----------+----------+
+
+                                  Table 1
+
+   Table 1 describes the response function of Standard TCP, HSTCP, and
+   CUBIC in networks with RTT = 0.1 seconds.  The average window size is
+   in MSS-sized segments.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   +--------+-----------+-----------+------------+-----------+---------+
+   |   Loss |   Average |   Average |      CUBIC |     CUBIC |   CUBIC |
+   | Rate P |     TCP W |   HSTCP W |   (C=0.04) |   (C=0.4) |   (C=4) |
+   +--------+-----------+-----------+------------+-----------+---------+
+   |  10^-2 |        12 |        12 |         12 |        12 |      12 |
+   |  10^-3 |        38 |        38 |         38 |        38 |      38 |
+   |  10^-4 |       120 |       263 |        120 |       120 |     120 |
+   |  10^-5 |       379 |      1795 |        379 |       379 |     379 |
+   |  10^-6 |      1200 |     12279 |       1200 |      1200 |    1874 |
+   |  10^-7 |      3795 |     83981 |       3795 |      5926 |   10538 |
+   |  10^-8 |     12000 |    574356 |      18740 |     33325 |   59261 |
+   +--------+-----------+-----------+------------+-----------+---------+
+
+                                  Table 2
+
+   Table 2 describes the response function of Standard TCP, HSTCP, and
+   CUBIC in networks with RTT = 0.01 seconds.  The average window size
+   is in MSS-sized segments.
+
+   Both tables show that CUBIC with any of these three C values is more
+   friendly to TCP than HSTCP, especially in networks with a short RTT
+   where TCP performs reasonably well.  For example, in a network with
+   RTT = 0.01 seconds and p=10^-6, TCP has an average window of 1200
+   packets.  If the packet size is 1500 bytes, then TCP can achieve an
+   average rate of 1.44 Gbps.  In this case, CUBIC with C=0.04 or C=0.4
+   achieves exactly the same rate as Standard TCP, whereas HSTCP is
+   about ten times more aggressive than Standard TCP.
+
+   We can see that C determines the aggressiveness of CUBIC in competing
+   with other congestion control algorithms for bandwidth.  CUBIC is
+   more friendly to Standard TCP, if the value of C is lower.  However,
+   we do not recommend setting C to a very low value like 0.04, since
+   CUBIC with a low C cannot efficiently use the bandwidth in long RTT
+   and high-bandwidth networks.  Based on these observations and our
+   experiments, we find C=0.4 gives a good balance between TCP-
+   friendliness and aggressiveness of window increase.  Therefore, C
+   SHOULD be set to 0.4.  With C set to 0.4, Eq. 6 is reduced to:
+
+      AVG_W_cubic = 1.054 * (RTT^0.75) / (p^0.75) (Eq. 7)
+
+   Eq. 7 is then used in the next subsection to show the scalability of
+   CUBIC.
+
+
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Using%20Spare%20Capacity"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Using Spare Capacity</span>
+
+   CUBIC uses a more aggressive window increase function than Standard
+   TCP under long RTT and high-bandwidth networks.
+
+   The following table shows that to achieve the 10 Gbps rate, Standard
+   TCP requires a packet loss rate of 2.0e-10, while CUBIC requires a
+   packet loss rate of 2.9e-8.
+
+      +------------------+-----------+---------+---------+---------+
+      | Throughput(Mbps) | Average W | TCP P   | HSTCP P | CUBIC P |
+      +------------------+-----------+---------+---------+---------+
+      |                1 |       8.3 | 2.0e-2  | 2.0e-2  | 2.0e-2  |
+      |               10 |      83.3 | 2.0e-4  | 3.9e-4  | 2.9e-4  |
+      |              100 |     833.3 | 2.0e-6  | 2.5e-5  | 1.4e-5  |
+      |             1000 |    8333.3 | 2.0e-8  | 1.5e-6  | 6.3e-7  |
+      |            10000 |   83333.3 | 2.0e-10 | 1.0e-7  | 2.9e-8  |
+      +------------------+-----------+---------+---------+---------+
+
+                                  Table 3
+
+   Table 3 describes the required packet loss rate for Standard TCP,
+   HSTCP, and CUBIC to achieve a certain throughput.  We use 1500-byte
+   packets and an RTT of 0.1 seconds.
+
+   Our test results in [<a href="#ref-HKLRX06" title='"A Step toward Realistic Performance Evaluation of High-Speed TCP Variants"'>HKLRX06</a>] indicate that CUBIC uses the spare
+   bandwidth left unused by existing Standard TCP flows in the same
+   bottleneck link without taking away much bandwidth from the existing
+   flows.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.%20%20Difficult%20Environments"></a><a class="selflink" href="#section-5.3" id="section-5.3">5.3</a>.  Difficult Environments</span>
+
+   CUBIC is designed to remedy the poor performance of TCP in fast and
+   long-distance networks.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.4.%20%20Investigating%20a%20Range%20of%20Environments"></a><a class="selflink" href="#section-5.4" id="section-5.4">5.4</a>.  Investigating a Range of Environments</span>
+
+   CUBIC has been extensively studied by using both NS-2 simulation and
+   test-bed experiments covering a wide range of network environments.
+   More information can be found in [<a href="#ref-HKLRX06" title='"A Step toward Realistic Performance Evaluation of High-Speed TCP Variants"'>HKLRX06</a>].
+
+   Same as Standard TCP, CUBIC is a loss-based congestion control
+   algorithm.  Because CUBIC is designed to be more aggressive (due to a
+   faster window increase function and bigger multiplicative decrease
+   factor) than Standard TCP in fast and long-distance networks, it can
+   fill large drop-tail buffers more quickly than Standard TCP and
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   increase the risk of a standing queue [<a href="#ref-KWAF17" title='"TCP Alternative Backoff with ECN (ABE)"'>KWAF17</a>].  In this case, proper
+   queue sizing and management [<a href="./rfc7567" title='"IETF Recommendations Regarding Active Queue Management"'>RFC7567</a>] could be used to reduce the
+   packet queuing delay.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.5.%20%20Protection%20against%20Congestion%20Collapse"></a><a class="selflink" href="#section-5.5" id="section-5.5">5.5</a>.  Protection against Congestion Collapse</span>
+
+   With regard to the potential of causing congestion collapse, CUBIC
+   behaves like Standard TCP since CUBIC modifies only the window
+   adjustment algorithm of TCP.  Thus, it does not modify the ACK
+   clocking and Timeout behaviors of Standard TCP.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.6.%20%20Fairness%20within%20the%20Alternative%20Congestion%20Control%20Algorithm"></a><a class="selflink" href="#section-5.6" id="section-5.6">5.6</a>.  Fairness within the Alternative Congestion Control Algorithm</span>
+
+   CUBIC ensures convergence of competing CUBIC flows with the same RTT
+   in the same bottleneck links to an equal throughput.  When competing
+   flows have different RTTs, their throughput ratio is linearly
+   proportional to the inverse of their RTT ratios.  This is true
+   independent of the level of statistical multiplexing in the link.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.7.%20%20Performance%20with%20Misbehaving%20Nodes%20and%20Outside%20Attackers"></a><a class="selflink" href="#section-5.7" id="section-5.7">5.7</a>.  Performance with Misbehaving Nodes and Outside Attackers</span>
+
+   This is not considered in the current CUBIC.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.8.%20%20Behavior%20for%20Application-Limited%20Flows"></a><a class="selflink" href="#section-5.8" id="section-5.8">5.8</a>.  Behavior for Application-Limited Flows</span>
+
+   CUBIC does not raise its congestion window size if the flow is
+   currently limited by the application instead of the congestion
+   window.  In case of long periods when cwnd has not been updated due
+   to the application rate limit, such as idle periods, t in Eq. 1 MUST
+   NOT include these periods; otherwise, W_cubic(t) might be very high
+   after restarting from these periods.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.9.%20%20Responses%20to%20Sudden%20or%20Transient%20Events"></a><a class="selflink" href="#section-5.9" id="section-5.9">5.9</a>.  Responses to Sudden or Transient Events</span>
+
+   If there is a sudden congestion, a routing change, or a mobility
+   event, CUBIC behaves the same as Standard TCP.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.10.%20%20Incremental%20Deployment"></a><a class="selflink" href="#section-5.10" id="section-5.10">5.10</a>.  Incremental Deployment</span>
+
+   CUBIC requires only the change of TCP senders, and it does not make
+   any changes to TCP receivers.  That is, a CUBIC sender works
+   correctly with the Standard TCP receivers.  In addition, CUBIC does
+   not require any changes to the routers and does not require any
+   assistance from the routers.
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   This proposal makes no changes to the underlying security of TCP.
+   More information about TCP security concerns can be found in
+   [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  IANA Considerations</span>
+
+   This document does not require any IANA actions.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20References"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Normative%20References"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3168">RFC3168</a>]  Ramakrishnan, K., Floyd, S., and D. Black, "The Addition
+              of Explicit Congestion Notification (ECN) to IP",
+              <a href="./rfc3168">RFC 3168</a>, DOI 10.17487/RFC3168, September 2001,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3168">https://www.rfc-editor.org/info/rfc3168</a>&gt;.
+
+   [<a id="ref-RFC3649">RFC3649</a>]  Floyd, S., "HighSpeed TCP for Large Congestion Windows",
+              <a href="./rfc3649">RFC 3649</a>, DOI 10.17487/RFC3649, December 2003,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3649">https://www.rfc-editor.org/info/rfc3649</a>&gt;.
+
+   [<a id="ref-RFC3742">RFC3742</a>]  Floyd, S., "Limited Slow-Start for TCP with Large
+              Congestion Windows", <a href="./rfc3742">RFC 3742</a>, DOI 10.17487/RFC3742, March
+              2004, &lt;<a href="https://www.rfc-editor.org/info/rfc3742">https://www.rfc-editor.org/info/rfc3742</a>&gt;.
+
+   [<a id="ref-RFC4960">RFC4960</a>]  Stewart, R., Ed., "Stream Control Transmission Protocol",
+              <a href="./rfc4960">RFC 4960</a>, DOI 10.17487/RFC4960, September 2007,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4960">https://www.rfc-editor.org/info/rfc4960</a>&gt;.
+
+   [<a id="ref-RFC5033">RFC5033</a>]  Floyd, S. and M. Allman, "Specifying New Congestion
+              Control Algorithms", <a href="https://www.rfc-editor.org/bcp/bcp133">BCP 133</a>, <a href="./rfc5033">RFC 5033</a>,
+              DOI 10.17487/RFC5033, August 2007,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5033">https://www.rfc-editor.org/info/rfc5033</a>&gt;.
+
+   [<a id="ref-RFC5348">RFC5348</a>]  Floyd, S., Handley, M., Padhye, J., and J. Widmer, "TCP
+              Friendly Rate Control (TFRC): Protocol Specification",
+              <a href="./rfc5348">RFC 5348</a>, DOI 10.17487/RFC5348, September 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5348">https://www.rfc-editor.org/info/rfc5348</a>&gt;.
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   [<a id="ref-RFC5681">RFC5681</a>]  Allman, M., Paxson, V., and E. Blanton, "TCP Congestion
+              Control", <a href="./rfc5681">RFC 5681</a>, DOI 10.17487/RFC5681, September 2009,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5681">https://www.rfc-editor.org/info/rfc5681</a>&gt;.
+
+   [<a id="ref-RFC6582">RFC6582</a>]  Henderson, T., Floyd, S., Gurtov, A., and Y. Nishida, "The
+              NewReno Modification to TCP's Fast Recovery Algorithm",
+              <a href="./rfc6582">RFC 6582</a>, DOI 10.17487/RFC6582, April 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6582">https://www.rfc-editor.org/info/rfc6582</a>&gt;.
+
+   [<a id="ref-RFC6675">RFC6675</a>]  Blanton, E., Allman, M., Wang, L., Jarvinen, I., Kojo, M.,
+              and Y. Nishida, "A Conservative Loss Recovery Algorithm
+              Based on Selective Acknowledgment (SACK) for TCP",
+              <a href="./rfc6675">RFC 6675</a>, DOI 10.17487/RFC6675, August 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6675">https://www.rfc-editor.org/info/rfc6675</a>&gt;.
+
+   [<a id="ref-RFC7567">RFC7567</a>]  Baker, F., Ed. and G. Fairhurst, Ed., "IETF
+              Recommendations Regarding Active Queue Management",
+              <a href="https://www.rfc-editor.org/bcp/bcp197">BCP 197</a>, <a href="./rfc7567">RFC 7567</a>, DOI 10.17487/RFC7567, July 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7567">https://www.rfc-editor.org/info/rfc7567</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.%20%20Informative%20References"></a><a class="selflink" href="#section-8.2" id="section-8.2">8.2</a>.  Informative References</span>
+
+   [<a id="ref-CEHRX07">CEHRX07</a>]  Cai, H., Eun, D., Ha, S., Rhee, I., and L. Xu, "Stochastic
+              Ordering for Internet Congestion Control and its
+              Applications", In Proceedings of IEEE INFOCOM,
+              DOI 10.1109/INFCOM.2007.111, May 2007.
+
+   [<a id="ref-FHP00">FHP00</a>]    Floyd, S., Handley, M., and J. Padhye, "A Comparison of
+              Equation-Based and AIMD Congestion Control", May 2000.
+
+   [<a id="ref-GV02">GV02</a>]     Gorinsky, S. and H. Vin, "Extended Analysis of Binary
+              Adjustment Algorithms", Technical Report TR2002-29,
+              Department of Computer Sciences, The University of
+              Texas at Austin, August 2002.
+
+   [<a id="ref-HKLRX06">HKLRX06</a>]  Ha, S., Kim, Y., Le, L., Rhee, I., and L. Xu, "A Step
+              toward Realistic Performance Evaluation of High-Speed TCP
+              Variants", International Workshop on Protocols for Fast
+              Long-Distance Networks.
+
+   [<a id="ref-HR08">HR08</a>]     Ha, S. and I. Rhee, "Hybrid Slow Start for High-Bandwidth
+              and Long-Distance Networks", International Workshop on
+              Protocols for Fast Long-Distance Networks.
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+   [<a id="ref-HRX08">HRX08</a>]    Ha, S., Rhee, I., and L. Xu, "CUBIC: A New TCP-Friendly
+              High-Speed TCP Variant", ACM SIGOPS Operating System
+              Review, DOI 10.1145/1400097.1400105, July 2008.
+
+   [<a id="ref-K03">K03</a>]      Kelly, T., "Scalable TCP: Improving Performance in
+              HighSpeed Wide Area Networks", ACM SIGCOMM
+              Computer Communication Review, DOI 10.1145/956981.956989,
+              April 2003.
+
+   [<a id="ref-KWAF17">KWAF17</a>]   Khademi, N., Welzl, M., Armitage, G., and G. Fairhurst,
+              "TCP Alternative Backoff with ECN (ABE)", Work in
+              Progress, <a href="./draft-ietf-tcpm-alternativebackoff-ecn-05">draft-ietf-tcpm-alternativebackoff-ecn-05</a>,
+              December 2017.
+
+   [<a id="ref-XHR04">XHR04</a>]    Xu, L., Harfoush, K., and I. Rhee, "Binary Increase
+              Congestion Control for Fast, Long Distance Networks", In
+              Proceedings of IEEE INFOCOM,
+              DOI 10.1109/INFCOM.2004.1354672, March 2004.
+
+Acknowledgements
+
+   Alexander Zimmermann and Lars Eggert have received funding from the
+   European Union's Horizon 2020 research and innovation program
+   2014-2018 under grant agreement No. 644866 (SSICLOPS).  This document
+   reflects only the authors' views and the European Commission is not
+   responsible for any use that may be made of the information it
+   contains.
+
+   The work of Lisong Xu was partially supported by the National Science
+   Foundation (NSF) under Grant No. 1526253.  Any opinions, findings,
+   and conclusions or recommendations expressed in this material are
+   those of the authors and do not necessarily reflect the views of the
+   NSF.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Rhee, et al.                  Informational                    [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc8312">RFC 8312</a>                          CUBIC                    February 2018</span>
+
+
+Authors' Addresses
+
+   Injong Rhee
+   North Carolina State University
+   Department of Computer Science
+   Raleigh, NC  27695-7534
+   United States of America
+   Email: rhee@ncsu.edu
+
+
+   Lisong Xu
+   University of Nebraska-Lincoln
+   Department of Computer Science and Engineering
+   Lincoln, NE  68588-0115
+   United States of America
+
+   Email: xu@unl.edu
+
+   Sangtae Ha
+   University of Colorado at Boulder
+   Department of Computer Science
+   Boulder, CO  80309-0430
+   United States of America
+   Email: sangtae.ha@colorado.edu
+
+   Alexander Zimmermann
+   Phone: +49 175 5766838
+   Email: alexander.zimmermann@rwth-aachen.de
+
+   Lars Eggert
+   NetApp
+   Sonnenallee 1
+   Kirchheim  85551
+   Germany
+   Phone: +49 151 12055791
+   Email: lars@netapp.com
+
+   Richard Scheffenegger
+   NetApp
+   Am Europlatz 2
+   Vienna  1120
+   Austria
+   Email: rs.ietf@gmx.at
+
+
+
+
+
+
+
+
+Rhee, et al.                  Informational                    [Page 18]
+</pre>
+</body></html>

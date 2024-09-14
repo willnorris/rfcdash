@@ -1,0 +1,1062 @@
+<html><head></head><body><pre>Independent Submission                                         D. Wilson
+Request for Comments: 8494                              A. Melnikov, Ed.
+Category: Informational                                        Isode Ltd
+ISSN: 2070-1721                                            November 2018
+
+
+Multicast Email (MULE) over Allied Communications Publication (ACP) 142
+
+Abstract
+
+   Allied Communications Publication (ACP) 142 defines P_MUL, which is a
+   protocol for reliable multicast suitable for bandwidth-constrained
+   and delayed acknowledgement (Emissions Control or "EMCON")
+   environments running over UDP.  This document defines MULE (Multicast
+   Email), an application protocol for transferring Internet Mail
+   messages (as described in <a href="./rfc5322">RFC 5322</a>) over P_MUL (as defined in ACP
+   142).  MULE enables transfer between Message Transfer Agents (MTAs).
+   It doesn't provide a service similar to SMTP Submission (as described
+   in <a href="./rfc6409">RFC 6409</a>).
+
+   This document explains how MULE can be used in conjunction with SMTP
+   (<a href="./rfc5321">RFC 5321</a>), including some common SMTP extensions, to provide an
+   alternate MTA-to-MTA transfer mechanism.
+
+   This is not an IETF specification; it describes an existing
+   implementation.  It is provided in order to facilitate interoperable
+   implementations and third-party diagnostics.
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for informational purposes.
+
+   This is a contribution to the RFC Series, independently of any other
+   RFC stream.  The RFC Editor has chosen to publish this document at
+   its discretion and makes no statement about its value for
+   implementation or deployment.  Documents approved for publication by
+   the RFC Editor are not candidates for any level of Internet Standard;
+   see <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8494">https://www.rfc-editor.org/info/rfc8494</a>.
+
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-3">3</a>
+   <a href="#section-2">2</a>. Conventions Used in This Document ...............................<a href="#page-4">4</a>
+   <a href="#section-3">3</a>. MULE ............................................................<a href="#page-4">4</a>
+      <a href="#section-3.1">3.1</a>. BSMTP-Like Payload Construction ............................<a href="#page-6">6</a>
+      <a href="#section-3.2">3.2</a>. Payload Compression ........................................<a href="#page-7">7</a>
+      <a href="#section-3.3">3.3</a>. Error Handling .............................................<a href="#page-9">9</a>
+   <a href="#section-4">4</a>. Gatewaying from Internet Mail to MULE ...........................<a href="#page-9">9</a>
+      <a href="#section-4.1">4.1</a>. Use of BDAT ...............................................<a href="#page-10">10</a>
+   <a href="#section-5">5</a>. Gatewaying from MULE to Internet Mail ..........................<a href="#page-10">10</a>
+      <a href="#section-5.1">5.1</a>. Handling of ESMTP Extensions and Errors ...................<a href="#page-10">10</a>
+   <a href="#section-6">6</a>. IANA Considerations ............................................<a href="#page-11">11</a>
+      <a href="#section-6.1">6.1</a>. Instructions for Designated Experts .......................<a href="#page-11">11</a>
+      <a href="#section-6.2">6.2</a>. SMTP Extension Support in MULE ............................<a href="#page-12">12</a>
+   <a href="#section-7">7</a>. Security Considerations ........................................<a href="#page-14">14</a>
+   <a href="#section-8">8</a>. References .....................................................<a href="#page-15">15</a>
+      <a href="#section-8.1">8.1</a>. Normative References ......................................<a href="#page-15">15</a>
+      <a href="#section-8.2">8.2</a>. Informative References ....................................<a href="#page-17">17</a>
+   Acknowledgements ..................................................<a href="#page-19">19</a>
+   Authors' Addresses ................................................<a href="#page-19">19</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   P_MUL [<a href="#ref-ACP142A" title='"P_Mul - A Protocol for Reliable Multicast in Bandwidth Constrained and Delayed Acknowledgement (EMCON) Environments"'>ACP142A</a>] is a transport protocol for reliable multicast in
+   bandwidth-constrained and delayed acknowledgement environments
+   running on top of UDP.  This document defines MULE, an application
+   protocol for transferring Internet Mail messages [<a href="./rfc5322" title='"Internet Message Format"'>RFC5322</a>] over ACP
+   142 P_MUL.  The objectives of MULE are 1) to take advantage of the
+   bandwidth-saving feature of using the multicast service as supported
+   by modern computer networks and 2) to allow message transfer under
+   EMCON (Emissions Control) conditions.  EMCON or "radio silence" means
+   that although receiving nodes are able to receive messages, they are
+   not able to acknowledge the receipt of messages.
+
+   The objective of this protocol is to take advantage of multicast
+   communication for the transfer of messages between MTAs (Message
+   Transfer Agents) on a single multicast network under normal (i.e.,
+   dialog-oriented) communication conditions and under EMCON conditions.
+   An "EMCON condition" means that a receiving node is able to receive
+   messages but cannot acknowledge the received messages for a
+   relatively long time (hours or even days).
+
+   Figure 1 illustrates a simple multicast scenario, where the same
+   message has to be sent from MTA A (through G/W) to MTA 1, MTA 2, MTA
+   3, and MTA 4.
+
+                             +-------+                   +-------+
+                             | MTA 1 |&lt;-\             /-&gt;| MTA 3 |
+    +-------+     +-----+    +-------+   \ +-------+ /   +-------+
+    | MTA A |&lt;---&gt;| G/W |&lt;----------------&gt;| Router|&lt;
+    +-------+     +-----+    +-------+   / +-------+ \   +-------+
+                             | MTA 2 |&lt;-/             \-&gt;| MTA 4 |
+                             +-------+                   +-------+
+
+                           |&lt; -------------- MULE ----------------&gt;|
+
+   Note: The gateway (G/W) and Router might or might not be running on
+   the same system.
+
+                     Figure 1: Typical MULE Deployment
+
+   Due to multicast use (instead of a unicast communication service) in
+   the above MTA configuration, only one message transmission from the
+   gateway to the Router is required in order to reach MTA 1, MTA 2, MTA
+   3, and MTA 4, instead of four as required with unicast.  This saves
+   the transmission three message transactions and thus results in
+   savings in bandwidth utilization.  Depending on the network bandwidth
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   (in some radio networks, it is less than 9.6 Kb/s), this savings can
+   be of vital importance.  The savings in bandwidth utilization become
+   even greater with every additional receiving MTA.
+
+   P_MUL employs a connectionless transport protocol to transmit
+   messages.  This guarantees reliable message transfer (through ACP 142
+   retransmissions) even in cases where one or more of the receiving
+   MTAs are not able or allowed to acknowledge completely received
+   messages for a certain period of time.
+
+   This protocol specification requires fixed multicast groups and
+   knowledge of the group memberships in one or more multicast groups of
+   each participating node (MTA).  Membership in multicast groups needs
+   to be established before MULE messages can be sent.
+
+   MULE enables MTA-to-MTA transfer.  It doesn't provide service similar
+   to SMTP Submission [<a href="./rfc6409" title='"Message Submission for Mail"'>RFC6409</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Conventions%20Used%20in%20This%20Document"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Conventions Used in This Document</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+   This document also uses terminology from [<a href="./rfc5321" title='"Simple Mail Transfer Protocol"'>RFC5321</a>] and [<a href="./rfc5598" title='"Internet Mail Architecture"'>RFC5598</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20MULE"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  MULE</span>
+
+   MULE is an electronic mail transport of Internet Mail messages
+   [<a href="./rfc5322" title='"Internet Message Format"'>RFC5322</a>] over an ACP 142 P_MUL network.  It provides service similar
+   to MTA-to-MTA SMTP [<a href="./rfc5321" title='"Simple Mail Transfer Protocol"'>RFC5321</a>].  This document doesn't define a service
+   similar to SMTP Submission [<a href="./rfc6409" title='"Message Submission for Mail"'>RFC6409</a>].
+
+   An important feature of MULE is its capability to transport mail
+   across multiple networks, referred to as "MULE mail relaying".  A
+   network consists of the nodes that are mutually accessible by ACP
+   142.  Using MULE, a process can transfer mail to another process on
+   the same ACP 142 network or to some other ACP 142 network via a relay
+   or gateway process accessible to both networks.
+
+   MULE reuses the ESMTP extension framework defined in [<a href="./rfc5321" title='"Simple Mail Transfer Protocol"'>RFC5321</a>].  MULE
+   servers MUST support the following ESMTP extensions: DSN [<a href="./rfc3461" title='"Simple Mail Transfer Protocol (SMTP) Service Extension for Delivery Status Notifications (DSNs)"'>RFC3461</a>],
+   SIZE [<a href="./rfc1870" title='"SMTP Service Extension for Message Size Declaration"'>RFC1870</a>], 8BITMIME [<a href="./rfc6152" title='"SMTP Service Extension for 8-bit MIME Transport"'>RFC6152</a>], MT-PRIORITY [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>], DELIVERBY
+   [<a href="./rfc2852" title='"Deliver By SMTP Service Extension"'>RFC2852</a>], BINARYMIME [<a href="./rfc3030" title='"SMTP Service Extensions for Transmission of Large and Binary MIME Messages"'>RFC3030</a>], and CHUNKING [<a href="./rfc3030" title='"SMTP Service Extensions for Transmission of Large and Binary MIME Messages"'>RFC3030</a>].  (As the
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   message content size can always be determined from the compression
+   wrapper and the size of the envelope, no special handling is needed
+   for binary messages.)
+
+   Relaying a message using MULE is performed as follows:
+
+   1.  The message is reassembled from one or more DATA_PDUs [<a href="#ref-ACP142A" title='"P_Mul - A Protocol for Reliable Multicast in Bandwidth Constrained and Delayed Acknowledgement (EMCON) Environments"'>ACP142A</a>].
+
+   2.  If the contentType-ShortForm value is 25, the BSMTP-like payload
+       is extracted from the compressedContent field and uncompressed
+       (the reverse of the compression process specified in
+       <a href="#section-3.2">Section 3.2</a>).  If the contentType-ShortForm value is not 25, it
+       is handled as described in [<a href="#ref-ACP142A" title='"P_Mul - A Protocol for Reliable Multicast in Bandwidth Constrained and Delayed Acknowledgement (EMCON) Environments"'>ACP142A</a>].  This document doesn't
+       further discuss any cases where the contentType-ShortForm value
+       is not 25.
+
+   3.  The list of recipients is extracted from RCPT-lines (see
+       <a href="#section-3.1">Section 3.1</a>).  If the receiving node is not responsible (directly
+       or indirectly) for any of the recipients, the message is
+       discarded and no further processing is done.
+
+   4.  The relay adds trace header fields, e.g., the Received header
+       field.  See [<a href="./rfc7601" title='"Message Header Field for Indicating Message Authentication Status"'>RFC7601</a>] and <a href="./rfc5321#section-4.4">Section 4.4 of [RFC5321]</a>.
+
+   5.  The set of ACP 142 destinations for the message is created by
+       extracting right-hand sides (hostnames) of each RCPT-line,
+       eliminating duplicates, and then converting each hostname into
+       the next ACP 142 destination using static configuration.
+
+   6.  For each unique ACP 142 destination, the following steps are
+       performed:
+
+       A.  A new BSMTP-like payload is formed, as described in
+           <a href="#section-3.1">Section 3.1</a>, that only contains RCPT-lines that correspond to
+           recipients that can receive mail through the ACP 142
+           destination.
+
+       B.  The created payload is compressed and encoded as specified in
+           <a href="#section-3.2">Section 3.2</a>.
+
+       C.  The compressed payload is sent by P_MUL as a series of an
+           Address_PDU and one or more DATA_PDUs.  When the message has
+           an associated MT-PRIORITY value [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>], the
+           MappedPriority(value) is included as the Priority field of
+           the corresponding ACP 142 PDUs, including Address_PDUs,
+           DATA_PDUs, and DISCARD_MESSAGE_PDUs.  Here, MappedPriority(x)
+           is defined as "6 - x".
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20BSMTP-Like%20Payload%20Construction"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  BSMTP-Like Payload Construction</span>
+
+   MULE uses a BSMTP-like payload that differs from Batch SMTP (BSMTP)
+   [<a href="./rfc2442" title='"The Batch SMTP Media Type"'>RFC2442</a>] in that it eliminates unnecessary information.  As with
+   BSMTP, ESMTP capability negotiation is not used, since receiver EMCON
+   restrictions prohibit such real-time interaction.  For that reason,
+   there is no point in including EHLO capabilities.  "MAIL FROM:" and
+   "RCPT TO:" prefixes are also excluded in order to save a few bytes.
+
+   For each received message, the corresponding BSMTP-like payload is
+   constructed as follows.  Note that lines are terminated using CR LF.
+
+   1.  The first line is what would be used for the data following "MAIL
+       FROM:" in the SMTP dialog, i.e., it contains the return-path
+       address (including the angle brackets -- "&lt;" and "&gt;") followed by
+       any ESMTP extension parameters to the MAIL FROM command.
+
+   2.  After that, there is a separate line for each recipient of the
+       message.  The value is what would follow "RCPT TO:" in the SMTP
+       dialog, i.e., the recipient address (including the angle brackets
+       -- "&lt;" and "&gt;") followed by any ESMTP extension parameters to the
+       corresponding RCPT TO command.
+
+   3.  The list of recipients is terminated by an empty line (i.e., just
+       CR LF).
+
+   4.  The message content follows the empty line.  There is no need for
+       transparency ("dot stuffing") or terminating with a sequence "CR
+       LF . CR LF", as the end of the message content is indicated by
+       the end of the data (see <a href="#section-3.2">Section 3.2</a> for more details).
+
+   The following is an example of a BSMTP-like payload:
+
+  &lt;from@example.com&gt; MT-PRIORITY=4 BODY=8BITMIME RET=HDRS ENVID=QQ314159
+  &lt;to1@example.net&gt; NOTIFY=FAILURE ORCPT=<a href="./rfc822">rfc822</a>;Bob@ent.example.net
+  &lt;to2@example.net&gt; NOTIFY=SUCCESS,FAILURE
+
+  From: from@example.com
+  To: To1 &lt;to1@example.net&gt;, To2 &lt;to2@example.net&gt;
+  Date: 27 Apr 2017 16:17 +0100
+  Subject: a test
+  MIME-Version: 1.0
+  Content-type: text/plain; charset=utf-8
+  Content-transfer-encoding: 8bit
+
+  This is worth &lt;poundsign&gt;100
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   ABNF [<a href="./rfc5234" title='"Augmented BNF for Syntax Specifications: ABNF"'>RFC5234</a>] for the BSMTP-like payload is:
+
+   bsmtp-like-payload = envelope CRLF payload
+   envelope = FROM-line 1*RCPT-line
+   FROM-line = reverse-path [SP mail-parameters] CRLF
+   RCPT-line = forward-path [SP rcpt-parameters] CRLF
+
+   payload = *OCTET
+             ; Conforms to message syntax as defined in <a href="./rfc5322">RFC 5322</a>
+             ; and extended in MIME
+
+   OCTET = &lt;any 0-255 octet value&gt;
+   reverse-path = &lt;as defined in <a href="./rfc5321">RFC 5321</a>&gt;
+   forward-path = &lt;as defined in <a href="./rfc5321">RFC 5321</a>&gt;
+   mail-parameters = &lt;as defined in <a href="./rfc5321">RFC 5321</a>&gt;
+   rcpt-parameters = &lt;as defined in <a href="./rfc5321">RFC 5321</a>&gt;
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Payload%20Compression"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Payload Compression</span>
+
+   A BSMTP-like payload (<a href="#section-3.1">Section 3.1</a>) is first compressed using
+   zlibCompress [<a href="./rfc1950" title='"ZLIB Compressed Data Format Specification version 3.3"'>RFC1950</a>].  This compressed payload is placed in the
+   compressedContent field of the CompressedContentInfo element defined
+   in Section 4.2.6 of [<a href="#ref-STANAG-4406">STANAG-4406</a>].  This is then encoded as BER
+   encoding [<a href="#ref-ITU.X690.2002">ITU.X690.2002</a>] of the CompressedData ASN.1 structure.  For
+   convenience, the original definition of the CompressedData ASN.1
+   structure is included below.  The contentType-ShortForm value used by
+   MULE MUST be 25.  (The contentType-OID alternative is never used by
+   MULE.)
+
+   The above procedure is similar to how X.400 messages are sent using
+   Annex E of [<a href="#ref-STANAG-4406">STANAG-4406</a>].  This makes it easier to implement MTAs
+   that support both Internet messages and X.400 messages in the same
+   code base.
+
+   The Compressed Data Type (CDT) consists of content of any type that
+   is compressed using a specified algorithm.  The following object
+   identifier identifies the CDT:
+
+   id-mmhs-CDT ID ::= { iso(1) identified-organization(3) nato(26)
+                        stanags(0) mmhs(4406) object-identifiers(0)
+                        id-mcont(4) 2 }
+
+   The CDT is defined by the following ASN.1 type.  Note that this
+   definition is copied from [<a href="#ref-STANAG-4406">STANAG-4406</a>] and is only reproduced here
+   for the reader's convenience.
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+ DEFINITIONS ::=
+ BEGIN
+ CompressedData ::= SEQUENCE {
+                    compressionAlgorithm CompressionAlgorithmIdentifier,
+                    compressedContentInfo CompressedContentInfo
+                    }
+ CompressionAlgorithmIdentifier ::= CHOICE {
+                      algorithmID-ShortForm [0] AlgorithmID-ShortForm,
+                      algorithmID-OID [1] OBJECT IDENTIFIER
+                    }
+ AlgorithmID-ShortForm ::= INTEGER { zlibCompress (0) }
+ CompressedContentInfo ::= SEQUENCE {
+                      CHOICE {
+                        contentType-ShortForm [0] ContentType-ShortForm,
+                        contentType-OID [1] OBJECT IDENTIFIER
+                      },
+                      compressedContent [0] EXPLICIT OCTET STRING
+                    }
+ ContentType-ShortForm ::= INTEGER {
+                      unidentified (0),
+                      external (1), -- identified by the
+                                    -- object-identifier
+                                    -- of the EXTERNAL content
+                      p1 (2),
+                      p3 (3),
+                      p7 (4)
+                    }
+ END
+
+   This document effectively adds another enumeration choice to the
+   ContentType-ShortForm definition.  The updated definition looks like
+   this:
+
+   ContentType-ShortForm ::= INTEGER {
+                        unidentified (0),
+                        external (1), -- identified by the
+                                      -- object-identifier
+                                      -- of the EXTERNAL content
+                        p1 (2),
+                        p3 (3),
+                        p7 (4),
+                        mule (25)
+                      }
+
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Error%20Handling"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Error Handling</span>
+
+   MULE doesn't allow a next-hop Message Transfer Agent / Mail Delivery
+   Agent (MTA/MDA) to return immediate Response Codes for the FROM-line
+   or any of the recipients in the RCPT-line.  Therefore, when MTAs/MDAs
+   that are compliant with this specification receive a message that
+   can't be relayed further or delivered, they MUST generate a non-
+   delivery DSN report [<a href="./rfc6522" title='"The Multipart/Report Media Type for the Reporting of Mail System Administrative Messages"'>RFC6522</a>] message that includes the message/
+   delivery-status body part [<a href="./rfc3464" title='"An Extensible Message Format for Delivery Status Notifications"'>RFC3464</a>] and submit it using MULE to the
+   FROM-line return-path address.
+
+   MULE relays (unlike MULE MDAs) don't need to verify that they
+   understand all FROM-line and/or RCPT-line parameters.  This keeps
+   relay-only implementations simpler and avoids the need to upgrade
+   them when MULE MDAs are updated to support extra SMTP extensions.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Gatewaying%20from%20Internet%20Mail%20to%20MULE"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Gatewaying from Internet Mail to MULE</span>
+
+   A gateway from Internet Mail to MULE acts as an SMTP server on the
+   receiving side and as a MULE client on the sending side.
+
+   When the content type for a message is an Internet message content
+   type (which may be 7-bit, 8-bit, or binary MIME), this is transported
+   using ACP 142 [<a href="#ref-ACP142A" title='"P_Mul - A Protocol for Reliable Multicast in Bandwidth Constrained and Delayed Acknowledgement (EMCON) Environments"'>ACP142A</a>] as follows:
+
+   1.  For each mail message, a BSMTP-like payload is formed, as
+       described in <a href="#section-3.1">Section 3.1</a>.
+
+   2.  The created payload is compressed and encoded, as specified in
+       <a href="#section-3.2">Section 3.2</a>.
+
+   3.  The compressed payload is sent by P_MUL as a series of an
+       Address_PDU and one or more DATA_PDUs.  When the message has an
+       associated MT-PRIORITY value [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>], the MappedPriority(value)
+       is included as the Priority field of the corresponding ACP 142
+       PDUs, including Address_PDUs, DATA_PDUs, and
+       DISCARD_MESSAGE_PDUs.  Here, MappedPriority(x) is defined as "6 -
+       x".
+
+   The set of ACP 142 destinations for the message is derived from the
+   next-hop MTAs for each of the recipients.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Use%20of%20BDAT"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Use of BDAT</span>
+
+   If a message is received by a gateway through SMTP transfers using
+   the CHUNKING [<a href="./rfc3030" title='"SMTP Service Extensions for Transmission of Large and Binary MIME Messages"'>RFC3030</a>] extension, the message is rebuilt by the
+   receiving MTA into its complete form and is then used as a single
+   MULE message payload.  Use of the BINARYMIME [<a href="./rfc3030" title='"SMTP Service Extensions for Transmission of Large and Binary MIME Messages"'>RFC3030</a>] extension is
+   conveyed by inclusion of the BODY=BINARY parameter in the FROM-line.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Gatewaying%20from%20MULE%20to%20Internet%20Mail"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Gatewaying from MULE to Internet Mail</span>
+
+   A gateway from MULE to Internet Mail acts as a MULE server on the
+   receiving side and as an SMTP client on the sending side.
+
+   Gatewaying from an ACP 142 environment to Internet Email is the
+   reverse of the process specified in <a href="#section-4">Section 4</a>.
+
+   1.  The ACP 142 message is reassembled from one or more DATA_PDUs.
+
+   2.  If the contentType-ShortForm value is 25, the BSMTP-like payload
+       is extracted from the compressedContent field and uncompressed
+       (the reverse of the compression process specified in
+       <a href="#section-3.2">Section 3.2</a>).  If the contentType-ShortForm value is not 25, it
+       is handled as described in [<a href="#ref-ACP142A" title='"P_Mul - A Protocol for Reliable Multicast in Bandwidth Constrained and Delayed Acknowledgement (EMCON) Environments"'>ACP142A</a>].
+
+   3.  The BSMTP-like payload is converted to an SMTP transaction (see
+       <a href="#section-3.1">Section 3.1</a>).  (The first line of the BSMTP-like payload is
+       prepended with "MAIL FROM:", and each following line (until the
+       empty line is encountered) is prepended with "RCPT TO:".  After
+       skipping the empty delimiting line, the rest of the payload is
+       the message body.  This can be sent using either DATA or a series
+       of BDAT commands, depending on the capabilities of the receiving
+       SMTP system.  For example, the presence of the BODY=BINARY
+       parameter in the FROM-line would necessitate the use of BDAT or
+       down-conversion of the message to 7-bit compatible
+       representation.)
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Handling%20of%20ESMTP%20Extensions%20and%20Errors"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Handling of ESMTP Extensions and Errors</span>
+
+   ESMTP extension parameters to MAIL FROM and RCPT TO SMTP commands
+   obtained from a BSMTP-like payload are processed according to
+   specifications of the corresponding ESMTP extensions.  This includes
+   dealing with the absence of support for ESMTP extensions that
+   correspond to MAIL FROM and RCPT TO parameters found in the BSMTP-
+   like payload.
+
+   Failures to extract or uncompress BSMTP-like payloads should result
+   in the receiver discarding such payloads.
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  IANA Considerations</span>
+
+   IANA has created a new "Multicast Email SMTP Extensions" registry
+   under the "MAIL Parameters" registry.  The registration procedure for
+   this new registry is "Specification Required" [<a href="./rfc8126" title="">RFC8126</a>].  The
+   designated expert(s) will be appointed and managed by the editors of
+   this document together with the Independent Submissions Editor.
+   Selected designated expert(s) should (collectively) have a good
+   knowledge of SMTP (and its extensions and extensibility mechanisms),
+   as well as ACP 142 and its limitations.  The subsections below
+   provide more details: <a href="#section-6.1">Section 6.1</a> specifies instructions for the
+   designated expert(s), and <a href="#section-6.2">Section 6.2</a> defines the initial content of
+   the registry.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Instructions%20for%20Designated%20Experts"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Instructions for Designated Experts</span>
+
+   The designated expert(s) for the new "Multicast Email SMTP
+   Extensions" registry verifies that:
+
+   1.  The requested SMTP extension is already registered in the "SMTP
+       Service Extensions" registry under the "MAIL Parameters" registry
+       on the IANA website or is well documented on a stable, publicly
+       accessible web page.
+
+   2.  The requested SMTP extension has the correct status as specified
+       in <a href="#section-6.2">Section 6.2</a>.  When deciding on status, the designated
+       expert(s) is provided with the following guidelines:
+
+       A.  If the SMTP extension only affects commands other than MAIL
+           FROM and RCPT TO, then the status should be "N/A".
+
+       B.  If the SMTP extension only applies to SMTP Submission
+           [<a href="./rfc6409" title='"Message Submission for Mail"'>RFC6409</a>] (and not to SMTP relay or final SMTP delivery),
+           then the status should be "N/A".
+
+       C.  If the SMTP extension changes which commands are allowed
+           during an SMTP transaction (e.g., if it adds commands
+           alternative to DATA or declares commands other than MAIL
+           FROM, RCPT TO, DATA, and BDAT to be a part of SMTP
+           transaction), then the status should be "Disallowed" or
+           "Special".
+
+       D.  If the SMTP extension adds extra round trips during SMTP
+           transaction, then the status should be "Disallowed" or
+           "Special".
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   Registration requests should include the SMTP extension name, status
+   (see <a href="#section-6.2">Section 6.2</a>), and specification reference.  They may also
+   include an optional note.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20SMTP%20Extension%20Support%20in%20MULE"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  SMTP Extension Support in MULE</span>
+
+   The following table summarizes how different SMTP extensions can be
+   used with MULE.  Each extension has one of the following statuses:
+
+   o  Required - support by MULE relays, SMTP-to-MULE gateway, or MULE-
+      to-SMTP gateway is required.
+
+   o  Disallowed - incompatible with MULE.
+
+   o  N/A - not relevant because the extension affects commands other
+      than MAIL FROM and/or RCPT TO or is only defined for SMTP
+      Submission [<a href="./rfc6409" title='"Message Submission for Mail"'>RFC6409</a>].  Such extensions can still be used on the
+      receiving SMTP side of an SMTP-to-MULE gateway.
+
+   o  Supported - can be used with MULE but requires bilateral agreement
+      between sender and receiver.
+
+   o  Special - needs to be accompanied by an explanation.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+          +------------------------+---------------+-----------+
+          | SMTP Extension Keyword | Status        | Reference |
+          +------------------------+---------------+-----------+
+          | SIZE                   | Required      | [<a href="./rfc1870" title='"SMTP Service Extension for Message Size Declaration"'>RFC1870</a>] |
+          |                        |               |           |
+          | 8BITMIME               | Required      | [<a href="./rfc6152" title='"SMTP Service Extension for 8-bit MIME Transport"'>RFC6152</a>] |
+          |                        |               |           |
+          | DSN                    | Required      | [<a href="./rfc3461" title='"Simple Mail Transfer Protocol (SMTP) Service Extension for Delivery Status Notifications (DSNs)"'>RFC3461</a>] |
+          |                        |               |           |
+          | MT-PRIORITY            | Required      | [<a href="./rfc6710" title='"Simple Mail Transfer Protocol Extension for Message Transfer Priorities"'>RFC6710</a>] |
+          |                        |               |           |
+          | DELIVERBY              | Required      | [<a href="./rfc2852" title='"Deliver By SMTP Service Extension"'>RFC2852</a>] |
+          |                        |               |           |
+          | BINARYMIME             | Required      | [<a href="./rfc3030" title='"SMTP Service Extensions for Transmission of Large and Binary MIME Messages"'>RFC3030</a>] |
+          |                        |               |           |
+          | CHUNKING               | Special (*)   | [<a href="./rfc3030" title='"SMTP Service Extensions for Transmission of Large and Binary MIME Messages"'>RFC3030</a>] |
+          |                        |               |           |
+          | ENHANCEDSTATUSCODES    | Special (**)  | [<a href="./rfc2034" title='"SMTP Service Extension for Returning Enhanced Error Codes"'>RFC2034</a>] |
+          |                        |               |           |
+          | RRVS                   | Supported     | [<a href="./rfc7293" title='"The Require-Recipient-Valid- Since Header Field and SMTP Service Extension"'>RFC7293</a>] |
+          |                        |               |           |
+          | SUBMITTER              | Supported     | [<a href="./rfc4405" title='"SMTP Service Extension for Indicating the Responsible Submitter of an E-Mail Message"'>RFC4405</a>] |
+          |                        |               |           |
+          | PIPELINING             | N/A           | [<a href="./rfc2920" title='"SMTP Service Extension for Command Pipelining"'>RFC2920</a>] |
+          |                        |               |           |
+          | STARTTLS               | N/A           | [<a href="./rfc3207" title='"SMTP Service Extension for Secure SMTP over Transport Layer Security"'>RFC3207</a>] |
+          |                        |               |           |
+          | AUTH                   | Special (***) | [<a href="./rfc4954" title='"SMTP Service Extension for Authentication"'>RFC4954</a>] |
+          |                        |               |           |
+          | BURL                   | N/A           | [<a href="./rfc4468" title='"Message Submission BURL Extension"'>RFC4468</a>] |
+          |                        |               |           |
+          | NO-SOLICITING          | N/A           | [<a href="./rfc3865" title='"A No Soliciting Simple Mail Transfer Protocol (SMTP) Service Extension"'>RFC3865</a>] |
+          |                        |               |           |
+          | CHECKPOINT             | Disallowed    | [<a href="./rfc1845" title='"SMTP Service Extension for Checkpoint/Restart"'>RFC1845</a>] |
+          |                        |               |           |
+          | CONNEG                 | Disallowed    | [<a href="./rfc4141" title='"SMTP and MIME Extensions for Content Conversion"'>RFC4141</a>] |
+          +------------------------+---------------+-----------+
+
+   Table 1: Initial Content of Multicast Email SMTP Extensions Registry
+
+   (*) - SMTP CHUNKING MUST be supported on the receiving SMTP side of
+   an SMTP-to-MULE gateway and MAY be used on the sending side of a
+   MULE-to-SMTP gateway.  A MULE relay doesn't need to do anything
+   special for this extension.
+
+   (**) - The ENHANCEDSTATUSCODES extension is supported by including
+   relevant status codes in DSN [<a href="./rfc3461" title='"Simple Mail Transfer Protocol (SMTP) Service Extension for Delivery Status Notifications (DSNs)"'>RFC3461</a>] reports.
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   (***) - The AUTH parameter to the MAIL FROM command is "Supported",
+   but the rest of the AUTH extension is not applicable to MULE.
+
+   Note that the above table is not exhaustive.  Future RFCs can define
+   how SMTP extensions not listed above can be used in MULE.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Security Considerations</span>
+
+   As MULE provides a service similar to SMTP, many of the security
+   considerations from [<a href="./rfc5321" title='"Simple Mail Transfer Protocol"'>RFC5321</a>] apply to MULE as well; in particular,
+   Sections <a href="#section-7.1">7.1</a>, <a href="#section-7.2">7.2</a>, <a href="#section-7.4">7.4</a>, <a href="#section-7.6">7.6</a>, <a href="#section-7.7">7.7</a>, and <a href="#section-7.9">7.9</a> of [<a href="./rfc5321" title='"Simple Mail Transfer Protocol"'>RFC5321</a>] apply to MULE.
+
+   As MULE doesn't support capability negotiation or the SMTP HELP
+   command, <a href="./rfc5321#section-7.5">Section 7.5 of [RFC5321]</a> ("Information Disclosure in
+   Announcements") doesn't apply to MULE.
+
+   As MULE doesn't support the VRFY or EXPN SMTP commands, <a href="./rfc5321#section-7.3">Section 7.3
+   of [RFC5321]</a> ("VRFY, EXPN, and Security"), which discusses email
+   harvesting, doesn't apply to MULE.
+
+   Arguably, it is more difficult to cause an application-layer denial-
+   of-service attack on a MULE server than on an SMTP server.  This is
+   partially due to the fact that ACP 142 is used in radio/wireless
+   networks with relatively low bandwidth and very long round-trip time
+   (especially if EMCON is in force).  However, as MULE is using
+   multicast, multiple MULE nodes can receive the same message and spend
+   CPU resources processing it, even if the message is addressed to
+   recipients that are not going to be handled by such nodes.  As MULE
+   lacks transport-layer source authentication, this can be abused by
+   malicious senders.
+
+   For security considerations related to use of zlib compression, see
+   [<a href="./rfc6713" title="&quot;The 'application/zlib' and 'application/gzip' Media Types&quot;">RFC6713</a>].
+
+   Due to the multicast nature of MULE, it cannot use TLS or DTLS.
+   Accordingly, it does not support STARTTLS [<a href="./rfc3207" title='"SMTP Service Extension for Secure SMTP over Transport Layer Security"'>RFC3207</a>].  Users should
+   not depend on hop-by-hop confidentiality or integrity protection of
+   mail transferred among MULE MTAs (in the same way they can't
+   generally rely on the use of STARTTLS on SMTP MTA-to-MTA links) and
+   should consider the use of end-to-end protection, such as S/MIME
+   [<a href="./rfc5750" title='"Secure/Multipurpose Internet Mail Extensions (S/MIME) Version 3.2 Certificate Handling"'>RFC5750</a>] [<a href="./rfc5751" title='"Secure/Multipurpose Internet Mail Extensions (S/MIME) Version 3.2 Message Specification"'>RFC5751</a>].
+
+   S/MIME signatures and/or encryption survive gatewaying between MULE
+   and SMTP environments.
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20References"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Normative%20References"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Normative References</span>
+
+   [<a id="ref-ACP142A">ACP142A</a>]  CCEB, "P_Mul - A Protocol for Reliable Multicast in
+              Bandwidth Constrained and Delayed Acknowledgement (EMCON)
+              Environments", ACP 142(A), October 2008.
+
+   [<a id="ref-ITU.X690.2002">ITU.X690.2002</a>]
+              ITU-T, "Information Technology - ASN.1 encoding rules:
+              Specification of Basic Encoding Rules (BER), Canonical
+              Encoding Rules (CER) and Distinguished Encoding Rules
+              (DER)", ITU-T Recommendation X.690, August 2015.
+
+   [<a id="ref-RFC1870">RFC1870</a>]  Klensin, J., Freed, N., and K. Moore, "SMTP Service
+              Extension for Message Size Declaration", STD 10, <a href="./rfc1870">RFC 1870</a>,
+              DOI 10.17487/RFC1870, November 1995,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc1870">https://www.rfc-editor.org/info/rfc1870</a>&gt;.
+
+   [<a id="ref-RFC1950">RFC1950</a>]  Deutsch, P. and J-L. Gailly, "ZLIB Compressed Data Format
+              Specification version 3.3", <a href="./rfc1950">RFC 1950</a>,
+              DOI 10.17487/RFC1950, May 1996,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc1950">https://www.rfc-editor.org/info/rfc1950</a>&gt;.
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC2852">RFC2852</a>]  Newman, D., "Deliver By SMTP Service Extension", <a href="./rfc2852">RFC 2852</a>,
+              DOI 10.17487/RFC2852, June 2000,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2852">https://www.rfc-editor.org/info/rfc2852</a>&gt;.
+
+   [<a id="ref-RFC3030">RFC3030</a>]  Vaudreuil, G., "SMTP Service Extensions for Transmission
+              of Large and Binary MIME Messages", <a href="./rfc3030">RFC 3030</a>,
+              DOI 10.17487/RFC3030, December 2000,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3030">https://www.rfc-editor.org/info/rfc3030</a>&gt;.
+
+   [<a id="ref-RFC3461">RFC3461</a>]  Moore, K., "Simple Mail Transfer Protocol (SMTP) Service
+              Extension for Delivery Status Notifications (DSNs)",
+              <a href="./rfc3461">RFC 3461</a>, DOI 10.17487/RFC3461, January 2003,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3461">https://www.rfc-editor.org/info/rfc3461</a>&gt;.
+
+   [<a id="ref-RFC3464">RFC3464</a>]  Moore, K. and G. Vaudreuil, "An Extensible Message Format
+              for Delivery Status Notifications", <a href="./rfc3464">RFC 3464</a>,
+              DOI 10.17487/RFC3464, January 2003,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3464">https://www.rfc-editor.org/info/rfc3464</a>&gt;.
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   [<a id="ref-RFC5234">RFC5234</a>]  Crocker, D., Ed. and P. Overell, "Augmented BNF for Syntax
+              Specifications: ABNF", STD 68, <a href="./rfc5234">RFC 5234</a>,
+              DOI 10.17487/RFC5234, January 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5234">https://www.rfc-editor.org/info/rfc5234</a>&gt;.
+
+   [<a id="ref-RFC5321">RFC5321</a>]  Klensin, J., "Simple Mail Transfer Protocol", <a href="./rfc5321">RFC 5321</a>,
+              DOI 10.17487/RFC5321, October 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5321">https://www.rfc-editor.org/info/rfc5321</a>&gt;.
+
+   [<a id="ref-RFC5322">RFC5322</a>]  Resnick, P., Ed., "Internet Message Format", <a href="./rfc5322">RFC 5322</a>,
+              DOI 10.17487/RFC5322, October 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5322">https://www.rfc-editor.org/info/rfc5322</a>&gt;.
+
+   [<a id="ref-RFC5598">RFC5598</a>]  Crocker, D., "Internet Mail Architecture", <a href="./rfc5598">RFC 5598</a>,
+              DOI 10.17487/RFC5598, July 2009,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5598">https://www.rfc-editor.org/info/rfc5598</a>&gt;.
+
+   [<a id="ref-RFC6152">RFC6152</a>]  Klensin, J., Freed, N., Rose, M., and D. Crocker, Ed.,
+              "SMTP Service Extension for 8-bit MIME Transport", STD 71,
+              <a href="./rfc6152">RFC 6152</a>, DOI 10.17487/RFC6152, March 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6152">https://www.rfc-editor.org/info/rfc6152</a>&gt;.
+
+   [<a id="ref-RFC6522">RFC6522</a>]  Kucherawy, M., Ed., "The Multipart/Report Media Type for
+              the Reporting of Mail System Administrative Messages",
+              STD 73, <a href="./rfc6522">RFC 6522</a>, DOI 10.17487/RFC6522, January 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6522">https://www.rfc-editor.org/info/rfc6522</a>&gt;.
+
+   [<a id="ref-RFC6710">RFC6710</a>]  Melnikov, A. and K. Carlberg, "Simple Mail Transfer
+              Protocol Extension for Message Transfer Priorities",
+              <a href="./rfc6710">RFC 6710</a>, DOI 10.17487/RFC6710, August 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6710">https://www.rfc-editor.org/info/rfc6710</a>&gt;.
+
+   [<a id="ref-RFC6713">RFC6713</a>]  Levine, J., "The 'application/zlib' and 'application/gzip'
+              Media Types", <a href="./rfc6713">RFC 6713</a>, DOI 10.17487/RFC6713, August 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6713">https://www.rfc-editor.org/info/rfc6713</a>&gt;.
+
+   [<a id="ref-RFC7601">RFC7601</a>]  Kucherawy, M., "Message Header Field for Indicating
+              Message Authentication Status", <a href="./rfc7601">RFC 7601</a>,
+              DOI 10.17487/RFC7601, August 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7601">https://www.rfc-editor.org/info/rfc7601</a>&gt;.
+
+   [<a id="ref-RFC8126">RFC8126</a>]  Cotton, M., Leiba, B., and T. Narten, "Guidelines for
+              Writing an IANA Considerations Section in RFCs", <a href="https://www.rfc-editor.org/bcp/bcp26">BCP 26</a>,
+              <a href="./rfc8126">RFC 8126</a>, DOI 10.17487/RFC8126, June 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8126">https://www.rfc-editor.org/info/rfc8126</a>&gt;.
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+   [<a id="ref-STANAG-4406">STANAG-4406</a>]
+              NATO, "Military Message Handling System", STANAG 4406 Ed.
+              2, March 2005.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.%20%20Informative%20References"></a><a class="selflink" href="#section-8.2" id="section-8.2">8.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC1845">RFC1845</a>]  Crocker, D., Freed, N., and A. Cargille, "SMTP Service
+              Extension for Checkpoint/Restart", <a href="./rfc1845">RFC 1845</a>,
+              DOI 10.17487/RFC1845, September 1995,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc1845">https://www.rfc-editor.org/info/rfc1845</a>&gt;.
+
+   [<a id="ref-RFC2034">RFC2034</a>]  Freed, N., "SMTP Service Extension for Returning Enhanced
+              Error Codes", <a href="./rfc2034">RFC 2034</a>, DOI 10.17487/RFC2034, October
+              1996, &lt;<a href="https://www.rfc-editor.org/info/rfc2034">https://www.rfc-editor.org/info/rfc2034</a>&gt;.
+
+   [<a id="ref-RFC2442">RFC2442</a>]  Freed, N., Newman, D., Belissent, J., and M. Hoy, "The
+              Batch SMTP Media Type", <a href="./rfc2442">RFC 2442</a>, DOI 10.17487/RFC2442,
+              November 1998, &lt;<a href="https://www.rfc-editor.org/info/rfc2442">https://www.rfc-editor.org/info/rfc2442</a>&gt;.
+
+   [<a id="ref-RFC2920">RFC2920</a>]  Freed, N., "SMTP Service Extension for Command
+              Pipelining", STD 60, <a href="./rfc2920">RFC 2920</a>, DOI 10.17487/RFC2920,
+              September 2000, &lt;<a href="https://www.rfc-editor.org/info/rfc2920">https://www.rfc-editor.org/info/rfc2920</a>&gt;.
+
+   [<a id="ref-RFC3207">RFC3207</a>]  Hoffman, P., "SMTP Service Extension for Secure SMTP over
+              Transport Layer Security", <a href="./rfc3207">RFC 3207</a>, DOI 10.17487/RFC3207,
+              February 2002, &lt;<a href="https://www.rfc-editor.org/info/rfc3207">https://www.rfc-editor.org/info/rfc3207</a>&gt;.
+
+   [<a id="ref-RFC3865">RFC3865</a>]  Malamud, C., "A No Soliciting Simple Mail Transfer
+              Protocol (SMTP) Service Extension", <a href="./rfc3865">RFC 3865</a>,
+              DOI 10.17487/RFC3865, September 2004,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3865">https://www.rfc-editor.org/info/rfc3865</a>&gt;.
+
+   [<a id="ref-RFC4141">RFC4141</a>]  Toyoda, K. and D. Crocker, "SMTP and MIME Extensions for
+              Content Conversion", <a href="./rfc4141">RFC 4141</a>, DOI 10.17487/RFC4141,
+              November 2005, &lt;<a href="https://www.rfc-editor.org/info/rfc4141">https://www.rfc-editor.org/info/rfc4141</a>&gt;.
+
+   [<a id="ref-RFC4405">RFC4405</a>]  Allman, E. and H. Katz, "SMTP Service Extension for
+              Indicating the Responsible Submitter of an E-Mail
+              Message", <a href="./rfc4405">RFC 4405</a>, DOI 10.17487/RFC4405, April 2006,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4405">https://www.rfc-editor.org/info/rfc4405</a>&gt;.
+
+   [<a id="ref-RFC4468">RFC4468</a>]  Newman, C., "Message Submission BURL Extension", <a href="./rfc4468">RFC 4468</a>,
+              DOI 10.17487/RFC4468, May 2006,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4468">https://www.rfc-editor.org/info/rfc4468</a>&gt;.
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+   [<a id="ref-RFC4954">RFC4954</a>]  Siemborski, R., Ed. and A. Melnikov, Ed., "SMTP Service
+              Extension for Authentication", <a href="./rfc4954">RFC 4954</a>,
+              DOI 10.17487/RFC4954, July 2007,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4954">https://www.rfc-editor.org/info/rfc4954</a>&gt;.
+
+   [<a id="ref-RFC5750">RFC5750</a>]  Ramsdell, B. and S. Turner, "Secure/Multipurpose Internet
+              Mail Extensions (S/MIME) Version 3.2 Certificate
+              Handling", <a href="./rfc5750">RFC 5750</a>, DOI 10.17487/RFC5750, January 2010,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5750">https://www.rfc-editor.org/info/rfc5750</a>&gt;.
+
+   [<a id="ref-RFC5751">RFC5751</a>]  Ramsdell, B. and S. Turner, "Secure/Multipurpose Internet
+              Mail Extensions (S/MIME) Version 3.2 Message
+              Specification", <a href="./rfc5751">RFC 5751</a>, DOI 10.17487/RFC5751, January
+              2010, &lt;<a href="https://www.rfc-editor.org/info/rfc5751">https://www.rfc-editor.org/info/rfc5751</a>&gt;.
+
+   [<a id="ref-RFC6409">RFC6409</a>]  Gellens, R. and J. Klensin, "Message Submission for Mail",
+              STD 72, <a href="./rfc6409">RFC 6409</a>, DOI 10.17487/RFC6409, November 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6409">https://www.rfc-editor.org/info/rfc6409</a>&gt;.
+
+   [<a id="ref-RFC7293">RFC7293</a>]  Mills, W. and M. Kucherawy, "The Require-Recipient-Valid-
+              Since Header Field and SMTP Service Extension", <a href="./rfc7293">RFC 7293</a>,
+              DOI 10.17487/RFC7293, July 2014,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7293">https://www.rfc-editor.org/info/rfc7293</a>&gt;.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Wilson &amp; Melnikov             Informational                    [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc8494">RFC 8494</a>                   Email over ACP 142              November 2018</span>
+
+
+Acknowledgements
+
+   Thank you to Steve Kille for suggestions, comments, and corrections
+   on this document.  An additional thank you goes to Barry Leiba, Sean
+   Turner, Dave Crocker, and Nick Hudson for reviews and comments on
+   this document.
+
+   Some text was borrowed from "P_Mul: An Application Protocol for the
+   Transfer of Messages over Multicast Subnetworks and under EMCON
+   Restrictions" (September 1997); we gratefully acknowledge the work of
+   the authors of that document.
+
+Authors' Addresses
+
+   David Wilson
+   Isode Ltd
+   14 Castle Mews
+   Hampton, Middlesex  TW12 2NP
+   United Kingdom
+
+   Email: David.Wilson@isode.com
+
+
+   Alexey Melnikov (editor)
+   Isode Ltd
+   14 Castle Mews
+   Hampton, Middlesex  TW12 2NP
+   United Kingdom
+
+   Email: Alexey.Melnikov@isode.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Wilson &amp; Melnikov             Informational                    [Page 19]
+</pre>
+</body></html>

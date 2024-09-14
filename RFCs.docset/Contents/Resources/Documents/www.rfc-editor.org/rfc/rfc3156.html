@@ -1,0 +1,838 @@
+<html><head></head><body><pre>Network Working Group                                          M. Elkins
+Request for Comments: 3156                      Network Associates, Inc.
+Updates: <a href="./rfc2015">2015</a>                                               D. Del Torto
+Category: Standards Track                        CryptoRights Foundation
+                                                               R. Levien
+                                    University of California at Berkeley
+                                                             T. Roessler
+                                                             August 2001
+
+
+                       <span class="h1">MIME Security with OpenPGP</span>
+
+Status of this Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2001).  All Rights Reserved.
+
+Abstract
+
+   This document describes how the OpenPGP Message Format can be used to
+   provide privacy and authentication using the Multipurpose Internet
+   Mail Extensions (MIME) security content types described in <a href="./rfc1847">RFC 1847</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   Work on integrating PGP (Pretty Good Privacy) with MIME [<a href="#ref-3" title='"Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types"'>3</a>]
+   (including the since withdrawn "application/pgp" content type) prior
+   to <a href="./rfc2015">RFC 2015</a> suffered from a number of problems, the most significant
+   of which is the inability to recover signed message bodies without
+   parsing data structures specific to PGP.  <a href="./rfc2015">RFC 2015</a> makes use of the
+   elegant solution proposed in <a href="./rfc1847">RFC 1847</a>, which defines security
+   multipart formats for MIME.  The security multiparts clearly separate
+   the signed message body from the signature, and have a number of
+   other desirable properties.  This document revises <a href="./rfc2015">RFC 2015</a> to adopt
+   the integration of PGP and MIME to the needs which emerged during the
+   work on the OpenPGP specification.
+
+   This document defines three content types for implementing security
+   and privacy with OpenPGP: "application/pgp-encrypted",
+   "application/pgp-signature" and "application/pgp-keys".
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20OpenPGP%20data%20formats"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  OpenPGP data formats</span>
+
+   OpenPGP implementations can generate either ASCII armor (described in
+   [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>]) or 8-bit binary output when encrypting data, generating a
+   digital signature, or extracting public key data.  The ASCII armor
+   output is the REQUIRED method for data transfer.  This allows those
+   users who do not have the means to interpret the formats described in
+   this document to be able to extract and use the OpenPGP information
+   in the message.
+
+   When the amount of data to be transmitted requires that it be sent in
+   many parts, the MIME message/partial mechanism SHOULD be used rather
+   than the multi-part ASCII armor OpenPGP format.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Content-Transfer-Encoding%20restrictions"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Content-Transfer-Encoding restrictions</span>
+
+   Multipart/signed and multipart/encrypted are to be treated by agents
+   as opaque, meaning that the data is not to be altered in any way [<a href="#ref-2" title='"Security Multiparts for MIME: Multipart/Signed and Multipart/Encrypted"'>2</a>],
+   [<a href="#ref-7" title='"Gateways and MIME Security Multiparts"'>7</a>].  However, many existing mail gateways will detect if the next
+   hop does not support MIME or 8-bit data and perform conversion to
+   either Quoted-Printable or Base64.  This presents serious problems
+   for multipart/signed, in particular, where the signature is
+   invalidated when such an operation occurs.  For this reason all data
+   signed according to this protocol MUST be constrained to 7 bits (8-
+   bit data MUST be encoded using either Quoted-Printable or Base64).
+   Note that this also includes the case where a signed object is also
+   encrypted (see <a href="#section-6">section 6</a>).  This restriction will increase the
+   likelihood that the signature will be valid upon receipt.
+
+   Additionally, implementations MUST make sure that no trailing
+   whitespace is present after the MIME encoding has been applied.
+
+      Note: In most cases, trailing whitespace can either be removed, or
+      protected by applying an appropriate content-transfer-encoding.
+      However, special care must be taken when any header lines - either
+      in MIME entity headers, or in embedded <a href="./rfc822">RFC 822</a> headers - are
+      present which only consist of whitespace: Such lines must be
+      removed entirely, since replacing them by empty lines would turn
+      them into header delimiters, and change the semantics of the
+      message.  The restrictions on whitespace are necessary in order to
+      make the hash calculated invariant under the text and binary mode
+      signature mechanisms provided by OpenPGP [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>].  Also, they help to
+      avoid compatibility problems with PGP implementations which
+      predate the OpenPGP specification.
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+      Note: If any line begins with the string "From ", it is strongly
+      suggested that either the Quoted-Printable or Base64 MIME encoding
+      be applied.  If Quoted-Printable is used, at least one of the
+      characters in the string should be encoded using the hexadecimal
+      coding rule.  This is because many mail transfer and delivery
+      agents treat "From " (the word "from" followed immediately by a
+      space character) as the start of a new message and thus insert a
+      right angle-bracket (&gt;) in front of any line beginning with
+      "From " to distinguish this case, invalidating the signature.
+
+   Data that is ONLY to be encrypted is allowed to contain 8-bit
+   characters and trailing whitespace and therefore need not undergo the
+   conversion to a 7bit format, and the stripping of whitespace.
+
+      Implementor's note: It cannot be stressed enough that applications
+      using this standard follow MIME's suggestion that you "be
+      conservative in what you generate, and liberal in what you
+      accept."  In this particular case it means it would be wise for an
+      implementation to accept messages with any content-transfer-
+      encoding, but restrict generation to the 7-bit format required by
+      this memo.  This will allow future compatibility in the event the
+      Internet SMTP framework becomes 8-bit friendly.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20OpenPGP%20encrypted%20data"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  OpenPGP encrypted data</span>
+
+   Before OpenPGP encryption, the data is written in MIME canonical
+   format (body and headers).
+
+   OpenPGP encrypted data is denoted by the "multipart/encrypted"
+   content type, described in [<a href="#ref-2" title='"Security Multiparts for MIME: Multipart/Signed and Multipart/Encrypted"'>2</a>], and MUST have a "protocol" parameter
+   value of "application/pgp-encrypted".  Note that the value of the
+   parameter MUST be enclosed in quotes.
+
+   The multipart/encrypted MIME body MUST consist of exactly two body
+   parts, the first with content type "application/pgp-encrypted".  This
+   body contains the control information.  A message complying with this
+   standard MUST contain a "Version: 1" field in this body.  Since the
+   OpenPGP packet format contains all other information necessary for
+   decrypting, no other information is required here.
+
+   The second MIME body part MUST contain the actual encrypted data.  It
+   MUST be labeled with a content type of "application/octet-stream".
+
+   Example message:
+
+      From: Michael Elkins &lt;elkins@aero.org&gt;
+      To: Michael Elkins &lt;elkins@aero.org&gt;
+      Mime-Version: 1.0
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+      Content-Type: multipart/encrypted; boundary=foo;
+         protocol="application/pgp-encrypted"
+
+      --foo
+      Content-Type: application/pgp-encrypted
+
+      Version: 1
+
+      --foo
+      Content-Type: application/octet-stream
+
+      -----BEGIN PGP MESSAGE-----
+      Version: 2.6.2
+
+      hIwDY32hYGCE8MkBA/wOu7d45aUxF4Q0RKJprD3v5Z9K1YcRJ2fve87lMlDlx4Oj
+      eW4GDdBfLbJE7VUpp13N19GL8e/AqbyyjHH4aS0YoTk10QQ9nnRvjY8nZL3MPXSZ
+      g9VGQxFeGqzykzmykU6A26MSMexR4ApeeON6xzZWfo+0yOqAq6lb46wsvldZ96YA
+      AABH78hyX7YX4uT1tNCWEIIBoqqvCeIMpp7UQ2IzBrXg6GtukS8NxbukLeamqVW3
+      1yt21DYOjuLzcMNe/JNsD9vDVCvOOG3OCi8=
+      =zzaA
+      -----END PGP MESSAGE-----
+
+      --foo--
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20OpenPGP%20signed%20data"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  OpenPGP signed data</span>
+
+   OpenPGP signed messages are denoted by the "multipart/signed" content
+   type, described in [<a href="#ref-2" title='"Security Multiparts for MIME: Multipart/Signed and Multipart/Encrypted"'>2</a>], with a "protocol" parameter which MUST have a
+   value of "application/pgp-signature" (MUST be quoted).
+
+   The "micalg" parameter for the "application/pgp-signature" protocol
+   MUST contain exactly one hash-symbol of the format "pgp-&lt;hash-
+   identifier&gt;", where &lt;hash-identifier&gt; identifies the Message
+   Integrity Check (MIC) algorithm used to generate the signature.
+   Hash-symbols are constructed from the text names registered in [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>] or
+   according to the mechanism defined in that document by converting the
+   text name to lower case and prefixing it with the four characters
+   "pgp-".
+
+   Currently defined values are "pgp-md5", "pgp-sha1", "pgp-ripemd160",
+   "pgp-md2", "pgp-tiger192", and "pgp-haval-5-160".
+
+   The multipart/signed body MUST consist of exactly two parts.  The
+   first part contains the signed data in MIME canonical format,
+   including a set of appropriate content headers describing the data.
+
+   The second body MUST contain the OpenPGP digital signature.  It MUST
+   be labeled with a content type of "application/pgp-signature".
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+      Note: Implementations can either generate "signatures of a
+      canonical text document" or "signatures of a binary document", as
+      defined in [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>].  The restrictions on the signed material put forth
+      in <a href="#section-3">section 3</a> and in this section will make sure that the various
+      MIC algorithm variants specified in [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>] and [<a href="#ref-5" title='"PGP Message Exchange Formats"'>5</a>] will all produce
+      the same result.
+
+   When the OpenPGP digital signature is generated:
+
+   (1)   The data to be signed MUST first be converted to its content-
+         type specific canonical form.  For text/plain, this means
+         conversion to an appropriate character set and conversion of
+         line endings to the canonical &lt;CR&gt;&lt;LF&gt; sequence.
+
+   (2)   An appropriate Content-Transfer-Encoding is then applied; see
+         <a href="#section-3">section 3</a>.  In particular, line endings in the encoded data
+         MUST use the canonical &lt;CR&gt;&lt;LF&gt; sequence where appropriate
+         (note that the canonical line ending may or may not be present
+         on the last line of encoded data and MUST NOT be included in
+         the signature if absent).
+
+   (3)   MIME content headers are then added to the body, each ending
+         with the canonical &lt;CR&gt;&lt;LF&gt; sequence.
+
+   (4)   As described in <a href="#section-3">section 3</a> of this document, any trailing
+         whitespace MUST then be removed from the signed material.
+
+   (5)   As described in [<a href="#ref-2" title='"Security Multiparts for MIME: Multipart/Signed and Multipart/Encrypted"'>2</a>], the digital signature MUST be calculated
+         over both the data to be signed and its set of content headers.
+
+   (6)   The signature MUST be generated detached from the signed data
+         so that the process does not alter the signed data in any way.
+
+      Note: The accepted OpenPGP convention is for signed data to end
+      with a &lt;CR&gt;&lt;LF&gt; sequence.  Note that the &lt;CR&gt;&lt;LF&gt; sequence
+      immediately preceding a MIME boundary delimiter line is considered
+      to be part of the delimiter in [<a href="#ref-3" title='"Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types"'>3</a>], 5.1.  Thus, it is not part of
+      the signed data preceding the delimiter line.  An implementation
+      which elects to adhere to the OpenPGP convention has to make sure
+      it inserts a &lt;CR&gt;&lt;LF&gt; pair on the last line of the data to be
+      signed and transmitted (signed message and transmitted message
+      MUST be identical).
+
+   Example message:
+
+         From: Michael Elkins &lt;elkins@aero.org&gt;
+         To: Michael Elkins &lt;elkins@aero.org&gt;
+         Mime-Version: 1.0
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+         Content-Type: multipart/signed; boundary=bar; micalg=pgp-md5;
+           protocol="application/pgp-signature"
+
+         --bar
+      &amp; Content-Type: text/plain; charset=iso-8859-1
+      &amp; Content-Transfer-Encoding: quoted-printable
+      &amp;
+      &amp; =A1Hola!
+      &amp;
+      &amp; Did you know that talking to yourself is a sign of senility?
+      &amp;
+      &amp; It's generally a good idea to encode lines that begin with
+      &amp; From=20because some mail transport agents will insert a greater-
+      &amp; than (&gt;) sign, thus invalidating the signature.
+      &amp;
+      &amp; Also, in some cases it might be desirable to encode any   =20
+      &amp; trailing whitespace that occurs on lines in order to ensure  =20
+      &amp; that the message signature is not invalidated when passing =20
+      &amp; a gateway that modifies such whitespace (like BITNET). =20
+      &amp;
+      &amp; me
+
+      --bar
+
+      Content-Type: application/pgp-signature
+
+      -----BEGIN PGP MESSAGE-----
+      Version: 2.6.2
+
+      iQCVAwUBMJrRF2N9oWBghPDJAQE9UQQAtl7LuRVndBjrk4EqYBIb3h5QXIX/LC//
+      jJV5bNvkZIGPIcEmI5iFd9boEgvpirHtIREEqLQRkYNoBActFBZmh9GC3C041WGq
+      uMbrbxc+nIs1TIKlA08rVi9ig/2Yh7LFrK5Ein57U/W72vgSxLhe/zhdfolT9Brn
+      HOxEa44b+EI=
+      =ndaj
+      -----END PGP MESSAGE-----
+
+      --bar--
+
+   The "&amp;"s in the previous example indicate the portion of the data
+   over which the signature was calculated.
+
+   Upon receipt of a signed message, an application MUST:
+
+   (1)   Convert line endings to the canonical &lt;CR&gt;&lt;LF&gt; sequence before
+         the signature can be verified.  This is necessary since the
+         local MTA may have converted to a local end of line convention.
+
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+   (2)   Pass both the signed data and its associated content headers
+         along with the OpenPGP signature to the signature verification
+         service.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Encrypted%20and%20Signed%20Data"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Encrypted and Signed Data</span>
+
+   Sometimes it is desirable to both digitally sign and then encrypt a
+   message to be sent.  This protocol allows for two methods of
+   accomplishing this task.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20RFC%201847%20Encapsulation"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  <a href="./rfc1847">RFC 1847</a> Encapsulation</span>
+
+   In [<a href="#ref-2" title='"Security Multiparts for MIME: Multipart/Signed and Multipart/Encrypted"'>2</a>], it is stated that the data is first signed as a
+   multipart/signature body, and then encrypted to form the final
+   multipart/encrypted body.  This is most useful for standard MIME-
+   compliant message forwarding.
+
+   Example:
+
+         Content-Type: multipart/encrypted;
+            protocol="application/pgp-encrypted"; boundary=foo
+
+         --foo
+         Content-Type: application/pgp-encrypted
+
+         Version: 1
+
+         --foo
+         Content-Type: application/octet-stream
+
+         -----BEGIN PGP MESSAGE-----
+      &amp; Content-Type: multipart/signed; micalg=pgp-md5
+      &amp;     protocol="application/pgp-signature"; boundary=bar
+      &amp;
+      &amp; --bar
+      &amp; Content-Type: text/plain; charset=us-ascii
+      &amp;
+      &amp; This message was first signed, and then encrypted.
+      &amp;
+      &amp; --bar
+      &amp; Content-Type: application/pgp-signature
+      &amp;
+      &amp; -----BEGIN PGP MESSAGE-----
+      &amp; Version: 2.6.2
+      &amp;
+      &amp; iQCVAwUBMJrRF2N9oWBghPDJAQE9UQQAtl7LuRVndBjrk4EqYBIb3h5QXIX/LC//
+      &amp; jJV5bNvkZIGPIcEmI5iFd9boEgvpirHtIREEqLQRkYNoBActFBZmh9GC3C041WGq
+      &amp; uMbrbxc+nIs1TIKlA08rVi9ig/2Yh7LFrK5Ein57U/W72vgSxLhe/zhdfolT9Brn
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+      &amp; HOxEa44b+EI=
+      &amp; =ndaj
+      &amp; -----END PGP MESSAGE-----
+      &amp;
+      &amp; --bar--
+        -----END PGP MESSAGE-----
+
+        --foo--
+
+   (The text preceded by '&amp;' indicates that it is really encrypted, but
+   presented as text for clarity.)
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Combined%20method"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Combined method</span>
+
+   The OpenPGP packet format [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>] describes a method for signing and
+   encrypting data in a single OpenPGP message.  This method is allowed
+   in order to reduce processing overhead and increase compatibility
+   with non-MIME implementations of OpenPGP.  The resulting data is
+   formatted as a "multipart/encrypted" object as described in <a href="#section-4">Section</a>
+   <a href="#section-4">4</a>.
+
+   Messages which are encrypted and signed in this combined fashion are
+   REQUIRED to follow the same canonicalization rules as
+   multipart/signed objects.
+
+   It is explicitly allowed for an agent to decrypt a combined message
+   and rewrite it as a multipart/signed object using the signature data
+   embedded in the encrypted version.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Distribution%20of%20OpenPGP%20public%20keys"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Distribution of OpenPGP public keys</span>
+
+   Content-Type: application/pgp-keys
+   Required parameters: none
+   Optional parameters: none
+
+   A MIME body part of the content type "application/pgp-keys" contains
+   ASCII-armored transferable Public Key Packets as defined in [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>],
+   section 10.1.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Security%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Security Considerations</span>
+
+   Signatures of a canonical text document as defined in [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>] ignore
+   trailing white space in signed material.  Implementations which
+   choose to use signatures of canonical text documents will not be able
+   to detect the addition of whitespace in transit.
+
+   See [<a href="#ref-3" title='"Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types"'>3</a>], [<a href="#ref-4" title='"MIME Object Security Services"'>4</a>] for more information on the security considerations
+   concerning the underlying protocols.
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  IANA Considerations</span>
+
+   This document defines three media types: "application/pgp-encrypted",
+   "application/pgp-signature" and "application/pgp-keys".  The
+   following sections specify the IANA registrations for these types.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Registration%20of%20the%20application%2Fpgp-encrypted%20media%20type"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Registration of the application/pgp-encrypted media type</span>
+
+   MIME media type name: application
+   MIME subtype name: pgp-encrypted
+   Required parameters: none
+   Optional parameters: none
+
+   Encoding considerations:
+
+      Currently this media type always consists of a single 7bit text
+      string.
+
+   Security considerations:
+
+      See <a href="#section-8">Section 8</a> and <a href="./rfc2440#section-13">RFC 2440 Section 13</a>.
+
+   Interoperability considerations: none
+
+   Published specification:
+
+      This document.
+
+   Additional information:
+
+      Magic number(s): none
+      File extension(s): none
+      Macintosh File Type Code(s): none
+
+   Person &amp; email address to contact for further information:
+
+      Michael Elkins
+      Email: me@cs.hmc.edu
+
+   Intended usage: common
+
+   Author/Change controller:
+
+      Michael Elkins
+      Email: me@cs.hmc.edu
+
+
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20Registration%20of%20the%20application%2Fpgp-signature%20media%20type"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  Registration of the application/pgp-signature media type</span>
+
+   MIME media type name: application
+   MIME subtype name: pgp-signature
+   Required parameters: none
+   Optional parameters: none
+
+   Encoding considerations:
+
+      The content of this media type always consists of 7bit text.
+
+   Security considerations:
+
+      See <a href="#section-8">Section 8</a> and <a href="./rfc2440#section-13">RFC 2440 Section 13</a>.
+
+   Interoperability considerations: none
+
+   Published specification:
+
+      <a href="./rfc2440">RFC 2440</a> and this document.
+
+   Additional information:
+
+      Magic number(s): none
+      File extension(s): asc, sig
+      Macintosh File Type Code(s): pgDS
+
+   Person &amp; email address to contact for further information:
+
+      Michael Elkins
+      Email: me@cs.hmc.edu
+
+   Intended usage: common
+
+   Author/Change controller:
+
+      Michael Elkins
+      Email: me@cs.hmc.edu
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.3.%20%20Registration%20of%20the%20application%2Fpgp-keys%20media%20type"></a><a class="selflink" href="#section-9.3" id="section-9.3">9.3</a>.  Registration of the application/pgp-keys media type</span>
+
+   MIME media type name: application
+   MIME subtype name: pgp-keys
+   Required parameters: none
+   Optional parameters: none
+
+
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+   Encoding considerations:
+
+      The content of this media type always consists of 7bit text.
+
+   Security considerations:
+
+      See <a href="#section-8">Section 8</a> and <a href="./rfc2440#section-13">RFC 2440 Section 13</a>.
+
+   Interoperability considerations: none
+
+   Published specification:
+
+      <a href="./rfc2440">RFC 2440</a> and this document.
+
+   Additional information:
+
+      Magic number(s): none
+      File extension(s): asc
+      Macintosh File Type Code(s): none
+
+   Person &amp; email address to contact for further information:
+
+      Michael Elkins
+      Email: me@cs.hmc.edu
+
+   Intended usage: common
+
+   Author/Change controller:
+
+      Michael Elkins
+      Email: me@cs.hmc.edu
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20Notes"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  Notes</span>
+
+   "PGP" and "Pretty Good Privacy" are registered trademarks of Network
+   Associates, Inc.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20Acknowledgements"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  Acknowledgements</span>
+
+   This document relies on the work of the IETF's OpenPGP Working
+   Group's definitions of the OpenPGP Message Format.  The OpenPGP
+   message format is currently described in <a href="./rfc2440">RFC 2440</a> [<a href="#ref-1" title='"OpenPGP Message Format"'>1</a>].
+
+   Special thanks are due: to Philip Zimmermann for his original and
+   ongoing work on PGP; to Charles Breed, Jon Callas and Dave Del Torto
+   for originally proposing the formation of the OpenPGP Working Group;
+   and to Steve Schoenfeld for helpful feedback during the draft
+   process.  The authors would also like to thank the engineers at
+   Pretty Good Privacy, Inc (now Network Associates, Inc), including
+   Colin Plumb, Hal Finney, Jon Callas, Mark Elrod, Mark Weaver and
+   Lloyd Chambers, for their technical commentary.
+
+   Additional thanks are due to Jeff Schiller and Derek Atkins for their
+   continuing support of strong cryptography and PGP freeware at MIT; to
+   Rodney Thayer of Sable Technology; to John Noerenberg, Steve Dorner
+   and Laurence Lundblade of the Eudora team at QUALCOMM, Inc; to Bodo
+   Moeller for proposing the approach followed with respect to trailing
+   whitespace; to John Gilmore, Hugh Daniel and Fred Ringel (at
+   Rivertown) and Ian Bell (at Turnpike) for their timely critical
+   commentary; and to the international members of the IETF's OpenPGP
+   mailing list, including William Geiger, Lutz Donnerhacke and Kazu
+   Yamamoto.  The idea to use multipart/mixed with multipart/signed has
+   been attributed to James Galvin.  Finally, our gratitude is due to
+   the many members of the "Cypherpunks," "Coderpunks" and "pgp-users"
+   &lt;<a href="http://cryptorights.org/pgp-users">http://cryptorights.org/pgp-users</a>&gt; mailing lists and the many users
+   of PGP worldwide for helping keep the path to privacy open.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                    [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.%20%20Addresses%20of%20the%20Authors%20and%20OpenPGP%20Working%20Group%20Chair"></a><a class="selflink" href="#section-12" id="section-12">12</a>.  Addresses of the Authors and OpenPGP Working Group Chair</span>
+
+   The OpenPGP working group can be contacted via the current chair:
+
+   John W. Noerenberg II
+   Qualcomm, Inc.
+   5775 Morehouse Dr.
+   San Diego, CA 92121 USA
+
+   Phone: +1 619 658 3510
+   EMail: jwn2@qualcomm.com
+
+   The principal authors of this document are:
+
+   Dave Del Torto
+   CryptoRights Foundation
+   80 Alviso Street, Mailstop: CRF
+   San Francisco, CA 94127 USA
+
+   Phone: +1.415.334.5533, vm: #2
+   EMail: ddt@cryptorights.org, ddt@openpgp.net
+
+
+   Michael Elkins
+   Network Associates, Inc.
+   3415 S. Sepulveda Blvd Suite 700
+   Los Angeles, CA 90034 USA
+
+   Phone: +1.310.737.1663
+   Fax:   +1.310.737.1755
+   Email: me@cs.hmc.edu, Michael_Elkins@NAI.com
+
+
+   Raph Levien
+   University of California at Berkeley
+   579 Soda Hall
+   Berkeley, CA 94720 USA
+
+   Phone: +1.510.642.6509
+   EMail: raph@acm.org
+
+
+   Thomas Roessler
+   Nordstrasse 99
+   D-53111 Bonn, Germany
+
+   Phone: +49-228-638007
+   EMail: roessler@does-not-exist.org
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                    [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+References
+
+   [<a id="ref-1">1</a>]   Callas, J., Donnerhacke, L., Finney, H. and R. Thayer, "OpenPGP
+         Message Format", <a href="./rfc2440">RFC 2440</a>, November 1998.
+
+   [<a id="ref-2">2</a>]   Galvin, J., Murphy, G., Crocker, S. and N. Freed, "Security
+         Multiparts for MIME: Multipart/Signed and Multipart/Encrypted",
+         <a href="./rfc1847">RFC 1847</a>, October 1995.
+
+   [<a id="ref-3">3</a>]   Freed, N. and N. Borenstein, "Multipurpose Internet Mail
+         Extensions (MIME) Part Two: Media Types", <a href="./rfc2046">RFC 2046</a>, November
+         1996.
+
+   [<a id="ref-4">4</a>]   Galvin, J., Murphy, G., Crocker, S. and N. Freed, "MIME Object
+         Security Services", <a href="./rfc1848">RFC 1848</a>, October 1995.
+
+   [<a id="ref-5">5</a>]   Atkins, D., Stallings, W. and P. Zimmermann, "PGP Message
+         Exchange Formats", <a href="./rfc1991">RFC 1991</a>, August 1996.
+
+   [<a id="ref-6">6</a>]   Elkins, M., "MIME Security with Pretty Good Privacy (PGP)", <a href="./rfc2015">RFC</a>
+         <a href="./rfc2015">2015</a>, October 1996.
+
+   [<a id="ref-7">7</a>]   Freed, N., "Gateways and MIME Security Multiparts", <a href="./rfc2480">RFC 2480</a>,
+         January 1999.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Elkins, et al.              Standards Track                    [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc3156">RFC 3156</a>               MIME Security with OpenPGP            August 2001</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The Internet Society (2001).  All Rights Reserved.
+
+   This document and translations of it may be copied and furnished to
+   others, and derivative works that comment on or otherwise explain it
+   or assist in its implementation may be prepared, copied, published
+   and distributed, in whole or in part, without restriction of any
+   kind, provided that the above copyright notice and this paragraph are
+   included on all such copies and derivative works.  However, this
+   document itself may not be modified in any way, such as by removing
+   the copyright notice or references to the Internet Society or other
+   Internet organizations, except as needed for the purpose of
+   developing Internet standards in which case the procedures for
+   copyrights defined in the Internet Standards process must be
+   followed, or as required to translate it into languages other than
+   English.
+
+   The limited permissions granted above are perpetual and will not be
+   revoked by the Internet Society or its successors or assigns.
+
+   This document and the information contained herein is provided on an
+   "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+   TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+   BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+   HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is currently provided by the
+   Internet Society.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Elkins, et al.              Standards Track                    [Page 15]
+</pre>
+</body></html>

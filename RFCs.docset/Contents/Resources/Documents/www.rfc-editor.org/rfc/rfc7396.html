@@ -1,0 +1,502 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                        P. Hoffman
+Request for Comments: 7396                                VPN Consortium
+Obsoletes: <a href="./rfc7386">7386</a>                                                 J. Snell
+Category: Standards Track                                   October 2014
+ISSN: 2070-1721
+
+
+                            <span class="h1">JSON Merge Patch</span>
+
+Abstract
+
+   This specification defines the JSON merge patch format and processing
+   rules.  The merge patch format is primarily intended for use with the
+   HTTP PATCH method as a means of describing a set of modifications to
+   a target resource's content.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc7396">http://www.rfc-editor.org/info/rfc7396</a>.
+
+Copyright Notice
+
+   Copyright (c) 2014 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Processing Merge Patch Documents  . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  Example . . . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-4">4</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+   <a href="#section-5">5</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-6">6</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-6.1">6.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+     <a href="#section-6.2">6.2</a>.  Informative References  . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#appendix-A">Appendix A</a>.  Example Test Cases . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   This specification defines the JSON merge patch document format,
+   processing rules, and associated MIME media type identifier.  The
+   merge patch format is primarily intended for use with the HTTP PATCH
+   method [<a href="./rfc5789" title='"PATCH Method for HTTP"'>RFC5789</a>] as a means of describing a set of modifications to a
+   target resource's content.
+
+   A JSON merge patch document describes changes to be made to a target
+   JSON document using a syntax that closely mimics the document being
+   modified.  Recipients of a merge patch document determine the exact
+   set of changes being requested by comparing the content of the
+   provided patch against the current content of the target document.
+   If the provided merge patch contains members that do not appear
+   within the target, those members are added.  If the target does
+   contain the member, the value is replaced.  Null values in the merge
+   patch are given special meaning to indicate the removal of existing
+   values in the target.
+
+   For example, given the following original JSON document:
+
+   {
+     "a": "b",
+     "c": {
+       "d": "e",
+       "f": "g"
+     }
+   }
+
+
+
+
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+   Changing the value of "a" and removing "f" can be achieved by
+   sending:
+
+   PATCH /target HTTP/1.1
+   Host: example.org
+   Content-Type: application/merge-patch+json
+
+   {
+     "a":"z",
+     "c": {
+       "f": null
+     }
+   }
+
+   When applied to the target resource, the value of the "a" member is
+   replaced with "z" and "f" is removed, leaving the remaining content
+   untouched.
+
+   This design means that merge patch documents are suitable for
+   describing modifications to JSON documents that primarily use objects
+   for their structure and do not make use of explicit null values.  The
+   merge patch format is not appropriate for all JSON syntaxes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Processing%20Merge%20Patch%20Documents"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Processing Merge Patch Documents</span>
+
+   JSON merge patch documents describe, by example, a set of changes
+   that are to be made to a target resource.  Recipients of merge patch
+   documents are responsible for comparing the merge patch with the
+   current content of the target resource to determine the specific set
+   of change operations to be applied to the target.
+
+   To apply the merge patch document to a target resource, the system
+   realizes the effect of the following function, described in
+   pseudocode.  For this description, the function is called MergePatch,
+   and it takes two arguments: the target resource document and the
+   merge patch document.  The Target argument can be any JSON value or
+   undefined.  The Patch argument can be any JSON value.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+   define MergePatch(Target, Patch):
+     if Patch is an Object:
+       if Target is not an Object:
+         Target = {} # Ignore the contents and set it to an empty Object
+       for each Name/Value pair in Patch:
+         if Value is null:
+           if Name exists in Target:
+             remove the Name/Value pair from Target
+         else:
+           Target[Name] = MergePatch(Target[Name], Value)
+       return Target
+     else:
+       return Patch
+
+   There are a few things to note about the function.  If the patch is
+   anything other than an object, the result will always be to replace
+   the entire target with the entire patch.  Also, it is not possible to
+   patch part of a target that is not an object, such as to replace just
+   some of the values in an array.
+
+   The MergePatch operation is defined to operate at the level of data
+   items, not at the level of textual representation.  There is no
+   expectation that the MergePatch operation will preserve features at
+   the textual-representation level such as white space, member
+   ordering, number precision beyond what is available in the target's
+   implementation, and so forth.  In addition, even if the target
+   implementation allows multiple name/value pairs with the same name,
+   the result of the MergePatch operation on such objects is not
+   defined.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Example"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Example</span>
+
+   Given the following example JSON document:
+
+   {
+     "title": "Goodbye!",
+     "author" : {
+       "givenName" : "John",
+       "familyName" : "Doe"
+     },
+     "tags":[ "example", "sample" ],
+     "content": "This will be unchanged"
+   }
+
+
+
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+   A user agent wishing to change the value of the "title" member from
+   "Goodbye!" to the value "Hello!", add a new "phoneNumber" member,
+   remove the "familyName" member from the "author" object, and replace
+   the "tags" array so that it doesn't include the word "sample" would
+   send the following request:
+
+   PATCH /my/resource HTTP/1.1
+   Host: example.org
+   Content-Type: application/merge-patch+json
+
+   {
+     "title": "Hello!",
+     "phoneNumber": "+01-123-456-7890",
+     "author": {
+       "familyName": null
+     },
+     "tags": [ "example" ]
+   }
+
+   The resulting JSON document would be:
+
+   {
+     "title": "Hello!",
+     "author" : {
+       "givenName" : "John"
+     },
+     "tags": [ "example" ],
+     "content": "This will be unchanged",
+     "phoneNumber": "+01-123-456-7890"
+   }
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  IANA Considerations</span>
+
+   This specification registers the following additional MIME media
+   types:
+
+      Type name: application
+
+      Subtype name: merge-patch+json
+
+      Required parameters: None
+
+      Optional parameters: None
+
+      Encoding considerations: Resources that use the "application/
+      merge-patch+json" media type are required to conform to the
+      "application/json" media type and are therefore subject to the
+      same encoding considerations specified in <a href="./rfc7159#section-8">Section 8 of [RFC7159]</a>.
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+      Security considerations: As defined in this specification
+
+      Published specification: This specification.
+
+      Applications that use this media type: None currently known.
+
+      Additional information:
+
+         Magic number(s): N/A
+
+         File extension(s): N/A
+
+         Macintosh file type code(s): TEXT
+
+      Person &amp; email address to contact for further information: IESG
+
+      Intended usage: COMMON
+
+      Restrictions on usage: None
+
+      Author: James M. Snell &lt;jasnell@gmail.com&gt;
+
+      Change controller: IESG
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Security%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Security Considerations</span>
+
+   The "application/merge-patch+json" media type allows user agents to
+   indicate their intention for the server to determine the specific set
+   of change operations to be applied to a target resource.  As such, it
+   is the server's responsibility to determine the appropriateness of
+   any given change as well as the user agent's authorization to request
+   such changes.  How such determinations are made is considered out of
+   the scope of this specification.
+
+   All of the security considerations discussed in <a href="./rfc5789#section-5">Section 5 of
+   [RFC5789]</a> apply to all uses of the HTTP PATCH method with the
+   "application/merge-patch+json" media type.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Normative%20References"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC7159">RFC7159</a>]  Bray, T., "The JavaScript Object Notation (JSON) Data
+              Interchange Format", <a href="./rfc7159">RFC 7159</a>, March 2014,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc7159">http://www.rfc-editor.org/info/rfc7159</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Informative%20References"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC5789">RFC5789</a>]  Dusseault, L. and J. Snell, "PATCH Method for HTTP", <a href="./rfc5789">RFC</a>
+              <a href="./rfc5789">5789</a>, March 2010,
+              &lt;<a href="http://www.rfc-editor.org/info/rfc5789">http://www.rfc-editor.org/info/rfc5789</a>&gt;.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Example%20Test%20Cases"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Example Test Cases</span>
+
+   ORIGINAL        PATCH            RESULT
+   ------------------------------------------
+   {"a":"b"}       {"a":"c"}       {"a":"c"}
+
+   {"a":"b"}       {"b":"c"}       {"a":"b",
+                                    "b":"c"}
+
+   {"a":"b"}       {"a":null}      {}
+
+   {"a":"b",       {"a":null}      {"b":"c"}
+    "b":"c"}
+
+   {"a":["b"]}     {"a":"c"}       {"a":"c"}
+
+   {"a":"c"}       {"a":["b"]}     {"a":["b"]}
+
+   {"a": {         {"a": {         {"a": {
+     "b": "c"}       "b": "d",       "b": "d"
+   }                 "c": null}      }
+                   }               }
+
+   {"a": [         {"a": [1]}      {"a": [1]}
+     {"b":"c"}
+    ]
+   }
+
+   ["a","b"]       ["c","d"]       ["c","d"]
+
+   {"a":"b"}       ["c"]           ["c"]
+
+   {"a":"foo"}     null            null
+
+   {"a":"foo"}     "bar"           "bar"
+
+   {"e":null}      {"a":1}         {"e":null,
+                                    "a":1}
+
+   [1,2]           {"a":"b",       {"a":"b"}
+                    "c":null}
+
+   {}              {"a":            {"a":
+                    {"bb":           {"bb":
+                     {"ccc":          {}}}
+                      null}}}
+
+
+
+
+
+<span class="grey">Hoffman &amp; Snell              Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc7396">RFC 7396</a>                    JSON Merge Patch                October 2014</span>
+
+
+Acknowledgments
+
+   Many people contributed significant ideas to this document.  These
+   people include, but are not limited to, James Manger, Matt Miller,
+   Carsten Bormann, Bjoern Hoehrmann, Pete Resnick, and Richard Barnes.
+
+Authors' Addresses
+
+   Paul Hoffman
+   VPN Consortium
+
+   EMail: paul.hoffman@vpnc.org
+
+
+   James M. Snell
+
+   EMail: jasnell@gmail.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Hoffman &amp; Snell              Standards Track                    [Page 9]
+</pre>
+</body></html>

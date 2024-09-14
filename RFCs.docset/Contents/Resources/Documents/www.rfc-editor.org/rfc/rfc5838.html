@@ -1,0 +1,726 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                    A. Lindem, Ed.
+Request for Comments: 5838                                      Ericsson
+Category: Standards Track                                   S. Mirtorabi
+ISSN: 2070-1721                                                   A. Roy
+                                                               M. Barnes
+                                                           Cisco Systems
+                                                             R. Aggarwal
+                                                        Juniper Networks
+                                                              April 2010
+
+                 <span class="h1">Support of Address Families in OSPFv3</span>
+
+Abstract
+
+   This document describes a mechanism for supporting multiple address
+   families (AFs) in OSPFv3 using multiple instances.  It maps an AF to
+   an OSPFv3 instance using the Instance ID field in the OSPFv3 packet
+   header.  This approach is fairly simple and minimizes extensions to
+   OSPFv3 for supporting multiple AFs.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc5838">http://www.rfc-editor.org/info/rfc5838</a>.
+
+Copyright Notice
+
+   Copyright (c) 2010 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-2">2</a>
+     <a href="#section-1.1">1.1</a>.  Design Considerations  . . . . . . . . . . . . . . . . . .  <a href="#page-2">2</a>
+     <a href="#section-1.2">1.2</a>.  Requirements Notation  . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Protocol Details . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-2.1">2.1</a>.  Instance ID Values for New AFs . . . . . . . . . . . . . .  <a href="#page-3">3</a>
+     <a href="#section-2.2">2.2</a>.  OSPFv3 Options Changes . . . . . . . . . . . . . . . . . .  <a href="#page-4">4</a>
+     <a href="#section-2.3">2.3</a>.  Advertising Prefixes in AFs Other Than IPv6  . . . . . . .  <a href="#page-4">4</a>
+     <a href="#section-2.4">2.4</a>.  Changes to the Hello Packet Processing . . . . . . . . . .  <a href="#page-4">4</a>
+     2.5.  Next-Hop Calculation for IPv4 Unicast and Multicast AFs  .  5
+     2.6.  AS-External-LSA and NSSA-LSA Forwarding Address for
+           IPv4 Unicast and IPv4 Multicast AFs  . . . . . . . . . . .  <a href="#page-5">5</a>
+     2.7.  Database Description Maximum Transmission Unit (MTU)
+           Specification for Non-IPv6 AFs . . . . . . . . . . . . . .  <a href="#page-6">6</a>
+     <a href="#section-2.8">2.8</a>.  Operation over Virtual Links . . . . . . . . . . . . . . .  <a href="#page-8">8</a>
+   <a href="#section-3">3</a>.  Backward Compatibility . . . . . . . . . . . . . . . . . . . .  <a href="#page-8">8</a>
+   <a href="#section-4">4</a>.  Security Considerations  . . . . . . . . . . . . . . . . . . .  <a href="#page-8">8</a>
+   <a href="#section-5">5</a>.  IANA Considerations  . . . . . . . . . . . . . . . . . . . . .  <a href="#page-9">9</a>
+   <a href="#section-6">6</a>.  References . . . . . . . . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+     <a href="#section-6.1">6.1</a>.  Normative References . . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+     <a href="#section-6.2">6.2</a>.  Informative References . . . . . . . . . . . . . . . . . . <a href="#page-11">11</a>
+   <a href="#appendix-A">Appendix A</a>.  Acknowledgments . . . . . . . . . . . . . . . . . . . <a href="#page-12">12</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   OSPFv3 [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>] has been defined to support the base IPv6 unicast
+   address family (AF).  There are requirements to advertise other AFs
+   in OSPFv3, including multicast IPv6, unicast IPv4, and multicast
+   IPv4.  This document supports these other AFs in OSPFv3 by mapping
+   each AF to a separate Instance ID and OSPFv3 instance.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Design%20Considerations"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Design Considerations</span>
+
+   This section describes the rationale for using the multiple Instance
+   ID approach to support multiple address families in OSPFv3.  As
+   described earlier, OSPFv3 is designed to support multiple instances.
+   Hence, mapping an instance to an address family doesn't introduce any
+   new mechanisms to the protocol.  It minimizes the protocol extensions
+   required, and it simplifies the implementation.  The presence of a
+   separate link state database per address family is also easier to
+   debug and operate.  Additionally, it doesn't change the existing
+   instance, area, and interface-based configuration model in most
+   OSPFv3 implementations.
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.2.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-1.2" id="section-1.2">1.2</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="#ref-RFC-KEYWORDS" title="&quot;Key words for use in RFC's to Indicate Requirement Levels&quot;">RFC-KEYWORDS</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Protocol%20Details"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Protocol Details</span>
+
+   Currently, the entire Instance ID number space is used for IPv6
+   unicast.  This specification assigns different Instance ID ranges to
+   different AFs in order to support other AFs in OSPFv3.  Each Instance
+   ID implies a separate OSPFv3 instance with its own neighbor
+   adjacencies, link state database, protocol data structures, and
+   shortest path first (SPF) computation.
+
+   Additionally, the current Link State Advertisements (LSAs) defined to
+   advertise IPv6 unicast prefixes can be used to advertise prefixes
+   from other AFs without modification.
+
+   It should be noted that OSPFv3 runs on top of IPv6 and uses IPv6 link
+   local addresses for OSPFv3 control packets.  Therefore, it is
+   required that IPv6 be enabled on an OSPFv3 link, although the link
+   may not be participating in any IPv6 AFs.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Instance%20ID%20Values%20for%20New%20AFs"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Instance ID Values for New AFs</span>
+
+   Instance ID zero is already defined by default for the IPv6 unicast
+   AF.  When this specification is used to support multiple AFs, we
+   define the following ranges for different AFs.  The first value of
+   each range is the default value for the corresponding AF.
+
+      Instance ID # 0    -  # 31     IPv6 unicast AF
+      Instance ID # 32   -  # 63     IPv6 multicast AF
+      Instance ID # 64   -  # 95     IPv4 unicast AF
+      Instance ID # 96   -  # 127    IPv4 multicast AF
+      Instance ID # 128  -  # 255    Unassigned
+
+                            OSPFv3 Instance IDs
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20OSPFv3%20Options%20Changes"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  OSPFv3 Options Changes</span>
+
+   A new AF-bit is added to the OSPFv3 Options field.  The V6-bit is
+   only applicable to the IPv6 unicast AF.
+
+                               1                     2
+           0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5  6 7 8  9 0 1 2 3
+          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+--+-+-+--+-+-+-+-+--+
+          | | | | | | | | | | | | | | | |AF|*|*|DC|R|N|x|E|V6|
+          +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+--+-+-+--+-+-+-+-+--+
+
+                           The Options field
+
+                              OSPFv3 Options
+
+   V6-bit
+      The V6-bit is used in OSPFv3 to exclude a node from IPv6 unicast
+      route calculation but allow it in the SPF calculation for other
+      address families.  Since the Instance ID now denotes the AF
+      explicitly, this bit is ignored in AFs other than IPv6 unicast.
+
+   AF-bit
+      When an OSPFv3 router is supporting AFs as described in this
+      specification, it MUST set the AF-bit in the OSPFv3 Options field
+      of Hello packets, Database Description packets, and LSAs.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Advertising%20Prefixes%20in%20AFs%20Other%20Than%20IPv6"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Advertising Prefixes in AFs Other Than IPv6</span>
+
+   Each prefix advertised in OSPFv3 has a prefix Length field [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>].
+   This facilitates advertising prefixes of different lengths in
+   different AFs.  The existing LSAs defined in OSPFv3 are used for this
+   and there is no need to define new LSAs.
+
+   Prefixes that don't conform to the AF of an OSPFv3 instance MUST NOT
+   be used in the route computation for that instance.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20Changes%20to%20the%20Hello%20Packet%20Processing"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  Changes to the Hello Packet Processing</span>
+
+   When an OSPFv3 router does not support this specification and it is
+   configured with the corresponding Instance ID, packets could be black
+   holed.  This could happen due to misconfiguration or a router
+   software downgrade.  Black holing is possible because a router that
+   doesn't support this specification can still be included in the SPF
+   calculated path as long as it establishes adjacencies using the
+   Instance ID corresponding to the AF.  Note that Router-LSAs and
+   Network-LSAs are AF independent.
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+   In order to avoid the above situation, Hello packet processing is
+   changed in order to only establish adjacencies with routers that have
+   the AF-bit set in their Options field.
+
+   Receiving Hello packets is specified in section 4.2.2.1 of [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>].
+   The following check is added to Hello packet reception:
+
+   o  When an OSPFv3 router participates in an AF (sets the AF-bit in
+      the Options field), it MUST discard Hello packets having the AF-
+      bit clear in the Options field.  The only exception is the Base
+      IPv6 unicast AF, where this check MUST NOT be done (for backward
+      compatibility).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.5.%20%20Next-Hop%20Calculation%20for%20IPv4%20Unicast%20and%20Multicast%20AFs"></a><a class="selflink" href="#section-2.5" id="section-2.5">2.5</a>.  Next-Hop Calculation for IPv4 Unicast and Multicast AFs</span>
+
+   OSPFv3 runs on top of IPv6 and uses IPv6 link local addresses for
+   OSPFv3 control packets and next-hop calculations.  Although IPv6 link
+   local addresses could be used as next hops for IPv4 address families,
+   it is desirable to have IPv4 next-hop addresses.  For example, in the
+   IPv4 multicast AF, the Protocol Independent Multicast (PIM) [<a href="#ref-PIM" title='"Protocol Independent Multicast - Sparse Mode (PIM-SM): Protocol Specification (Revised)"'>PIM</a>]
+   neighbor address and the next-hop address should both be IPv4
+   addresses in order for the Reverse Path Forwarding (RPF) lookup to
+   work correctly.  Troubleshooting is also easier when the prefix
+   address and next-hop address are in the same AF.
+
+   In order to achieve this, the link's IPv4 address will be advertised
+   in the "link local address" field of the IPv4 instance's Link-LSA.
+   This address is placed in the first 32 bits of the "link local
+   address" field and is used for IPv4 next-hop calculations.  The
+   remaining bits MUST be set to zero.
+
+   We denote a Direct Interface Address (DIA) as an IPv4 or IPv6 address
+   that is both directly reachable via an attached link and has an
+   available layer 3 to layer 2 mapping.  Note that there is no explicit
+   need for the IPv4 link addresses to be on the same subnet.  An
+   implementation SHOULD resolve layer 3 to layer 2 mappings via the
+   Address Resolution Protocol (ARP) [<a href="#ref-ARP" title='"Ethernet Address Resolution Protocol: Or Converting Network Protocol Addresses to 48.bit Ethernet Address for Transmission on Ethernet Hardware"'>ARP</a>] or Neighbor Discovery (ND)
+   [<a href="#ref-ND" title='"Neighbor Discovery for IP version 6 (IPv6)"'>ND</a>] for a DIA even if the IPv4 address is not on the same subnet as
+   the router's interface IP address.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.6.%20%20AS-External-LSA%20and%20NSSA-LSA%20Forwarding%20Address%20for%20IPv4%20Unicast"></a><a class="selflink" href="#section-2.6" id="section-2.6">2.6</a>.  AS-External-LSA and NSSA-LSA Forwarding Address for IPv4 Unicast</span>
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/and%20IPv4%20Multicast%20AFs"></a>      and IPv4 Multicast AFs</span>
+
+   For OSPFv3, this address is an IPv6 host address (128 bits).  If
+   included, data traffic for the advertised destination will be
+   forwarded to this address.  For IPv4 unicast and IPv4 multicast AFs,
+   the Forwarding Address in AS-external-LSAs and NSSA-LSAs MUST encode
+   an IPv4 address.  To achieve this, the IPv4 Forwarding Address is
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+   advertised by placing it in the first 32 bits of the Forwarding
+   Address field in AS-external-LSAs and NSSA-LSAs.  The remaining bits
+   MUST be set to zero.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.7.%20%20Database%20Description%20Maximum%20Transmission%20Unit%20%28MTU%29%20Specification"></a><a class="selflink" href="#section-2.7" id="section-2.7">2.7</a>.  Database Description Maximum Transmission Unit (MTU) Specification</span>
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/for%20Non-IPv6%20AFs"></a>      for Non-IPv6 AFs</span>
+
+   For address families other than IPv6, both the MTU for the instance
+   address family and the IPv6 MTU used for OSPFv3 maximum packet
+   determination MUST be considered.  The MTU in the Database
+   Description packet MUST always contain the MTU corresponding to the
+   advertised address family.  For example, if the instance corresponds
+   to an IPv4 address family, the IPv4 MTU for the interface MUST be
+   specified in the interface MTU field.  As specified in Section 10.6
+   of [<a href="#ref-OSPFV2" title='"OSPF Version 2"'>OSPFV2</a>], the Database Description packet will be rejected if the
+   MTU is greater than the receiving interface's MTU for the address
+   family corresponding to the instance.  This behavior will assure that
+   an adjacency is not formed and address family specific routes are not
+   installed over a path with conflicting MTUs.
+
+   The value used for OSPFv3 maximum packet size determination MUST also
+   be compatible for an adjacency to be established.  Since only a
+   single MTU field is specified, the M6-bit is defined by this
+   specification.  If the M6-bit is clear, the specified MTU SHOULD also
+   be checked against the IPv6 MTU, and the Database Description packet
+   SHOULD be rejected if the MTU is larger than the receiving
+   interface's IPv6 MTU.  An OSPFv3 router SHOULD NOT set the M6-bit if
+   its IPv6 MTU and address family specific MTU are the same.
+
+   If the IPv6 and IPv4 MTUs differ, the M6-bit MUST be set for non-IPv6
+   address families.  If the M6-bit is set, the IPv6 MTU is dictated by
+   the presence or absence of an IPv6 MTU TLV in the link-local
+   signaling (LLS) [<a href="#ref-LLS" title='"OSPF Link-Local Signaling"'>LLS</a>] block.  If this TLV is present, it carries the
+   IPv6 MTU that SHOULD be compared with the local IPv6 MTU.  If this
+   TLV is absent, the minimum IPv6 MTU of 1280 octets SHOULD be used for
+   the comparison (refer to [<a href="#ref-IPV6" title='"Internet Protocol, Version 6 (IPv6) Specification"'>IPV6</a>]).
+
+   If the M6-bit is set in a received Database Description packet for a
+   non-IPv6 address family, the receiving router MUST NOT check the
+   Interface MTU in the Database Description packet against the
+   receiving interface's IPv6 MTU.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+   The figure below graphically depicts the changed fields in octets
+   20-23 of the OSPFv3 Database Description packet:
+
+      0                   1                   2                    3
+      0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7  8 9 0 1
+     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+--+-+-+-+--+
+     |        Interface MTU          |      0        |0|0|0|M6|0|I|M|MS|
+     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+--+-+-+-+--+
+
+                OSPFv3 Database Description Packet Changes
+
+   The changed fields in the Database Description packet are described
+   below.  The remaining fields are unchanged from [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>].
+
+   Interface MTU
+      The size in octets of the largest address family specific datagram
+      that can be sent on the associated interface without
+      fragmentation.  The MTUs of common Internet link types can be
+      found in Table 7-1 of [<a href="#ref-MTUDISC" title='"Path MTU Discovery"'>MTUDISC</a>].  The Interface MTU SHOULD be set
+      to 0 in Database Description packets sent over virtual links.
+
+   M6-bit
+      The IPv6 MTU bit - this bit indicates that the sender is using a
+      different IPv6 MTU than the MTU for the AF.
+
+   An IPv6 MTU TLV can be optionally carried in an LLS block as
+   described above.  This TLV carries the IPv6 MTU for the interface.
+   The length field of the TLV is set to 4 bytes.
+
+        0                   1                   2                   3
+        0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |              17               |               4               |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+       |                           IPv6 MTU                            |
+       +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                          Format of IPv6 MTU TLV
+
+   Only one instance of the IPv6 MTU TLV MAY appear in the LLS block.
+   Instances subsequent to the first are not processed, and the LLS
+   inconsistency SHOULD be logged.
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.8.%20%20Operation%20over%20Virtual%20Links"></a><a class="selflink" href="#section-2.8" id="section-2.8">2.8</a>.  Operation over Virtual Links</span>
+
+   OSPFv3 control packets sent over a virtual link are IPv6 packets and
+   may traverse multiple hops.  Therefore, there MUST be a global IPv6
+   address associated with the virtual link so that OSPFv3 control
+   packets are forwarded correctly by the intermediate hops between
+   virtual link endpoints.  Although this requirement can be satisfied
+   in IPv6 unicast AFs, it will not function in other AFs as there will
+   not be a routable global IPv6 address or forwarding path.  Therefore,
+   virtual links are not supported in AFs other than IPv6 unicast.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Backward%20Compatibility"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Backward Compatibility</span>
+
+   All modifications to OSPFv3 apply exclusively to the support of
+   address families other than the IPv6 unicast AF using multiple OSPFv3
+   instances as described in this specification.  These modifications
+   are not applicable to IPv6 unicast topologies and do not preclude
+   future single instance mechanisms for supporting multiple address
+   families.
+
+   In this section, we will define a non-capable OSPFv3 router as one
+   not supporting this specification.  When multiple AFs are supported
+   as defined herein, each new AF will have a corresponding Instance ID
+   and can interoperate with the existing non-capable OSPFv3 routers in
+   an IPv6 unicast topology.  Furthermore, when a non-capable OSPFv3
+   router uses an Instance ID that is reserved for a given AF, no
+   adjacency will be formed with this router since the AF-bit in the
+   Options field will be clear in its OSPFv3 Hello packets.  Therefore,
+   there are no backward compatibility issues.  AFs can be gradually
+   deployed without disturbing OSPFv3 routing domains with non-capable
+   OSPFv3 routers.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Security%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Security Considerations</span>
+
+   IPsec [<a href="#ref-IPsec" title='"Security Architecture for the Internet Protocol"'>IPsec</a>] can be used for OSPFv3 authentication and
+   confidentiality as described in [<a href="#ref-OSPFV3-AUTH" title='"Authentication/ Confidentiality for OSPFv3"'>OSPFV3-AUTH</a>].  When multiple OSPFv3
+   instances use the same interface, they all MUST use the same Security
+   Association (SA), since the SA selectors do not provide selection
+   based on data in OSPFv3 Header fields (e.g., the Instance ID).  This
+   restriction is documented in Section 8 of [<a href="#ref-OSPFV3-AUTH" title='"Authentication/ Confidentiality for OSPFv3"'>OSPFV3-AUTH</a>].
+
+   Security considerations for OSPFv3 are covered in [<a href="#ref-OSPFV3" title='"OSPF for IPv6"'>OSPFV3</a>].
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  IANA Considerations</span>
+
+   The following IANA assignments were made from existing registries.
+
+   o  The AF-bit was assigned from the OSPFv3 Options registry as
+      defined in <a href="#section-2.2">Section 2.2</a>.
+
+   o  The M6-bit was assigned from the DD Packet Flags registry as
+      defined in <a href="#section-2.7">Section 2.7</a>
+
+   o  The TLV type (17) for the IPv6 MTU TLV was assigned from the OSPF
+      LLS TLVs registry.
+
+   IANA created a new registry, "OSPFv3 Instance ID Address Family
+   Values", for assignment of the mapping of OSPFv3 Instance IDs to
+   address families when this specification is used to support multiple
+   address families.  Note that the Instance ID field MAY be used for
+   applications other than the support of multiple address families.
+   However, if it is being used for address families as described in
+   this specification, the assignments herein SHOULD be honored.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+            +-------------+----------------------+--------------------+
+            | Value/Range | Designation          | Assignment Policy  |
+            +-------------+----------------------+--------------------+
+            | 0           | Base IPv6 Unicast AF | Already assigned   |
+            |             |                      |                    |
+            | 1-31        | IPv6 Unicast AFs     | Already assigned   |
+            |             | dependent on local   |                    |
+            |             | policy               |                    |
+            |             |                      |                    |
+            | 32          | Base IPv6 Multicast  | Already assigned   |
+            |             |                      |                    |
+            | 33-63       | IPv6 Multicast AFs   | Already assigned   |
+            |             | dependent on local   |                    |
+            |             | policy               |                    |
+            |             |                      |                    |
+            | 64          | Base IPv4 Unicast AF | Already assigned   |
+            |             |                      |                    |
+            | 65-95       | IPv4 Unicast AFs     | Already assigned   |
+            |             | dependent on local   |                    |
+            |             | policy               |                    |
+            |             |                      |                    |
+            | 96          | Base IPv4 Multicast  | Already assigned   |
+            |             |                      |                    |
+            | 97-127      | IPv4 Multicast AFs   | Already assigned   |
+            |             | dependent on local   |                    |
+            |             | policy               |                    |
+            |             |                      |                    |
+            | 128-255     | Unassigned           | Standards Action   |
+            +-------------+----------------------+--------------------+
+
+                 OSPFv3 Address Family Use of Instance IDs
+
+   o  Instance IDs 0-127 are assigned by this specification.
+
+   o  Instance IDs in the range 128-255 are not assigned at this time.
+      Before any assignments can be made in this range, there MUST be a
+      Standards Track RFC including an IANA Considerations section
+      explicitly specifying the AF Instance IDs being assigned.
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Normative%20References"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Normative References</span>
+
+   [<a id="ref-IPV6">IPV6</a>]          Deering, S. and R. Hinden, "Internet Protocol,
+                   Version 6 (IPv6) Specification", <a href="./rfc2460">RFC 2460</a>,
+                   December 1998.
+
+   [<a id="ref-IPsec">IPsec</a>]         Kent, S. and K. Seo, "Security Architecture for the
+                   Internet Protocol", <a href="./rfc4301">RFC 4301</a>, December 2005.
+
+   [<a id="ref-OSPFV2">OSPFV2</a>]        Moy, J., "OSPF Version 2", STD 54, <a href="./rfc2328">RFC 2328</a>,
+                   April 1998.
+
+   [<a id="ref-OSPFV3">OSPFV3</a>]        Coltun, R., Ferguson, D., Moy, J., and A. Lindem,
+                   "OSPF for IPv6", <a href="./rfc5340">RFC 5340</a>, July 2008.
+
+   [<a id="ref-OSPFV3-AUTH">OSPFV3-AUTH</a>]   Gupta, M. and S. Melam, "Authentication/
+                   Confidentiality for OSPFv3", <a href="./rfc4552">RFC 4552</a>, June 2006.
+
+   [<a id="ref-RFC-KEYWORDS">RFC-KEYWORDS</a>]  Bradner, S., "Key words for use in RFC's to Indicate
+                   Requirement Levels", <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Informative%20References"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Informative References</span>
+
+   [<a id="ref-ARP">ARP</a>]           Plummer, D., "Ethernet Address Resolution Protocol:
+                   Or Converting Network Protocol Addresses to 48.bit
+                   Ethernet Address for Transmission on Ethernet
+                   Hardware", STD 37, <a href="./rfc826">RFC 826</a>, November 1982.
+
+   [<a id="ref-LLS">LLS</a>]           Zinin, A., Roy, A., Nguyen, L., Friedman, B., and D.
+                   Young, "OSPF Link-Local Signaling", <a href="./rfc5613">RFC 5613</a>,
+                   August 2009.
+
+   [<a id="ref-MTUDISC">MTUDISC</a>]       Mogul, J. and S. Deering, "Path MTU Discovery",
+                   <a href="./rfc1191">RFC 1191</a>, November 1990.
+
+   [<a id="ref-ND">ND</a>]            Narten, T., Nordmark, E., Simpson, W., and H.
+                   Soliman, "Neighbor Discovery for IP version 6
+                   (IPv6)", <a href="./rfc4861">RFC 4861</a>, September 2007.
+
+   [<a id="ref-PIM">PIM</a>]           Fenner, B., Handley, M., Holbrook, H., and I.
+                   Kouvelas, "Protocol Independent Multicast - Sparse
+                   Mode (PIM-SM): Protocol Specification (Revised)",
+                   <a href="./rfc4601">RFC 4601</a>, August 2006.
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Acknowledgments"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Acknowledgments</span>
+
+   The RFC text was produced using Marshall Rose's xml2rfc tool.
+
+   Thanks to Tom Henderson and the folks at Boeing for implementing this
+   document in the Quagga routing suite, http:www.quagga.net.
+
+   Thanks to Nischal Sheth for review and comments.
+
+   Thanks to Christian Vogt for comments during the Gen-ART review.
+
+   Thanks to Adrian Farrel for comments during the IESG review.
+
+   Thanks to Alfred Hoenes for comments during the editing process.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Lindem, et al.               Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc5838">RFC 5838</a>                        OSPFv3 AF                     April 2010</span>
+
+
+Authors' Addresses
+
+   Acee Lindem (editor)
+   Ericsson
+   102 Carric Bend Court
+   Cary, NC  27519
+   USA
+
+   EMail: acee.lindem@ericsson.com
+
+
+   Sina Mirtorabi
+   Cisco Systems
+   3 West Plumeria Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: smirtora@cisco.com
+
+
+   Abhay Roy
+   Cisco Systems
+   225 West Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: akr@cisco.com
+
+
+   Michael Barnes
+   Cisco Systems
+   225 West Tasman Drive
+   San Jose, CA  95134
+   USA
+
+   EMail: mjbarnes@cisco.com
+
+
+   Rahul Aggarwal
+   Juniper Networks
+   1194 N. Mathilda Ave.
+   Sunnyvale, CA  94089
+   USA
+
+   EMail: rahul@juniper.net
+
+
+
+
+
+
+Lindem, et al.               Standards Track                   [Page 13]
+</pre>
+</body></html>

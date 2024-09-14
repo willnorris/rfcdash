@@ -1,0 +1,670 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                           F. Gont
+Request for Comments: 6093                                       UTN/FRH
+Updates: <a href="./rfc793">793</a>, <a href="./rfc1011">1011</a>, <a href="./rfc1122">1122</a>                                  A. Yourtchenko
+Category: Standards Track                                          Cisco
+ISSN: 2070-1721                                             January 2011
+
+
+           <span class="h1">On the Implementation of the TCP Urgent Mechanism</span>
+
+Abstract
+
+   This document analyzes how current TCP implementations process TCP
+   urgent indications and how the behavior of some widely deployed
+   middleboxes affects how end systems process urgent indications.  This
+   document updates the relevant specifications such that they
+   accommodate current practice in processing TCP urgent indications,
+   raises awareness about the reliability of TCP urgent indications in
+   the Internet, and recommends against the use of urgent indications
+   (but provides advice to applications that do).
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6093">http://www.rfc-editor.org/info/rfc6093</a>.
+
+Copyright Notice
+
+   Copyright (c) 2011 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-3">3</a>
+   <a href="#section-2">2</a>. Specification of the TCP Urgent Mechanism .......................<a href="#page-3">3</a>
+      <a href="#section-2.1">2.1</a>. Semantics of Urgent Indications ............................<a href="#page-3">3</a>
+      <a href="#section-2.2">2.2</a>. Semantics of the Urgent Pointer ............................<a href="#page-4">4</a>
+      <a href="#section-2.3">2.3</a>. Allowed Length of "Urgent Data" ............................<a href="#page-4">4</a>
+   <a href="#section-3">3</a>. Current Implementation Practice of the TCP Urgent Mechanism .....<a href="#page-5">5</a>
+      <a href="#section-3.1">3.1</a>. Semantics of Urgent Indications ............................<a href="#page-5">5</a>
+      <a href="#section-3.2">3.2</a>. Semantics of the Urgent Pointer ............................<a href="#page-5">5</a>
+      <a href="#section-3.3">3.3</a>. Allowed Length of "Urgent Data" ............................<a href="#page-6">6</a>
+      <a href="#section-3.4">3.4</a>. Interaction of Middleboxes with TCP Urgent Indications .....<a href="#page-6">6</a>
+   <a href="#section-4">4</a>. Updating <a href="./rfc793">RFC 793</a>, <a href="./rfc1011">RFC 1011</a>, and <a href="./rfc1122">RFC 1122</a> ........................<a href="#page-6">6</a>
+   <a href="#section-5">5</a>. Advice to New Applications Employing TCP ........................<a href="#page-7">7</a>
+   <a href="#section-6">6</a>. Advice to Applications That Make Use of the Urgent Mechanism ....<a href="#page-7">7</a>
+   <a href="#section-7">7</a>. Security Considerations .........................................<a href="#page-7">7</a>
+   <a href="#section-8">8</a>. Acknowledgements ................................................<a href="#page-8">8</a>
+   <a href="#section-9">9</a>. References ......................................................<a href="#page-8">8</a>
+      <a href="#section-9.1">9.1</a>. Normative References .......................................<a href="#page-8">8</a>
+      <a href="#section-9.2">9.2</a>. Informative References .....................................<a href="#page-8">8</a>
+   <a href="#appendix-A">Appendix A</a>.  Survey of the Processing of TCP Urgent
+                Indications by Some Popular TCP Implementations ......<a href="#page-10">10</a>
+      <a href="#appendix-A.1">A.1</a>. FreeBSD ...................................................<a href="#page-10">10</a>
+      <a href="#appendix-A.2">A.2</a>. Linux .....................................................<a href="#page-10">10</a>
+      <a href="#appendix-A.3">A.3</a>. NetBSD ....................................................<a href="#page-10">10</a>
+      <a href="#appendix-A.4">A.4</a>. OpenBSD ...................................................<a href="#page-11">11</a>
+      <a href="#appendix-A.5">A.5</a>. Cisco IOS software ........................................<a href="#page-11">11</a>
+      <a href="#appendix-A.6">A.6</a>. Microsoft Windows 2000, Service Pack 4 ....................<a href="#page-11">11</a>
+      <a href="#appendix-A.7">A.7</a>. Microsoft Windows 2008 ....................................<a href="#page-11">11</a>
+      <a href="#appendix-A.8">A.8</a>. Microsoft Windows 95 ......................................<a href="#page-11">11</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   This document analyzes how some current TCP implementations process
+   TCP urgent indications, and how the behavior of some widely deployed
+   middleboxes affects the processing of urgent indications by hosts.
+   This document updates <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], <a href="./rfc1011">RFC 1011</a> [<a href="./rfc1011" title='"Official Internet protocols"'>RFC1011</a>], and <a href="./rfc1122">RFC</a>
+   <a href="./rfc1122">1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>] such that they accommodate current practice in
+   processing TCP urgent indications.  It also provides advice to
+   applications using the urgent mechanism and raises awareness about
+   the reliability of TCP urgent indications in the current Internet.
+
+   Given the above issues and potential interoperability issues with
+   respect to the currently common default mode operation, it is
+   strongly recommended that applications do not employ urgent
+   indications.  Nevertheless, urgent indications are still retained as
+   a mandatory part of the TCP protocol to support the few legacy
+   applications that employ them.  However, it is expected that even
+   these applications will have difficulties in environments with
+   middleboxes.
+
+   <a href="#section-2">Section 2</a> describes what the current IETF specifications state with
+   respect to TCP urgent indications.  <a href="#section-3">Section 3</a> describes how current
+   TCP implementations actually process TCP urgent indications.  <a href="#section-4">Section</a>
+   <a href="#section-4">4</a> updates <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], <a href="./rfc1011">RFC 1011</a> [<a href="./rfc1011" title='"Official Internet protocols"'>RFC1011</a>], and <a href="./rfc1122">RFC 1122</a>
+   [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>], such that they accommodate current practice in processing
+   TCP urgent indications.  <a href="#section-5">Section 5</a> provides advice to new
+   applications employing TCP, with respect to the TCP urgent mechanism.
+   <a href="#section-6">Section 6</a> provides advice to existing applications that use or rely
+   on the TCP urgent mechanism.
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Specification%20of%20the%20TCP%20Urgent%20Mechanism"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Specification of the TCP Urgent Mechanism</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Semantics%20of%20Urgent%20Indications"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Semantics of Urgent Indications</span>
+
+   TCP implements an "urgent mechanism" that allows the sending user to
+   stimulate the receiving user to accept some "urgent data" and that
+   permits the receiving TCP to indicate to the receiving user when all
+   the currently known "urgent data" have been read.
+
+   The TCP urgent mechanism permits a point in the data stream to be
+   designated as the end of urgent information.  Whenever this point is
+   in advance of the receive sequence number (RCV.NXT) at the receiving
+   TCP, that TCP must tell the user to go into "urgent mode"; when the
+   receive sequence number catches up to the urgent pointer, the TCP
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+   must tell user to go into "normal mode" [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>].  This means, for
+   example, that data that was received as "normal data" might become
+   "urgent data" if an urgent indication is received in some successive
+   TCP segment before that data is consumed by the TCP user.
+
+   The URG control flag indicates that the "Urgent Pointer" field is
+   meaningful and must be added to the segment sequence number to yield
+   the urgent pointer.  The absence of this flag indicates that there is
+   no "urgent data" outstanding [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>].
+
+   The TCP urgent mechanism is NOT a mechanism for sending "out-of-band"
+   data: the so-called "urgent data" should be delivered "in-line" to
+   the TCP user.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Semantics%20of%20the%20Urgent%20Pointer"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Semantics of the Urgent Pointer</span>
+
+   There is some ambiguity in <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>] with respect to the
+   semantics of the Urgent Pointer.  <a href="#section-3.1">Section 3.1</a> (page 17) of <a href="./rfc793">RFC 793</a>
+   [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>] states that the Urgent Pointer "communicates the current
+   value of the urgent pointer as a positive offset from the sequence
+   number in this segment.  The urgent pointer points to the sequence
+   number of the octet following the urgent data.  This field is only be
+   interpreted in segments with the URG control bit set" (sic).
+   However, <a href="#section-3.9">Section 3.9</a> (page 56) of <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>] states, when
+   describing the processing of the SEND call in the ESTABLISHED and
+   CLOSE-WAIT states, that "If the urgent flag is set, then SND.UP &lt;-
+   SND.NXT-1 and set the urgent pointer in the outgoing segments".
+
+   <a href="./rfc1011">RFC 1011</a> [<a href="./rfc1011" title='"Official Internet protocols"'>RFC1011</a>] clarified this ambiguity in <a href="./rfc793">RFC 793</a> stating that
+   "Page 17 is wrong.  The urgent pointer points to the last octet of
+   urgent data (not to the first octet of non-urgent data)".  <a href="./rfc1122">RFC 1122</a>
+   [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>] formally updated <a href="./rfc793">RFC 793</a> by stating, in <a href="#section-4.2.2.4">Section 4.2.2.4</a>
+   (page 84), that "the urgent pointer points to the sequence number of
+   the LAST octet (not LAST+1) in a sequence of urgent data".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Allowed%20Length%20of%20%22Urgent%20Data%22"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Allowed Length of "Urgent Data"</span>
+
+   <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>] allows TCP peers to send "urgent data" of any
+   length, as the TCP urgent mechanism simply provides a pointer to an
+   interesting point in the data stream.  In this respect, <a href="#section-4.2.2.4">Section</a>
+   <a href="#section-4.2.2.4">4.2.2.4</a> (page 84) of <a href="./rfc1122">RFC 1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>] explicitly states that "A TCP
+   MUST support a sequence of urgent data of any length".
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Current%20Implementation%20Practice%20of%20the%20TCP%20Urgent%20Mechanism"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Current Implementation Practice of the TCP Urgent Mechanism</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Semantics%20of%20Urgent%20Indications"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Semantics of Urgent Indications</span>
+
+   As discussed in <a href="#section-2">Section 2</a>, the TCP urgent mechanism simply permits a
+   point in the data stream to be designated as the end of urgent
+   information but does NOT provide a mechanism for sending "out-of-
+   band" data.
+
+   Unfortunately, virtually all TCP implementations process TCP urgent
+   indications differently.  By default, the last byte of "urgent data"
+   is delivered "out of band" to the application.  That is, it is not
+   delivered as part of the normal data stream [<a href="#ref-UNPv1" title='"UNIX Network Programming, Volume 1. Networking APIs: Sockets and XTI"'>UNPv1</a>].  For example,
+   the "out-of-band" byte is read by an application when a recv(2)
+   system call with the MSG_OOB flag set is issued.
+
+   Most implementations provide a socket option (SO_OOBINLINE) that
+   allows an application to override the (broken) default processing of
+   urgent indications, so that "urgent data" is delivered "in line" to
+   the application, thus providing the semantics intended by the IETF
+   specifications.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Semantics%20of%20the%20Urgent%20Pointer"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Semantics of the Urgent Pointer</span>
+
+   All the popular implementations that the authors of this document
+   have been able to test interpret the semantics of the TCP Urgent
+   Pointer as specified in <a href="./rfc793#section-3.1">Section 3.1 of RFC 793</a>.  This means that even
+   when <a href="./rfc1122">RFC 1122</a> formally updated <a href="./rfc793">RFC 793</a> to clarify the ambiguity in
+   the semantics of the Urgent Pointer, this clarification was never
+   reflected in actual implementations (i.e., virtually all
+   implementations default to the semantics of the urgent pointer
+   specified in <a href="./rfc793#section-3.1">Section 3.1 of RFC 793</a>).
+
+   Some operating systems provide a system-wide toggle to override this
+   behavior and interpret the semantics of the Urgent Pointer as
+   clarified in <a href="./rfc1122">RFC 1122</a>.  However, this system-wide toggle has been
+   found to be inconsistent.  For example, Linux provides the sysctl
+   "tcp_stdurg" (i.e., net.ipv4.tcp_stdurg) that, when set, supposedly
+   changes the system behavior to interpret the semantics of the TCP
+   Urgent Pointer as specified in <a href="./rfc1122">RFC 1122</a>. However, this sysctl changes
+   the semantics of the Urgent Pointer only for incoming segments (i.e.,
+   not for outgoing segments).  This means that if this sysctl is set,
+   an application might be unable to interoperate with itself if both
+   the TCP sender and the TCP receiver are running on the same host.
+
+
+
+
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Allowed%20Length%20of%20%22Urgent%20Data%22"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Allowed Length of "Urgent Data"</span>
+
+   While <a href="#section-4.2.2.4">Section 4.2.2.4</a> (page 84) of <a href="./rfc1122">RFC 1122</a> explicitly states that "A
+   TCP MUST support a sequence of urgent data of any length", in
+   practice, all those implementations that interpret TCP urgent
+   indications as a mechanism for sending "out-of-band" data keep a
+   buffer of a single byte for storing the "last byte of urgent data".
+   Thus, if successive indications of "urgent data" are received before
+   the application reads the pending "out-of-band" byte, that pending
+   byte will be discarded (i.e., overwritten by the new byte of "urgent
+   data").
+
+   In order to avoid "urgent data" from being discarded, some
+   implementations queue each of the received "urgent bytes", so that
+   even if another urgent indication is received before the pending
+   "urgent data" are consumed by the application, those bytes do not
+   need to be discarded.  Some of these implementations have been known
+   to fail to enforce any limits on the amount of "urgent data" that
+   they queue; thus, they become vulnerable to trivial resource
+   exhaustion attacks [<a href="#ref-CPNI-TCP" title='"Security Assessment of the Transmission Control Protocol (TCP)"'>CPNI-TCP</a>].
+
+   It should be reinforced that the aforementioned implementations are
+   broken.  The TCP urgent mechanism is not a mechanism for delivering
+   "out-of-band" data.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.4.%20%20Interaction%20of%20Middleboxes%20with%20TCP%20Urgent%20Indications"></a><a class="selflink" href="#section-3.4" id="section-3.4">3.4</a>.  Interaction of Middleboxes with TCP Urgent Indications</span>
+
+   As a result of the publication of Network Intrusion Detection System
+   (NIDS) evasion techniques based on TCP urgent indications [<a href="#ref-phrack" title='"NIDS Evasion Method named "'>phrack</a>],
+   some middleboxes clear the urgent indications by clearing the URG
+   flag and setting the Urgent Pointer to zero.  This causes the "urgent
+   data" to become "in line" (that is, accessible by the read(2) call or
+   the recv(2) call without the MSG_OOB flag) in the case of those TCP
+   implementations that interpret the TCP urgent mechanism as a facility
+   for delivering "out-of-band" data (as described in <a href="#section-3.1">Section 3.1</a>).  An
+   example of such a middlebox is the Cisco PIX firewall [<a href="#ref-Cisco-PIX" title='"http://www.cisco.com/en/US/docs/security/ asa/asa70/command/reference/tz.html#wp1288756"'>Cisco-PIX</a>].
+   This should discourage applications from depending on urgent
+   indications for their correct operation, as urgent indications may
+   not be reliable in the current Internet.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Updating%20RFC%20793%2C%20RFC%201011%2C%20and%20RFC%201122"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Updating <a href="./rfc793">RFC 793</a>, <a href="./rfc1011">RFC 1011</a>, and <a href="./rfc1122">RFC 1122</a></span>
+
+   Considering that as long as both the TCP sender and the TCP receiver
+   implement the same semantics for the Urgent Pointer there is no
+   functional difference in having the Urgent Pointer point to "the
+   sequence number of the octet following the urgent data" vs.  "the
+   last octet of urgent data", and that all known implementations
+   interpret the semantics of the Urgent Pointer as pointing to "the
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+   sequence number of the octet following the urgent data", we hereby
+   update <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], <a href="./rfc1011">RFC 1011</a> [<a href="./rfc1011" title='"Official Internet protocols"'>RFC1011</a>], and <a href="./rfc1122">RFC 1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>]
+   such that "the urgent pointer points to the sequence number of the
+   octet following the urgent data" (in segments with the URG control
+   bit set), thus accommodating virtually all existing TCP
+   implementations.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Advice%20to%20New%20Applications%20Employing%20TCP"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Advice to New Applications Employing TCP</span>
+
+   As a result of the issues discussed in <a href="#section-3.2">Section 3.2</a> and <a href="#section-3.4">Section 3.4</a>,
+   new applications SHOULD NOT employ the TCP urgent mechanism.
+   However, TCP implementations MUST still include support for the
+   urgent mechanism such that existing applications can still use it.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Advice%20to%20Applications%20That%20Make%20Use%20of%20the%20Urgent%20Mechanism"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Advice to Applications That Make Use of the Urgent Mechanism</span>
+
+   Even though applications SHOULD NOT employ the urgent mechanism,
+   applications that still decide to employ it MUST set the SO_OOBINLINE
+   socket option, such that "urgent data" is delivered in line, as
+   intended by the IETF specifications.
+
+   Additionally, applications that still decide to use the urgent
+   mechanism need to be designed for correct operation even when the URG
+   flag is cleared by middleboxes.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Security Considerations</span>
+
+   Multiple factors can affect the data flow that is actually delivered
+   to an application when the TCP urgent mechanism is employed: for
+   example, the two possible interpretations of the semantics of the
+   Urgent Pointer in current implementations (e.g., depending on the
+   value of the tcp_stdurg sysctl), the possible implementation of the
+   urgent mechanism as an "out-of-band" (OOB) facility (versus "in-band"
+   as intended by the IETF specifications), or middleboxes (such as
+   packet scrubbers) or the end-systems themselves that could cause the
+   "urgent data" to be processed "in line".  This might make it
+   difficult for a Network Intrusion Detection System (NIDS) to track
+   the application-layer data transferred to the destination system and
+   thus lead to false negatives or false positives in the NIDS
+   [<a href="#ref-CPNI-TCP" title='"Security Assessment of the Transmission Control Protocol (TCP)"'>CPNI-TCP</a>] [<a href="#ref-phrack" title='"NIDS Evasion Method named "'>phrack</a>].
+
+   Probably the best way to avoid the security implications of TCP
+   "urgent data" is to avoid having applications use the TCP urgent
+   mechanism altogether.  Packet scrubbers could probably be configured
+   to clear the URG bit and set the Urgent Pointer to zero.  This would
+   basically cause the "urgent data" to be put "in line".  However, this
+
+
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+   might cause interoperability problems or undesired behavior in those
+   applications that rely on the TCP urgent mechanism, such as Telnet
+   [<a href="./rfc0854" title='"Telnet Protocol Specification"'>RFC0854</a>] and FTP [<a href="./rfc0959" title='"File Transfer Protocol"'>RFC0959</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Acknowledgements"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Acknowledgements</span>
+
+   The authors of this document would like to thank (in alphabetical
+   order) Jari Arkko, Ron Bonica, David Borman, Dave Cridland, Ralph
+   Droms, Wesley Eddy, John Heffner, Alfred Hoenes, Alexey Melnikov,
+   Keith Moore, Carlos Pignataro, Tim Polk, Anantha Ramaiah, Joe Touch,
+   Michael Welzl, Dan Wing, and Alexander Zimmermann for providing
+   valuable feedback on earlier versions of this document.
+
+   Fernando would like to thank David Borman and Joe Touch for a
+   fruitful discussion about the TCP urgent mechanism at IETF 73
+   (Minneapolis).
+
+   Fernando Gont's attendance to IETF meetings was supported by ISOC's
+   "Fellowship to the IETF" program.
+
+   Finally, Fernando Gont wishes to express deep and heartfelt gratitude
+   to Jorge Oscar Gont and Nelida Garcia for their precious motivation
+   and guidance.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20References"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Normative%20References"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC0793">RFC0793</a>]     Postel, J., "Transmission Control Protocol", STD 7, <a href="./rfc793">RFC</a>
+                 <a href="./rfc793">793</a>, September 1981.
+
+   [<a id="ref-RFC1011">RFC1011</a>]     Reynolds, J. and J. Postel, "Official Internet
+                 protocols", <a href="./rfc1011">RFC 1011</a>, May 1987.
+
+   [<a id="ref-RFC1122">RFC1122</a>]     Braden, R., Ed., "Requirements for Internet Hosts -
+                 Communication Layers", STD 3, <a href="./rfc1122">RFC 1122</a>, October 1989.
+
+   [<a id="ref-RFC2119">RFC2119</a>]     Bradner, S., "Key words for use in RFCs to Indicate
+                 Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20Informative%20References"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  Informative References</span>
+
+   [<a id="ref-CPNI-TCP">CPNI-TCP</a>]    Gont, F., "Security Assessment of the Transmission
+                 Control Protocol (TCP)", "<a href="http://www.cpni.gov.uk/Docs/tn-03-09-security-assessment-TCP.pdf">http://www.cpni.gov.uk/</a>
+                 <a href="http://www.cpni.gov.uk/Docs/tn-03-09-security-assessment-TCP.pdf">Docs/tn-03-09-security-assessment-TCP.pdf</a>", 2009.
+
+   [<a id="ref-Cisco-PIX">Cisco-PIX</a>]   Cisco PIX, "<a href="http://www.cisco.com/en/US/docs/security/asa/asa70/command/reference/tz.html#wp1288756">http://www.cisco.com/en/US/docs/security/</a>
+                 <a href="http://www.cisco.com/en/US/docs/security/asa/asa70/command/reference/tz.html#wp1288756">asa/asa70/command/reference/tz.html#wp1288756</a>".
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+   [<a id="ref-FreeBSD">FreeBSD</a>]     The FreeBSD project, "<a href="http://www.freebsd.org">http://www.freebsd.org</a>".
+
+   [<a id="ref-Linux">Linux</a>]       The Linux Project, "<a href="http://www.kernel.org">http://www.kernel.org</a>".
+
+   [<a id="ref-NetBSD">NetBSD</a>]      The NetBSD project, "<a href="http://www.netbsd.org">http://www.netbsd.org</a>".
+
+   [<a id="ref-OpenBSD">OpenBSD</a>]     The OpenBSD project, "<a href="http://www.openbsd.org">http://www.openbsd.org</a>".
+
+   [<a id="ref-RFC0854">RFC0854</a>]     Postel, J. and J. Reynolds, "Telnet Protocol
+                 Specification", STD 8, <a href="./rfc854">RFC 854</a>, May 1983.
+
+   [<a id="ref-RFC0959">RFC0959</a>]     Postel, J. and J. Reynolds, "File Transfer Protocol",
+                 STD 9, <a href="./rfc959">RFC 959</a>, October 1985.
+
+   [<a id="ref-UNPv1">UNPv1</a>]       Stevens, W., "UNIX Network Programming, Volume 1.
+                 Networking APIs: Sockets and XTI", Prentice Hall PTR,
+                 1997.
+
+   [<a id="ref-Windows2000">Windows2000</a>] Microsoft Windows 2000, "<a href="http://technet.microsoft.com/">http://technet.microsoft.com/</a>
+                 en-us/library/bb726981(printer).aspx".
+
+   [<a id="ref-Windows95">Windows95</a>]   Microsoft Windows 95, "<a href="ftp://ftp.demon.co.uk/pub/mirrors/win95netfaq/faq-c.html">ftp://ftp.demon.co.uk/pub/</a>
+                 <a href="ftp://ftp.demon.co.uk/pub/mirrors/win95netfaq/faq-c.html">mirrors/win95netfaq/faq-c.html</a>".
+
+   [<a id="ref-phrack">phrack</a>]      Ko, Y., Ko, S., and M. Ko, "NIDS Evasion Method named
+                 "SeolMa"", Phrack Magazine, Volume 0x0b, Issue 0x39,
+                 Phile #0x03 of 0x12 <a href="http://www.phrack.org/issues">http://www.phrack.org/</a>
+                 <a href="http://www.phrack.org/issues">issues</a>.html?issue=57&amp;id=3#article, 2001.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Survey%20of%20the%20Processing%20of%20TCP%20Urgent%20Indications%20by%20Some"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Survey of the Processing of TCP Urgent Indications by Some</span>
+             Popular TCP Implementations
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.1.%20%20FreeBSD"></a><a class="selflink" href="#appendix-A.1" id="appendix-A.1">A.1</a>.  FreeBSD</span>
+
+   FreeBSD 8.0 [<a href="#ref-FreeBSD" title='"http://www.freebsd.org"'>FreeBSD</a>] interprets the semantics of the urgent pointer
+   as specified in <a href="#section-4">Section 4</a> of this document.  It does not provide any
+   sysctl to override this behavior.
+
+   FreeBSD provides the SO_OOBINLINE socket option that, when set,
+   causes TCP "urgent data" to remain "in line".  That is, it will be
+   accessible by the read(2) call or the recv(2) call without the
+   MSG_OOB flag.
+
+   FreeBSD supports only one byte of "urgent data".  That is, only the
+   byte preceding the Urgent Pointer is considered "urgent data".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.2.%20%20Linux"></a><a class="selflink" href="#appendix-A.2" id="appendix-A.2">A.2</a>.  Linux</span>
+
+   Linux 2.6.15-53-386 [<a href="#ref-Linux" title='"http://www.kernel.org"'>Linux</a>] interprets the semantics of the urgent
+   pointer as specified in <a href="#section-4">Section 4</a> of this document.  It provides the
+   net.ipv4.tcp_stdurg sysctl to override this behavior to interpret the
+   Urgent Pointer as specified in <a href="./rfc1122">RFC 1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>].  However, this
+   sysctl only affects the processing of incoming segments (the Urgent
+   Pointer in outgoing segments will still be set as specified in
+   <a href="#section-4">Section 4</a> of this document).
+
+   Linux provides the SO_OOBINLINE socket option that, when set, causes
+   TCP "urgent data" to remain "in line".  That is, it will be
+   accessible by the read(2) call or the recv(2) call without the
+   MSG_OOB flag.
+
+   Linux supports only one byte of "urgent data".  That is, only the
+   byte preceding the Urgent Pointer is considered "urgent data".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.3.%20%20NetBSD"></a><a class="selflink" href="#appendix-A.3" id="appendix-A.3">A.3</a>.  NetBSD</span>
+
+   NetBSD 5.0.1 [<a href="#ref-NetBSD" title='"http://www.netbsd.org"'>NetBSD</a>] interprets the semantics of the urgent pointer
+   as specified in <a href="#section-4">Section 4</a> of this document.  It does not provide any
+   sysctl to override this behavior.
+
+   NetBSD provides the SO_OOBINLINE socket option that, when set, causes
+   TCP "urgent data" to remain "in line".  That is, it will be
+   accessible by the read(2) call or the recv(2) call without the
+   MSG_OOB flag.
+
+   NetBSD supports only one byte of "urgent data".  That is, only the
+   byte preceding the Urgent Pointer is considered "urgent data".
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.4.%20%20OpenBSD"></a><a class="selflink" href="#appendix-A.4" id="appendix-A.4">A.4</a>.  OpenBSD</span>
+
+   OpenBSD 4.2 [<a href="#ref-OpenBSD" title='"http://www.openbsd.org"'>OpenBSD</a>] interprets the semantics of the urgent pointer
+   as specified in <a href="#section-4">Section 4</a> of this document.  It does not provide any
+   sysctl to override this behavior.
+
+   OpenBSD provides the SO_OOBINLINE socket option that, when set,
+   causes TCP "urgent data" to remain "in line".  That is, it will be
+   accessible by the read(2) or recv(2) calls without the MSG_OOB flag.
+
+   OpenBSD supports only one byte of "urgent data".  That is, only the
+   byte preceding the Urgent Pointer is considered "urgent data".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.5.%20%20Cisco%20IOS%20software"></a><a class="selflink" href="#appendix-A.5" id="appendix-A.5">A.5</a>.  Cisco IOS software</span>
+
+   Cisco IOS Software Releases 12.2(18)SXF7, 12.4(15)T7 interpret the
+   semantics of the urgent pointer as specified in <a href="#section-4">Section 4</a> of this
+   document.
+
+   The behavior is consistent with having the SO_OOBINLINE socket option
+   turned on, i.e., the data is processed "in line".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.6.%20%20Microsoft%20Windows%202000%2C%20Service%20Pack%204"></a><a class="selflink" href="#appendix-A.6" id="appendix-A.6">A.6</a>.  Microsoft Windows 2000, Service Pack 4</span>
+
+   Microsoft Windows 2000 [<a href="#ref-Windows2000" title='"http://technet.microsoft.com/ en-us/library/bb726981(printer).aspx"'>Windows2000</a>] interprets the semantics of the
+   urgent pointer as specified in <a href="#section-4">Section 4</a> of this document.  It
+   provides the TcpUseRFC1122UrgentPointer system-wide variable to
+   override this behavior, interpreting the Urgent Pointer as specified
+   in <a href="./rfc1122">RFC 1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>].
+
+   Tests performed with a sample server application compiled using the
+   cygwin environment has shown that the default behavior is to return
+   the "urgent data" "in line".
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.7.%20%20Microsoft%20Windows%202008"></a><a class="selflink" href="#appendix-A.7" id="appendix-A.7">A.7</a>.  Microsoft Windows 2008</span>
+
+   Microsoft Windows 2008 interprets the semantics of the urgent pointer
+   as specified in <a href="#section-4">Section 4</a> of this document.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.8.%20%20Microsoft%20Windows%2095"></a><a class="selflink" href="#appendix-A.8" id="appendix-A.8">A.8</a>.  Microsoft Windows 95</span>
+
+   Microsoft Windows 95 interprets the semantics of the urgent pointer
+   as specified in <a href="#section-4">Section 4</a> of this document.  It provides the
+   BSDUrgent system-wide variable to override this behavior,
+   interpreting the Urgent Pointer as specified in <a href="./rfc1122">RFC 1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>].
+   Windows 95 supports only one byte of "urgent data".  That is, only
+   the byte preceding the Urgent Pointer is considered "urgent data"
+   [<a href="#ref-Windows95" title='"ftp://ftp.demon.co.uk/pub/ mirrors/win95netfaq/faq-c.html"'>Windows95</a>].
+
+
+
+<span class="grey">Gont &amp; Yourtchenko           Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc6093">RFC 6093</a>               On the TCP Urgent Mechanism          January 2011</span>
+
+
+Authors' Addresses
+
+   Fernando Gont
+   Universidad Tecnologica Nacional / Facultad Regional Haedo
+   Evaristo Carriego 2644
+   Haedo, Provincia de Buenos Aires  1706
+   Argentina
+
+   Phone: +54 11 4650 8472
+   EMail: fernando@gont.com.ar
+   URI:   <a href="http://www.gont.com.ar">http://www.gont.com.ar</a>
+
+
+   Andrew Yourtchenko
+   Cisco
+   De Kleetlaan, 7
+   Diegem  B-1831
+   Belgium
+
+   Phone: +32 2 704 5494
+   EMail: ayourtch@cisco.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Gont &amp; Yourtchenko           Standards Track                   [Page 12]
+</pre>
+</body></html>

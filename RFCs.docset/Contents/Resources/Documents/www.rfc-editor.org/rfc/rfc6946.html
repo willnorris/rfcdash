@@ -1,0 +1,502 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                           F. Gont
+Request for Comments: 6946                           Huawei Technologies
+Updates: <a href="./rfc2460">2460</a>, <a href="./rfc5722">5722</a>                                             May 2013
+Category: Standards Track
+ISSN: 2070-1721
+
+
+                 <span class="h1">Processing of IPv6 "Atomic" Fragments</span>
+
+Abstract
+
+   The IPv6 specification allows packets to contain a Fragment Header
+   without the packet being actually fragmented into multiple pieces (we
+   refer to these packets as "atomic fragments").  Such packets are
+   typically sent by hosts that have received an ICMPv6 "Packet Too Big"
+   error message that advertises a Next-Hop MTU smaller than 1280 bytes,
+   and are currently processed by some implementations as normal
+   "fragmented traffic" (i.e., they are "reassembled" with any other
+   queued fragments that supposedly correspond to the same original
+   packet).  Thus, an attacker can cause hosts to employ atomic
+   fragments by forging ICMPv6 "Packet Too Big" error messages, and then
+   launch any fragmentation-based attacks against such traffic.  This
+   document discusses the generation of the aforementioned atomic
+   fragments and the corresponding security implications.  Additionally,
+   this document formally updates <a href="./rfc2460">RFC 2460</a> and <a href="./rfc5722">RFC 5722</a>, such that IPv6
+   atomic fragments are processed independently of any other fragments,
+   thus completely eliminating the aforementioned attack vector.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6946">http://www.rfc-editor.org/info/rfc6946</a>.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2013 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-2">2</a>
+   <a href="#section-2">2</a>. Terminology .....................................................<a href="#page-4">4</a>
+   <a href="#section-3">3</a>. Generation of IPv6 Atomic Fragments .............................<a href="#page-4">4</a>
+   <a href="#section-4">4</a>. Updating <a href="./rfc2460">RFC 2460</a> and <a href="./rfc5722">RFC 5722</a> ..................................<a href="#page-5">5</a>
+   <a href="#section-5">5</a>. Security Considerations .........................................<a href="#page-6">6</a>
+   <a href="#section-6">6</a>. Acknowledgements ................................................<a href="#page-6">6</a>
+   <a href="#section-7">7</a>. References ......................................................<a href="#page-7">7</a>
+      <a href="#section-7.1">7.1</a>. Normative References .......................................<a href="#page-7">7</a>
+      <a href="#section-7.2">7.2</a>. Informative References .....................................<a href="#page-7">7</a>
+   <a href="#appendix-A">Appendix A</a>. Survey of Processing of IPv6 Atomic Fragments by
+               Different Operating Systems ............................<a href="#page-8">8</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   [<a id="ref-RFC2460">RFC2460</a>] specifies the IPv6 fragmentation mechanism, which allows
+   IPv6 packets to be fragmented into smaller pieces such that they fit
+   in the Path-MTU to the intended destination(s).  [<a href="./rfc2460" title='"Internet Protocol, Version 6 (IPv6) Specification"'>RFC2460</a>] allows
+   fragments to overlap, thus leading to ambiguity in the result of the
+   reassembly process, which could be leveraged by attackers to bypass
+   firewall rules and/or evade Network Intrusion Detection Systems
+   (NIDS) [<a href="./rfc5722" title='"Handling of Overlapping IPv6 Fragments"'>RFC5722</a>].
+
+   [<a id="ref-RFC5722">RFC5722</a>] forbids overlapping fragments, specifying that when
+   overlapping fragments are detected, all the fragments corresponding
+   to that packet must be silently discarded.
+
+   As specified in <a href="./rfc2460#section-5">Section 5 of [RFC2460]</a>, when a host receives an
+   ICMPv6 "Packet Too Big" message advertising a "Next-Hop MTU" smaller
+   than 1280 (the minimum IPv6 MTU), it is not required to reduce the
+   assumed Path-MTU, but must simply include a Fragment Header in all
+   subsequent packets sent to that destination.  The resulting packets
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+   will thus not actually be fragmented into several pieces but will
+   just include a Fragment Header with both the "Fragment Offset" and
+   the "M" flag set to 0 (we refer to these packets as "atomic
+   fragments").  IPv6/IPv4 translators employ the Fragment
+   Identification information found in the Fragment Header to select an
+   appropriate Fragment Identification value for the resulting IPv4
+   fragments.
+
+   While these packets are really atomic fragments (they can be
+   processed by the IPv6 module and handed to the upper-layer protocol
+   without waiting for any other fragments), many IPv6 implementations
+   process them as regular fragments.  Namely, they try to perform IPv6
+   fragment reassembly with the atomic fragment and any other fragments
+   already queued with the same set {IPv6 Source Address, IPv6
+   Destination Address, Fragment Identification}.  For example, in the
+   case of IPv6 implementations that have been updated to support
+   [<a href="./rfc5722" title='"Handling of Overlapping IPv6 Fragments"'>RFC5722</a>], if a fragment with the same {IPv6 Source Address, IPv6
+   Destination Address, Fragment Identification} is already queued for
+   reassembly at a host when an atomic fragment is received with the
+   same set {IPv6 Source Address, IPv6 Destination Address, Fragment
+   Identification}, and both fragments overlap, all the fragments will
+   be silently discarded.
+
+   Processing of IPv6 atomic fragments as regular fragmented packets
+   clearly provides an unnecessary vector to perform fragmentation-based
+   attacks against non-fragmented traffic (i.e., IPv6 datagrams that are
+   not really split into multiple pieces but that just include a
+   Fragment Header).
+
+   IPv6 fragmentation attacks have been discussed in great detail in
+   [<a href="#ref-PREDICTABLE-ID">PREDICTABLE-ID</a>] and [<a href="#ref-CPNI-IPv6">CPNI-IPv6</a>], and [<a href="./rfc5722" title='"Handling of Overlapping IPv6 Fragments"'>RFC5722</a>] describes a specific
+   firewall-circumvention attack that could be performed by leveraging
+   overlapping fragments.  The possible IPv6 fragmentation-based attacks
+   are, in most cases, "ports" of the IPv4 fragmentation attacks
+   discussed in [<a href="./rfc6274" title='"Security Assessment of the Internet Protocol Version 4"'>RFC6274</a>].
+
+   <a href="#section-3">Section 3</a> describes the generation of IPv6 atomic fragments and how
+   they can be remotely "triggered" by a remote attacker.  <a href="#section-4">Section 4</a>
+   formally updates [<a href="./rfc2460" title='"Internet Protocol, Version 6 (IPv6) Specification"'>RFC2460</a>] and [<a href="./rfc5722" title='"Handling of Overlapping IPv6 Fragments"'>RFC5722</a>] such that the aforementioned
+   attack vector is eliminated.  <a href="#appendix-A">Appendix A</a> contains a survey of the
+   generation and processing of IPv6 atomic fragments in different
+   versions of a number of popular IPv6 implementations.
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Terminology"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Terminology</span>
+
+   IPv6 atomic fragments:
+      IPv6 packets that contain a Fragment Header with the Fragment
+      Offset set to 0 and the M flag set to 0.
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Generation%20of%20IPv6%20Atomic%20Fragments"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Generation of IPv6 Atomic Fragments</span>
+
+   <a href="./rfc2460#section-5">Section 5 of [RFC2460]</a> states:
+
+      "In response to an IPv6 packet that is sent to an IPv4 destination
+      (i.e., a packet that undergoes translation from IPv6 to IPv4), the
+      originating IPv6 node may receive an ICMP Packet Too Big message
+      reporting a Next-Hop MTU less than 1280.  In that case, the IPv6
+      node is not required to reduce the size of subsequent packets to
+      less than 1280, but must include a Fragment header in those
+      packets so that the IPv6-to-IPv4 translating router can obtain a
+      suitable Identification value to use in resulting IPv4 fragments.
+      Note that this means the payload may have to be reduced to 1232
+      octets (1280 minus 40 for the IPv6 header and 8 for the Fragment
+      header), and smaller still if additional extension headers are
+      used."
+
+   This means that any ICMPv6 "Packet Too Big" message advertising a
+   "Next-Hop MTU" smaller than 1280 could trigger the generation of the
+   so-called "atomic fragments" (i.e., IPv6 datagrams that include a
+   Fragment Header but that are composed of a single fragment, with both
+   the "Fragment Offset" and the "M" fields of the Fragment Header set
+   to 0).  This can be leveraged to perform a variety of fragmentation-
+   based attacks [<a href="#ref-PREDICTABLE-ID">PREDICTABLE-ID</a>] [<a href="#ref-CPNI-IPv6">CPNI-IPv6</a>].
+
+      For example, an attacker could forge IPv6 fragments with an
+      appropriate {IPv6 Source Address, IPv6 Destination Address,
+      Fragment Identification} tuple, such that these malicious
+      fragments are incorrectly "reassembled" by the destination host
+      together with some of the legitimate fragments of the original
+      packet, thus leading to packet drops (and a potential denial of
+      service).
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+   From a security standpoint, this situation is exacerbated by the
+   following factors:
+
+   o  Many implementations fail to perform validation checks on the
+      received ICMPv6 error messages, as recommended in <a href="./rfc4443#section-5.2">Section 5.2 of
+      [RFC4443]</a> and documented in [<a href="./rfc5927" title='"ICMP Attacks against TCP"'>RFC5927</a>].  It should be noted that in
+      some cases, such as when an ICMPv6 error message has (supposedly)
+      been elicited by a connectionless transport protocol (or some
+      other connectionless protocol being encapsulated in IPv6), it may
+      be virtually impossible to perform validation checks on the
+      received ICMPv6 error messages.
+
+   o  Upon receipt of one of the aforementioned ICMPv6 "Packet Too Big"
+      error messages, the Destination Cache [<a href="./rfc4861" title='"Neighbor Discovery for IP version 6 (IPv6)"'>RFC4861</a>] is usually updated
+      to reflect that any subsequent packets to that destination should
+      include a Fragment Header.  This means that a single ICMPv6
+      "Packet Too Big" error message might affect multiple communication
+      instances (e.g., TCP connections) with that IPv6 destination
+      address.
+
+   o  Some implementations employ predictable Fragment Identification
+      values, thus greatly improving the chances of an attacker
+      successfully performing fragmentation-based attacks
+      [<a href="#ref-PREDICTABLE-ID">PREDICTABLE-ID</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Updating%20RFC%202460%20and%20RFC%205722"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Updating <a href="./rfc2460">RFC 2460</a> and <a href="./rfc5722">RFC 5722</a></span>
+
+   <a href="./rfc2460#section-4.5">Section 4.5 of [RFC2460]</a> and <a href="./rfc5722#section-4">Section 4 of [RFC5722]</a> are updated as
+   follows:
+
+      A host that receives an IPv6 packet that includes a Fragment
+      Header with the "Fragment Offset" equal to 0 and the "M" flag
+      equal to 0 MUST process that packet in isolation from any other
+      packets/fragments, even if such packets/fragments contain the same
+      set {IPv6 Source Address, IPv6 Destination Address, Fragment
+      Identification}.  A received atomic fragment should be
+      "reassembled" from the contents of that sole fragment.
+
+         The Unfragmentable Part of the reassembled packet consists of
+         all headers up to, but not including, the Fragment Header of
+         the received atomic fragment.
+
+         The Next Header field of the last header of the Unfragmentable
+         Part of the reassembled packet is obtained from the Next Header
+         field of the Fragment Header of the received atomic fragment.
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+         The Payload Length of the reassembled packet is obtained by
+         subtracting the length of the Fragment Header (that is, 8) from
+         the Payload Length of the received atomic fragment.
+
+      Additionally, if any fragments with the same set {IPv6 Source
+      Address, IPv6 Destination Address, Fragment Identification} are
+      present in the fragment reassembly queue when the atomic fragment
+      is received, such fragments MUST NOT be discarded upon receipt of
+      the "colliding" IPv6 atomic fragment, since IPv6 atomic fragments
+      MUST NOT interfere with "normal" fragmented traffic.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Security%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Security Considerations</span>
+
+   This document describes how the traditional processing of IPv6 atomic
+   fragments enables the exploitation of fragmentation-based attacks
+   (such as those described in [<a href="#ref-PREDICTABLE-ID">PREDICTABLE-ID</a>] and [<a href="#ref-CPNI-IPv6">CPNI-IPv6</a>]).  This
+   document formally updates [<a href="./rfc2460" title='"Internet Protocol, Version 6 (IPv6) Specification"'>RFC2460</a>] and [<a href="./rfc5722" title='"Handling of Overlapping IPv6 Fragments"'>RFC5722</a>], such that IPv6
+   atomic fragments are processed independently of any other fragments,
+   thus completely eliminating the aforementioned attack vector.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Acknowledgements"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Acknowledgements</span>
+
+   The author would like to thank (in alphabetical order) Tore Anderson,
+   Ran Atkinson, Remi Despres, Stephen Farrell, Brian Haberman, Timothy
+   Hartrick, Steinar Haug, Philip Homburg, Simon Josefsson, Simon
+   Perreault, Sean Turner, Florian Weimer, and Bjoern A. Zeeb for
+   providing valuable comments on earlier versions of this document.
+   Additionally, the author would like to thank Alexander Bluhm, who
+   implemented this specification for OpenBSD.
+
+   This document is based on the technical report "Security Assessment
+   of the Internet Protocol version 6 (IPv6)" [<a href="#ref-CPNI-IPv6">CPNI-IPv6</a>], authored by
+   Fernando Gont on behalf of the UK Centre for the Protection of
+   National Infrastructure (CPNI).
+
+   Finally, the author wishes to thank Nelida Garcia and Guillermo Gont
+   for their love and support.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Normative%20References"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC2460">RFC2460</a>]  Deering, S. and R. Hinden, "Internet Protocol, Version 6
+              (IPv6) Specification", <a href="./rfc2460">RFC 2460</a>, December 1998.
+
+   [<a id="ref-RFC4443">RFC4443</a>]  Conta, A., Deering, S., and M. Gupta, "Internet Control
+              Message Protocol (ICMPv6) for the Internet Protocol
+              Version 6 (IPv6) Specification", <a href="./rfc4443">RFC 4443</a>, March 2006.
+
+   [<a id="ref-RFC4861">RFC4861</a>]  Narten, T., Nordmark, E., Simpson, W., and H. Soliman,
+              "Neighbor Discovery for IP version 6 (IPv6)", <a href="./rfc4861">RFC 4861</a>,
+              September 2007.
+
+   [<a id="ref-RFC5722">RFC5722</a>]  Krishnan, S., "Handling of Overlapping IPv6 Fragments",
+              <a href="./rfc5722">RFC 5722</a>, December 2009.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Informative%20References"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Informative References</span>
+
+   [<a id="ref-CPNI-IPv6">CPNI-IPv6</a>]
+              Gont, F., "Security Assessment of the Internet Protocol
+              version 6 (IPv6)", UK Centre for the Protection of
+              National Infrastructure, (available on request).
+
+   [<a id="ref-PREDICTABLE-ID">PREDICTABLE-ID</a>]
+              Gont, F., "Security Implications of Predictable Fragment
+              Identification Values", Work in Progress, March 2013.
+
+   [<a id="ref-RFC5927">RFC5927</a>]  Gont, F., "ICMP Attacks against TCP", <a href="./rfc5927">RFC 5927</a>, July 2010.
+
+   [<a id="ref-RFC6274">RFC6274</a>]  Gont, F., "Security Assessment of the Internet Protocol
+              Version 4", <a href="./rfc6274">RFC 6274</a>, July 2011.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Survey%20of%20Processing%20of%20IPv6%20Atomic%20Fragments%20by%20Different"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Survey of Processing of IPv6 Atomic Fragments by Different</span>
+             Operating Systems
+
+   This section includes a survey of the support of IPv6 atomic
+   fragments in popular operating systems, as tested on October 30,
+   2012.
+
+   +---------------------+---------------------+-----------------------+
+   |   Operating System  |   Generates atomic  |    Implements this    |
+   |                     |      fragments      |     specification     |
+   +---------------------+---------------------+-----------------------+
+   |     FreeBSD 8.0     |          No         |           No          |
+   +---------------------+---------------------+-----------------------+
+   |     FreeBSD 8.2     |         Yes         |           No          |
+   +---------------------+---------------------+-----------------------+
+   |     FreeBSD 9.0     |         Yes         |           No          |
+   +---------------------+---------------------+-----------------------+
+   |    Linux 3.0.0-15   |         Yes         |          Yes          |
+   +---------------------+---------------------+-----------------------+
+   |      NetBSD 5.1     |          No         |           No          |
+   +---------------------+---------------------+-----------------------+
+   |    NetBSD-current   |          No         |          Yes          |
+   +---------------------+---------------------+-----------------------+
+   |   OpenBSD-current   |         Yes         |          Yes          |
+   +---------------------+---------------------+-----------------------+
+   |      Solaris 11     |         Yes         |          Yes          |
+   +---------------------+---------------------+-----------------------+
+   |    Windows XP SP2   |         Yes         |           No          |
+   +---------------------+---------------------+-----------------------+
+   |    Windows Vista    |         Yes         |           No          |
+   |     (Build 6000)    |                     |                       |
+   +---------------------+---------------------+-----------------------+
+   |    Windows 7 Home   |         Yes         |           No          |
+   |       Premium       |                     |                       |
+   +---------------------+---------------------+-----------------------+
+
+      Table 1: Processing of IPv6 Atomic Fragments by Different OSes
+
+      In the table above, "generates atomic fragments" notes whether an
+      implementation generates atomic fragments in response to received
+      ICMPv6 "Packet Too Big" error messages that advertise an MTU
+      smaller than 1280 bytes.
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                         Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6946">RFC 6946</a>                  IPv6 Atomic Fragments                 May 2013</span>
+
+
+Author's Address
+
+   Fernando Gont
+   Huawei Technologies
+   Evaristo Carriego 2644
+   Haedo, Provincia de Buenos Aires  1706
+   Argentina
+
+   Phone: +54 11 4650 8472
+   EMail: fgont@si6networks.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Gont                         Standards Track                    [Page 9]
+</pre>
+</body></html>

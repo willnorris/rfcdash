@@ -1,0 +1,558 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                           F. Gont
+Request for Comments: 6191                                       UK CPNI
+BCP: 159                                                      April 2011
+Category: Best Current Practice
+ISSN: 2070-1721
+
+
+           <span class="h1">Reducing the TIME-WAIT State Using TCP Timestamps</span>
+
+Abstract
+
+   This document describes an algorithm for processing incoming SYN
+   segments that allows higher connection-establishment rates between
+   any two TCP endpoints when a TCP Timestamps option is present in the
+   incoming SYN segment.  This document only modifies processing of SYN
+   segments received for connections in the TIME-WAIT state; processing
+   in all other states is unchanged.
+
+Status of This Memo
+
+   This memo documents an Internet Best Current Practice.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   BCPs is available in <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6191">http://www.rfc-editor.org/info/rfc6191</a>.
+
+Copyright Notice
+
+   Copyright (c) 2011 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   This document may contain material from IETF Documents or IETF
+   Contributions published or made publicly available before November
+   10, 2008.  The person(s) controlling the copyright in some of this
+   material may not have granted the IETF Trust the right to allow
+   modifications of such material outside the IETF Standards Process.
+   Without obtaining an adequate license from the person(s) controlling
+   the copyright in such materials, this document may not be modified
+   outside the IETF Standards Process, and derivative works of it may
+   not be created outside the IETF Standards Process, except to format
+   it for publication as an RFC or to translate it into languages other
+   than English.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  Improved Processing of Incoming Connection Requests  . . . . .  <a href="#page-3">3</a>
+   <a href="#section-3">3</a>.  Interaction with Various Timestamp Generation Algorithms . . .  <a href="#page-6">6</a>
+   <a href="#section-4">4</a>.  Interaction with Various ISN Generation Algorithms . . . . . .  <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  Security Considerations  . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+   <a href="#section-6">6</a>.  Acknowledgements . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-7">7</a>
+   <a href="#section-7">7</a>.  References . . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-8">8</a>
+     <a href="#section-7.1">7.1</a>.  Normative References . . . . . . . . . . . . . . . . . . .  <a href="#page-8">8</a>
+     <a href="#section-7.2">7.2</a>.  Informative References . . . . . . . . . . . . . . . . . .  <a href="#page-8">8</a>
+   <a href="#appendix-A">Appendix A</a>.  Behavior of the Proposed Mechanism in Specific
+                Scenarios . . . . . . . . . . . . . . . . . . . . . . <a href="#page-10">10</a>
+     <a href="#appendix-A.1">A.1</a>.  Connection Request after System Reboot . . . . . . . . . . <a href="#page-10">10</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The Timestamps option, specified in <a href="./rfc1323">RFC 1323</a> [<a href="./rfc1323" title='"TCP Extensions for High Performance"'>RFC1323</a>], allows a TCP
+   to include a timestamp value in its segments that can be used to
+   perform two functions: Round-Trip Time Measurement (RTTM) and
+   Protection Against Wrapped Sequences (PAWS).
+
+   For the purpose of PAWS, the timestamps sent on a connection are
+   required to be monotonically increasing.  While there is no
+   requirement that timestamps are monotonically increasing across TCP
+   connections, the generation of timestamps such that they are
+   monotonically increasing across connections between the same two
+   endpoints allows the use of timestamps for improving the handling of
+   SYN segments that are received while the corresponding four-tuple is
+   in the TIME-WAIT state.  That is, the Timestamps option could be used
+   to perform heuristics to determine whether to allow the creation of a
+   new incarnation of a connection that is in the TIME-WAIT state.
+
+
+
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   This use of TCP timestamps is simply an extrapolation of the use of
+   Initial Sequence Numbers (ISNs) for the same purpose, as allowed by
+   <a href="./rfc1122">RFC 1122</a> [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>], and it has been incorporated in a number of TCP
+   implementations, such as that included in the Linux kernel [<a href="#ref-Linux" title='"The Linux Kernel Archives"'>Linux</a>].
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Improved%20Processing%20of%20Incoming%20Connection%20Requests"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Improved Processing of Incoming Connection Requests</span>
+
+   In a number of scenarios, a socket pair may need to be reused while
+   the corresponding four-tuple is still in the TIME-WAIT state in a
+   remote TCP peer.  For example, a client accessing some service on a
+   host may try to create a new incarnation of a previous connection,
+   while the corresponding four-tuple is still in the TIME-WAIT state at
+   the remote TCP peer (the server).  This may happen if the ephemeral
+   port numbers are being reused too quickly, either because of a bad
+   policy of selection of ephemeral ports, or simply because of a high
+   connection rate to the corresponding service.  In such scenarios, the
+   establishment of new connections that reuse a four-tuple that is in
+   the TIME-WAIT state would fail.  This problem is discussed in detail
+   in [<a href="#ref-INFOCOM-99" title='"The TIME-WAIT state in TCP and Its Effect on Busy Servers"'>INFOCOM-99</a>].
+
+   In order to avoid this problem, <a href="./rfc1122#section-4.2.2.13">Section 4.2.2.13 of RFC 1122</a>
+   [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>] states that when a connection request is received with a
+   four-tuple that is in the TIME-WAIT state, the connection request may
+   be accepted if the sequence number of the incoming SYN segment is
+   greater than the last sequence number seen on the previous
+   incarnation of the connection (for that direction of the data
+   transfer).  The goal of this requirement is to prevent the overlap of
+   the sequence number spaces of the old and new incarnations of the
+   connection so that segments from the old incarnation are not accepted
+   as valid by the new incarnation.
+
+   The same policy may be extrapolated to TCP timestamps.  That is, when
+   a connection request is received with a four-tuple that is in the
+   TIME-WAIT state, the connection request could be accepted if the
+   timestamp of the incoming SYN segment is greater than the last
+   timestamp seen on the previous incarnation of the connection (for
+   that direction of the data transfer).
+
+   The following paragraphs summarize the processing of SYN segments
+   received for connections in the TIME-WAIT state.  The processing of
+   SYN segments received for connections in all other states is
+   unchanged.  Both the ISN (Initial Sequence Number) and the Timestamps
+
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   option (if present) of the incoming SYN segment are included in the
+   heuristics performed for allowing a high connection-establishment
+   rate.
+
+   Processing of SYN segments received for connections in the TIME-WAIT
+   state SHOULD occur as follows:
+
+   o  If the previous incarnation of the connection used Timestamps,
+      then:
+
+      *  If TCP Timestamps would be enabled for the new incarnation of
+         the connection, and the timestamp contained in the incoming SYN
+         segment is greater than the last timestamp seen on the previous
+         incarnation of the connection (for that direction of the data
+         transfer), honor the connection request (creating a connection
+         in the SYN-RECEIVED state).
+
+      *  If TCP Timestamps would be enabled for the new incarnation of
+         the connection, the timestamp contained in the incoming SYN
+         segment is equal to the last timestamp seen on the previous
+         incarnation of the connection (for that direction of the data
+         transfer), and the Sequence Number of the incoming SYN segment
+         is greater than the last sequence number seen on the previous
+         incarnation of the connection (for that direction of the data
+         transfer), honor the connection request (creating a connection
+         in the SYN-RECEIVED state).
+
+      *  If TCP Timestamps would not be enabled for the new incarnation
+         of the connection, but the Sequence Number of the incoming SYN
+         segment is greater than the last sequence number seen on the
+         previous incarnation of the connection (for the same direction
+         of the data transfer), honor the connection request (creating a
+         connection in the SYN-RECEIVED state).
+
+      *  Otherwise, silently drop the incoming SYN segment, thus leaving
+         the previous incarnation of the connection in the TIME-WAIT
+         state.
+
+   o  If the previous incarnation of the connection did not use
+      Timestamps, then:
+
+      *  If TCP Timestamps would be enabled for the new incarnation of
+         the connection, honor the incoming connection request (creating
+         a connection in the SYN-RECEIVED state).
+
+
+
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+      *  If TCP Timestamps would not be enabled for the new incarnation
+         of the connection, but the Sequence Number of the incoming SYN
+         segment is greater than the last sequence number seen on the
+         previous incarnation of the connection (for the same direction
+         of the data transfer), honor the incoming connection request
+         (creating a connection in the SYN-RECEIVED state).
+
+      *  Otherwise, silently drop the incoming SYN segment, thus leaving
+         the previous incarnation of the connection in the TIME-WAIT
+         state.
+
+   Note:
+
+      In the above explanation, the phrase "TCP Timestamps would be
+      enabled for the new incarnation for the connection" means that the
+      incoming SYN segment contains a TCP Timestamps option (i.e., the
+      client has enabled TCP Timestamps), and that the SYN/ACK segment
+      that would be sent in response to it would also contain a
+      Timestamps option (i.e., the server has enabled TCP Timestamps).
+      In such a scenario, TCP Timestamps would be enabled for the new
+      incarnation of the connection.
+
+      The "last sequence number seen on the previous incarnation of the
+      connection (for the same direction of the data transfer)" refers
+      to the last sequence number used by the previous incarnation of
+      the connection (for the same direction of the data transfer), and
+      not to the last value seen in the Sequence Number field of the
+      corresponding segments.  That is, it refers to the sequence number
+      corresponding to the FIN flag of the previous incarnation of the
+      connection, for that direction of the data transfer.
+
+   Many implementations do not include the TCP Timestamps option when
+   performing the above heuristics, thus imposing stricter constraints
+   on the generation of Initial Sequence Numbers, the average data
+   transfer rate of the connections, and the amount of data transferred
+   with them.  <a href="./rfc793">RFC 793</a> [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>] states that the ISN generator should be
+   incremented roughly once every four microseconds (i.e., roughly
+   250,000 times per second).  As a result, any connection that
+   transfers more than 250,000 bytes of data at more than 250 kilobytes/
+   second could lead to scenarios in which the last sequence number seen
+   on a connection that moves into the TIME-WAIT state is still greater
+   than the sequence number of an incoming SYN segment that aims at
+   creating a new incarnation of the same connection.  In those
+   scenarios, the ISN heuristics would fail, and therefore the
+   connection request would usually time out.  By including the TCP
+   Timestamps option in the heuristics described above, all these
+   constraints are greatly relaxed.
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   It is clear that the use of TCP timestamps for the heuristics
+   described above benefit from timestamps that are monotonically
+   increasing across connections between the same two TCP endpoints.
+
+   Note:
+      The upcoming revision of <a href="./rfc1323">RFC 1323</a>, [<a href="#ref-1323bis" title='"TCP Extensions for High Performance"'>1323bis</a>], recommends the
+      selection of timestamps such that they are monotonically
+      increasing across connections.  An example of such a timestamp
+      generation scheme can be found in [<a href="#ref-TS-Generation" title='"On the generation of TCP timestamps"'>TS-Generation</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Interaction%20with%20Various%20Timestamp%20Generation%20Algorithms"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Interaction with Various Timestamp Generation Algorithms</span>
+
+   The algorithm proposed in <a href="#section-2">Section 2</a> clearly benefits from timestamps
+   that are monotonically increasing across connections to the same
+   endpoint.  In particular, generation of timestamps such that they are
+   monotonically increasing is important for TCP instances that perform
+   the active open, as those are the timestamps that will be used for
+   the proposed algorithm.
+
+   While monotonically increasing timestamps ensure that the proposed
+   algorithm will be able to reduce the TIME-WAIT state of a previous
+   incarnation of a connection, implementation of the algorithm (by
+   itself) does not imply a requirement on the timestamp generation
+   algorithm of other TCP implementations.
+
+   In the worst-case scenario, an incoming SYN corresponding to a new
+   incarnation of a connection in the TIME-WAIT contains a timestamp
+   that is smaller than the last timestamp seen on the previous
+   incarnation of the connection, the heuristics fail, and the result is
+   no worse than the current state of affairs.  That is, the SYN segment
+   is ignored (as specified in [<a href="./rfc1337" title='"TIME-WAIT Assassination Hazards in TCP"'>RFC1337</a>]), and thus the connection
+   request times out, or is accepted after future retransmissions of the
+   SYN.
+
+   Some stacks may implement timestamp generation algorithms that do not
+   lead to monotonically increasing timestamps across connections with
+   the same remote endpoint.  An example of such algorithms is the one
+   described in [<a href="./rfc4987" title='"TCP SYN Flooding Attacks and Common Mitigations"'>RFC4987</a>] and [<a href="#ref-Opperman" title='"FYI: Extended TCP syncookies in FreeBSD-current"'>Opperman</a>], which allows the
+   implementation of extended TCP SYN cookies.
+
+   Note:
+      It should be noted that the "extended TCP SYN cookies" could
+      coexist with an algorithm for generating timestamps such that they
+      are monotonically increasing.  Monotonically increasing timestamps
+      could be generated for TCP instances that perform the active open,
+      while timestamps for TCP instances that perform the passive open
+      could be generated according to [<a href="#ref-Opperman" title='"FYI: Extended TCP syncookies in FreeBSD-current"'>Opperman</a>].
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   Some stacks (notably OpenBSD) implement timestamp randomization
+   algorithms which do not result in monotonically increasing ISNs
+   across connections.  As noted in [<a href="#ref-Silbersack" title='"Improving TCP/IP security through randomization without sacrificing interoperability"'>Silbersack</a>], such randomization
+   schemes may prevent the mechanism proposed in this document from
+   recycling connections that are in the TIME-WAIT state.  However, as
+   noted earlier in this section in the worst-case scenario, the
+   heuristics fail, and the result is no worse than the current state of
+   affairs.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Interaction%20with%20Various%20ISN%20Generation%20Algorithms"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Interaction with Various ISN Generation Algorithms</span>
+
+   [<a id="ref-RFC0793">RFC0793</a>] suggests that the ISNs of TCP connections be generated from
+   a global timer, such that they are monotonically increasing across
+   connections.  However, this ISN-generation scheme leads to
+   predictable ISNs, which have well-known security implications
+   [<a href="#ref-CPNI-TCP" title='"Security Assessment of the Transmission Control Protocol (TCP)"'>CPNI-TCP</a>].  [<a href="./rfc1948" title='"Defending Against Sequence Number Attacks"'>RFC1948</a>] proposes an alternative ISN-generation scheme
+   that results in monotonically increasing ISNs across connections that
+   are not easily predictable by an off-path attacker.
+
+   Some stacks (notably OpenBSD) implement ISN randomization algorithms
+   which do not result in monotonically increasing ISNs across
+   connections.  As noted in [<a href="#ref-Silbersack" title='"Improving TCP/IP security through randomization without sacrificing interoperability"'>Silbersack</a>], such ISN randomization
+   schemes break BSD's improved handling of SYN segments received for
+   connections that are in the TIME-WAIT state.
+
+   An implementation of the mechanism proposed in this document would
+   enable recycling of the TIME-WAIT state even in the presence of ISNs
+   that are not monotonically increasing across connections, except when
+   the timestamp contained in the incoming SYN is equal to the last
+   timestamp seen on the connection in the TIME-WAIT state (for that
+   direction of the data transfer).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Security%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Security Considerations</span>
+
+   [<a id="ref-TCP-Security">TCP-Security</a>] contains a detailed discussion of the security
+   implications of TCP Timestamps and of different timestamp generation
+   algorithms.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Acknowledgements"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Acknowledgements</span>
+
+   This document is based on part of the contents of the technical
+   report "Security Assessment of the Transmission Control Protocol
+   (TCP)" [<a href="#ref-CPNI-TCP" title='"Security Assessment of the Transmission Control Protocol (TCP)"'>CPNI-TCP</a>] written by Fernando Gont on behalf of the United
+   Kingdom's Centre for the Protection of National Infrastructure (UK
+   CPNI).
+
+
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   The author of this document would like to thank (in alphabetical
+   order) Mark Allman, Francis Dupont, Wesley Eddy, Lars Eggert, John
+   Heffner, Alfred Hoenes, Christian Huitema, Eric Rescorla, Joe Touch,
+   and Alexander Zimmermann for providing valuable feedback on an
+   earlier version of this document.
+
+   Additionally, the author would like to thank David Borman for a
+   fruitful discussion on TCP Timestamps at IETF 73.
+
+   Finally, the author would like to thank the United Kingdom's Centre
+   for the Protection of National Infrastructure (UK CPNI) for their
+   continued support.
+
+   Fernando Gont's attendance to IETF meetings was supported by ISOC's
+   "Fellowship to the IETF" program.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Normative%20References"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC0793">RFC0793</a>]        Postel, J., "Transmission Control Protocol", STD 7,
+                    <a href="./rfc793">RFC 793</a>, September 1981.
+
+   [<a id="ref-RFC1122">RFC1122</a>]        Braden, R., "Requirements for Internet Hosts -
+                    Communication Layers", STD 3, <a href="./rfc1122">RFC 1122</a>,
+                    October 1989.
+
+   [<a id="ref-RFC1323">RFC1323</a>]        Jacobson, V., Braden, B., and D. Borman, "TCP
+                    Extensions for High Performance", <a href="./rfc1323">RFC 1323</a>,
+                    May 1992.
+
+   [<a id="ref-RFC2119">RFC2119</a>]        Bradner, S., "Key words for use in RFCs to Indicate
+                    Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Informative%20References"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Informative References</span>
+
+   [<a id="ref-1323bis">1323bis</a>]        Borman, D., Braden, R., and V. Jacobson, "TCP
+                    Extensions for High Performance", Work in Progress,
+                    March 2009.
+
+   [<a id="ref-CPNI-TCP">CPNI-TCP</a>]       CPNI, "Security Assessment of the Transmission
+                    Control Protocol (TCP)", 2009,
+                    &lt;<a href="http://www.cpni.gov.uk/Docs/tn-03-09-security-assessment-TCP.pdf">http://www.cpni.gov.uk/Docs/</a>
+                    <a href="http://www.cpni.gov.uk/Docs/tn-03-09-security-assessment-TCP.pdf">tn-03-09-security-assessment-TCP.pdf</a>&gt;.
+
+   [<a id="ref-INFOCOM-99">INFOCOM-99</a>]     Faber, T., Touch, J., and W. Yue, "The TIME-WAIT
+                    state in TCP and Its Effect on Busy Servers", Proc.
+                    IEEE Infocom, 1999, pp. 1573-1583.
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+   [<a id="ref-Linux">Linux</a>]          Linux Kernel Organization, "The Linux Kernel
+                    Archives", &lt;<a href="http://www.kernel.org">http://www.kernel.org</a>&gt;.
+
+   [<a id="ref-Opperman">Opperman</a>]       Oppermann, A., "FYI: Extended TCP syncookies in
+                    FreeBSD-current", post to the tcpm mailing list,
+                    September 2006, &lt;<a href="http://www.ietf.org/mail-archive/web/tcpm/current/msg02251.html">http://www.ietf.org/mail-archive/</a>
+                    <a href="http://www.ietf.org/mail-archive/web/tcpm/current/msg02251.html">web/tcpm/current/msg02251.html</a>&gt;.
+
+   [<a id="ref-RFC1337">RFC1337</a>]        Braden, B., "TIME-WAIT Assassination Hazards in
+                    TCP", <a href="./rfc1337">RFC 1337</a>, May 1992.
+
+   [<a id="ref-RFC1948">RFC1948</a>]        Bellovin, S., "Defending Against Sequence Number
+                    Attacks", <a href="./rfc1948">RFC 1948</a>, May 1996.
+
+   [<a id="ref-RFC4987">RFC4987</a>]        Eddy, W., "TCP SYN Flooding Attacks and Common
+                    Mitigations", <a href="./rfc4987">RFC 4987</a>, August 2007.
+
+   [<a id="ref-Silbersack">Silbersack</a>]     Silbersack, M., "Improving TCP/IP security through
+                    randomization without sacrificing interoperability",
+                    EuroBSDCon 2005.
+
+   [<a id="ref-TCP-Security">TCP-Security</a>]   Gont, F., "Security Assessment of the Transmission
+                    Control Protocol (TCP)", Work in Progress,
+                    January 2011.
+
+   [<a id="ref-TS-Generation">TS-Generation</a>]  Gont, F. and A. Oppermann, "On the generation of TCP
+                    timestamps", Work in Progress, June 2010.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Gont                      Best Current Practice                 [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6191">RFC 6191</a>        Reducing TIME-WAIT State with Timestamps      April 2011</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Behavior%20of%20the%20Proposed%20Mechanism%20in%20Specific%20Scenarios"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Behavior of the Proposed Mechanism in Specific Scenarios</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/A.1.%20%20Connection%20Request%20after%20System%20Reboot"></a><a class="selflink" href="#appendix-A.1" id="appendix-A.1">A.1</a>.  Connection Request after System Reboot</span>
+
+   This section clarifies how this algorithm would operate in case a
+   computer reboots, keeps the same IP address, loses memory of the
+   previous timestamps, and then tries to reestablish a previous
+   connection.
+
+   Firstly, as specified in [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], hosts must not establish new
+   connections for a period of 2*MSL (Maximum Segment Lifetime) after
+   they boot (this is the "quiet time" concept).  As a result, in terms
+   of specifications, this scenario should never occur.
+
+   If a host does not comply with the "quiet time concept", a connection
+   request might be sent to a remote host while there is a previous
+   incarnation of the same connection in the TIME-WAIT state at the
+   remote host.  In such a scenario, as a result of having lost memory
+   of previous timestamps, the resulting timestamps might not be
+   monotonically increasing, and hence the proposed algorithm might be
+   unable to recycle the previous incarnation of the connection that is
+   in the TIME-WAIT state.  This case corresponds to the current state
+   of affairs without the algorithm proposed in this document.
+
+Author's Address
+
+   Fernando Gont
+   UK Centre for the Protection of National Infrastructure
+
+   EMail: fernando@gont.com.ar
+   URI:   <a href="http://www.cpni.gov.uk">http://www.cpni.gov.uk</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Gont                      Best Current Practice                [Page 10]
+</pre>
+</body></html>

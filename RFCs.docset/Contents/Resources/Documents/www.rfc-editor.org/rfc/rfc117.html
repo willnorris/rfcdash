@@ -1,0 +1,266 @@
+<html><head></head><body><pre>Network Working Group                                          J. Wong
+Request for Comments: 117                                         UCLA
+NIC #5826                                                 7 April 1971
+
+
+                 <span class="h1">Some Comments on the Official Protocol</span>
+
+               [Categories B.1, C.1, C.2, C.3, C.4, C.5]
+
+
+ Document No. 1 and NWG/RFC No. 107 gave a very detailed description of
+connection establishment, connection termination and flow control over
+the Network.  Throughout the implementation of the NCP it was
+discovered that the handling of ERR control commands, messages of
+types other than 0 (regular), 4 (nop), and 5 (rfnm), and messages with
+the From-imp bit on are not well discussed so that problems arise when
+they occur.
+
+The Protocol is not complete if the above situations are not handled
+clearly, and the Host-Host Protocol Glitch Cleaning Committee should
+take this into consideration.  In this document, experience with these
+unfavorable situations and suggestions for handling are given:
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20ERR%20Control%20Commands"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  ERR Control Commands</span>
+
+In Document No. 1, the following error conditions are described:
+
+     a.  Illegal Op. code.
+     b.  End of message encountered before all expected parameters.
+     c.  Bad socket polarity within commands.
+     d.  Link number not in the range of 0 &lt;= L &lt; 32.
+     e.  A request (other than RTS/STR) on a non-existent socket.
+     f.  A request (ALL, GVB, RET, INR, INS) on a non-existent link
+         number.
+     g.  Transmit over non-existent link number.
+
+Other error conditions are:
+
+     h.  A request (GVB, RET, INR, INS) on an existent link, but
+         connection is not established.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">                                                                [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey">     i.  Transmit over an existent link, but connection is not</span>
+         established.
+     j.  ALL or GVB on a send connection.
+     k.  RET on a receive connection.
+     l.  An attempt to send more than the allocated number of bits or
+         messages.
+     m.  ECO, ERP, ERR commands do not have the defined number of bits
+        of data.
+
+In Document No. 1, each site is supposed to document the information
+on their ERR command.  No one has done that so far, and the main
+reason is we are not sure of what information is important.  In
+NWG/RFC No. 107, the text portion of the ERR Commands is decided to
+have a fixed length of 80 bits because 80 bits is long enough to hold
+the longest non-ERR command.  In some of the above error conditions,
+more information than the command itself is desirable.  It was noted
+that these error conditions arise very often in the experimental stage
+of the NCP.  If every NCP is operating properly, none of them should
+ever occur.  The ERR commands are therefore, an excellent debugging
+tool for the protocol.  So it is desirable to define a set of possible
+error conditions, and for each condition, define a set of arguments in
+the corresponding ERR command so that enough information is given to
+tell what's wrong.  The suggested arguments for each situation (a - m)
+are listed below:
+
+     a.  1.  Op. code in error.
+         2.  Part of message following op. code (A maximum of 72
+             bits).
+
+     b, c, d, e, f.
+         1.  The command in error.
+
+     g.  1.  Link number,
+         2.  Beginning of message (A maximum of 72 bits),
+
+     h.  1.  Command in error.
+         2.  Socket numbers for the connection.
+         3.  Status of the connection.
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">                                                                [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey">     i.  1.  Link number,</span>
+         2.  Beginning of message (A maximum of 72 bits),
+         3.  Socket numbers for the connection.
+         4.  Status of the connection.
+
+     j, k.
+         1.  Command in error.
+         2.  Socket numbers for the connection.
+
+     l.  1.  Link number.
+         2.  Beginning of message (A maximum of 72 bits).
+         3.  Number of bits sent.
+         4.  Number of bits allocated.
+         5.  Number of messages allocated.
+
+     m.  1.  The Command in error.
+
+Each of the ERR commands should have a special error code (8 bits) to
+tell the error type, an 80-bits field to store the command in error,
+and additional fields for socket numbers and other information.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Imp-to-host%20messages%20of%20types%20other%20than%200%2C%204%2C%20and%205."></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Imp-to-host messages of types other than 0, 4, and 5.</span>
+
+From the BBN report 1822, the following message types will cause
+difficulty in the implementation of the Protocol.
+
+     a.  Type 2 - Imp going down.
+     b.  Type 7 - Destination host or imp dead.
+     c.  Type 9 - Incomplete transmission.
+
+It was discovered that on sending a message to a site whose imp or
+host is not running, a Type 7 or Type 9 message is returned.  This
+can happen in two situations:
+
+     a.  The foreign host or imp is not up at all.
+     b.  Some connections have been established, and the foreign host
+         or imp goes down.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">                                                                [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey">The first situation does not cause much problem because the NCP has no</span>
+entry in its table corresponding to this site.
+
+The second situation is more complicated, because if the table entries
+for the connections to the dead host are not cleared, by the time this
+host comes up again, the table entries still exist and the information
+will be very misleading.  One suggestion to solve this problem is:
+
+     a.  Whenever a NCP comes up, it send a RESET Control Command to
+         every other site.
+     b.  Associated with each site there is a bit called the up-bit.
+         If a RESET-reply command is received from some site, the
+         corresponding up-bit is set to 1.  Race condition can be
+         avoided by ignoring all messages from sites which have not
+         returned the RESET-reply command.
+     c.  Messages can only be sent to sites with the up-bit on.
+     d.  If a RESET control command is received, the Table entries
+         corresponding to the site are cleared, a RESET-reply is
+         immediately returned, and the up-bit for the site is set.
+     e.  The up-bit is reset to 0 when a Type 7 or Type 9 message is
+         received from a particular site.
+
+The above solution will handle the Type 2 messages also.  When a host
+receives a Type 2 message, there is no way for it to tell the other
+NCP's that its imp is going down.  Subsequent messages to this host
+will return a Type 7 or 9 message.  The solution above will then come
+into effect.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">                                                                [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey">With the introduction of the RESET and RESET-reply Control command,</span>
+the ECO and ERP control command are no longer important and should be
+removed.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Messages%20with%20the%20From-imp%20bit%20on."></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Messages with the From-imp bit on.</span>
+
+These kinds of messages are not discussed at all.  Some statistical
+measurements have been made on messages with the From-imp bit on.  We
+should classify what these messages represent.
+
+
+       [ This RFC was put into machine readable form for entry ]
+         [ into the online RFC archives by Randy Dunlap 4/97]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                [Page 5]
+</pre>
+</body></html>

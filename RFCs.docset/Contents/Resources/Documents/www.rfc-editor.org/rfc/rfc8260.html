@@ -1,0 +1,1286 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                        R. Stewart
+Request for Comments: 8260                                 Netflix, Inc.
+Category: Standards Track                                      M. Tuexen
+ISSN: 2070-1721                         Muenster Univ. of Appl. Sciences
+                                                               S. Loreto
+                                                                Ericsson
+                                                           R. Seggelmann
+                                     Metafinanz Informationssysteme GmbH
+                                                           November 2017
+
+
+            <span class="h1">Stream Schedulers and User Message Interleaving</span>
+              <span class="h1">for the Stream Control Transmission Protocol</span>
+
+Abstract
+
+   The Stream Control Transmission Protocol (SCTP) is a message-oriented
+   transport protocol supporting arbitrarily large user messages.  This
+   document adds a new chunk to SCTP for carrying payload data.  This
+   allows a sender to interleave different user messages that would
+   otherwise result in head-of-line blocking at the sender.  The
+   interleaving of user messages is required for WebRTC data channels.
+
+   Whenever an SCTP sender is allowed to send user data, it may choose
+   from multiple outgoing SCTP streams.  Multiple ways for performing
+   this selection, called stream schedulers, are defined in this
+   document.  A stream scheduler can choose to either implement, or not
+   implement, user message interleaving.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8260">https://www.rfc-editor.org/info/rfc8260</a>.
+
+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2017 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-1.1">1.1</a>.  Overview  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-1.2">1.2</a>.  Conventions . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-2">2</a>.  User Message Interleaving . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-2.1">2.1</a>.  The I-DATA Chunk Supporting User Message Interleaving . .   <a href="#page-7">7</a>
+     <a href="#section-2.2">2.2</a>.  Procedures  . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+       <a href="#section-2.2.1">2.2.1</a>.  Negotiation . . . . . . . . . . . . . . . . . . . . .  <a href="#page-10">10</a>
+       <a href="#section-2.2.2">2.2.2</a>.  Sender-Side Considerations  . . . . . . . . . . . . .  <a href="#page-10">10</a>
+       <a href="#section-2.2.3">2.2.3</a>.  Receiver-Side Considerations  . . . . . . . . . . . .  <a href="#page-11">11</a>
+     <a href="#section-2.3">2.3</a>.  Interaction with Other SCTP Extensions  . . . . . . . . .  <a href="#page-11">11</a>
+       <a href="#section-2.3.1">2.3.1</a>.  SCTP Partial Reliability Extension  . . . . . . . . .  <a href="#page-11">11</a>
+       <a href="#section-2.3.2">2.3.2</a>.  SCTP Stream Reconfiguration Extension . . . . . . . .  <a href="#page-13">13</a>
+   <a href="#section-3">3</a>.  Stream Schedulers . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-14">14</a>
+     <a href="#section-3.1">3.1</a>.  First-Come, First-Served Scheduler (SCTP_SS_FCFS) . . . .  <a href="#page-14">14</a>
+     <a href="#section-3.2">3.2</a>.  Round-Robin Scheduler (SCTP_SS_RR)  . . . . . . . . . . .  <a href="#page-14">14</a>
+     <a href="#section-3.3">3.3</a>.  Round-Robin Scheduler per Packet (SCTP_SS_RR_PKT) . . . .  <a href="#page-14">14</a>
+     <a href="#section-3.4">3.4</a>.  Priority-Based Scheduler (SCTP_SS_PRIO) . . . . . . . . .  <a href="#page-14">14</a>
+     <a href="#section-3.5">3.5</a>.  Fair Capacity Scheduler (SCTP_SS_FC)  . . . . . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-3.6">3.6</a>.  Weighted Fair Queueing Scheduler (SCTP_SS_WFQ)  . . . . .  <a href="#page-15">15</a>
+   <a href="#section-4">4</a>.  Socket API Considerations . . . . . . . . . . . . . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-4.1">4.1</a>.  Exposure of the Stream Sequence Number (SSN)  . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-4.2">4.2</a>.  SCTP_ASSOC_CHANGE Notification  . . . . . . . . . . . . .  <a href="#page-16">16</a>
+     <a href="#section-4.3">4.3</a>.  Socket Options  . . . . . . . . . . . . . . . . . . . . .  <a href="#page-16">16</a>
+       4.3.1.  Enable or Disable the Support of User Message
+               Interleaving (SCTP_INTERLEAVING_SUPPORTED)  . . . . .  <a href="#page-16">16</a>
+       4.3.2.  Get or Set the Stream Scheduler
+               (SCTP_STREAM_SCHEDULER) . . . . . . . . . . . . . . .  <a href="#page-17">17</a>
+       4.3.3.  Get or Set the Stream Scheduler Parameter
+               (SCTP_STREAM_SCHEDULER_VALUE) . . . . . . . . . . . .  <a href="#page-18">18</a>
+     <a href="#section-4.4">4.4</a>.  Explicit EOR Marking  . . . . . . . . . . . . . . . . . .  <a href="#page-19">19</a>
+   <a href="#section-5">5</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .  <a href="#page-19">19</a>
+     <a href="#section-5.1">5.1</a>.  I-DATA Chunk  . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-19">19</a>
+     <a href="#section-5.2">5.2</a>.  I-FORWARD-TSN Chunk . . . . . . . . . . . . . . . . . . .  <a href="#page-20">20</a>
+   <a href="#section-6">6</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .  <a href="#page-20">20</a>
+   <a href="#section-7">7</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-21">21</a>
+     <a href="#section-7.1">7.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .  <a href="#page-21">21</a>
+     <a href="#section-7.2">7.2</a>.  Informative References  . . . . . . . . . . . . . . . . .  <a href="#page-22">22</a>
+   Acknowledgments . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-22">22</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-23">23</a>
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Overview"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Overview</span>
+
+   When SCTP [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] was initially designed, it was mainly envisioned
+   for the transport of small signaling messages.  Late in the design
+   stage, it was decided to add support for fragmentation and reassembly
+   of larger messages with the thought that someday signaling messages
+   in the style of Session Initiation Protocol (SIP) [<a href="./rfc3261" title='"SIP: Session Initiation Protocol"'>RFC3261</a>] may also
+   need to use SCTP, and a message that is a single Maximum Transmission
+   Unit (MTU) would be too small.  Unfortunately this design decision,
+   though valid at the time, did not account for other applications that
+   might send large messages over SCTP.  The sending of such large
+   messages over SCTP, as specified in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>], can result in a form
+   of sender-side head-of-line blocking (e.g., when the transmission of
+   a message is blocked from transmission because the sender has started
+   the transmission of another, possibly large, message).  This head-of-
+   line blocking is caused by the use of the Transmission Sequence
+   Number (TSN) for three different purposes:
+
+   1.  As an identifier for DATA chunks to provide a reliable transfer.
+
+   2.  As an identifier for the sequence of fragments to allow
+       reassembly.
+
+   3.  As a sequence number allowing up to 2**16 - 1 Stream Sequence
+       Numbers (SSNs) outstanding.
+
+   The protocol requires all fragments of a user message to have
+   consecutive TSNs.  This document allows an SCTP sender to interleave
+   different user messages.
+
+   This document also defines several stream schedulers for general SCTP
+   associations allowing different relative stream treatments.  The
+   stream schedulers may behave differently depending on whether or not
+   user message interleaving has been negotiated for the association.
+
+   Figure 1 illustrates the behavior of a round-robin stream scheduler
+   using DATA chunks when three streams with the Stream Identifiers
+   (SIDs) 0, 1, and 2 are used.  Each queue for SID 0 and SID 2 contains
+   a single user message requiring three chunks.  The queue for SID 1
+   contains three user messages each requiring a single chunk.  It is
+   shown how these user messages are encapsulated in chunks using TSN 0
+   to TSN 8.  Please note that the use of such a scheduler implies late
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   TSN assignment, but it can be used with an implementation that is
+   compliant with [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] and that does not support user message
+   interleaving.  Late TSN assignment means that the sender generates
+   chunks from user messages and assigns the TSN as late as possible in
+   the process of sending the user messages.
+
+   +---+---+---+
+   |    0/0    |-+
+   +---+---+---+ |
+                 |  +---+---+---+---+---+---+---+---+---+
+   +---+---+---+ +-&gt;|1/2|1/1|2/0|2/0|2/0|1/0|0/0|0/0|0/0|
+   |1/2|1/1|1/0|---&gt;|---|---|---|---|---|---|---|---|---|
+   +---+---+---+ +-&gt;| 8 | 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 |
+                 |  +---+---+---+---+---+---+---+---+---+
+   +---+---+---+ |
+   |    2/0    |-+
+   +---+---+---+
+                                  +-------+
+     +-------+                    |SID/SSN|
+     |SID/SSN|                    |-------|
+     +-------+                    |  TSN  |
+                                  +-------+
+
+     Figure 1: Round-Robin Scheduler without User Message Interleaving
+
+   This document describes a new chunk carrying payload data called
+   I-DATA.  This chunk incorporates the properties of the current SCTP
+   DATA chunk, all the flags and fields except the Stream Sequence
+   Number (SSN), and also adds two new fields in its chunk header -- the
+   Fragment Sequence Number (FSN) and the Message Identifier (MID).  The
+   FSN is only used for reassembling all fragments that have the same
+   MID and the same ordering property.  The TSN is only used for the
+   reliable transfer in combination with Selective Acknowledgment (SACK)
+   chunks.
+
+   In addition, the MID is also used for ensuring ordered delivery
+   instead of using the stream sequence number (the I-DATA chunk omits
+   an SSN).
+
+   Figure 2 illustrates the behavior of an interleaving round-robin
+   stream scheduler using I-DATA chunks.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
++---+---+---+
+|    0/0    |-+
++---+---+---+ |
+              |  +-----+-----+-----+-----+-----+-----+-----+-----+-----+
++---+---+---+ +-&gt;|2/0/2|1/2/0|0/0/2|2/0/1|1/1/0|0/0/1|2/0/0|1/0/0|0/0/0|
+|1/2|1/1|1/0|---&gt;|-----|-----|-----|-----|-----|-----|-----|-----|-----|
++---+---+---+ +-&gt;|  8  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0  |
+              |  +-----+-----+-----+-----+-----+-----+-----+-----+-----+
++---+---+---+ |
+|    2/0    |-+
++---+---+---+
+                                     +-----------+
+  +-------+                          |SID/MID/FSN|
+  |SID/MID|                          |-----------|
+  +-------+                          |    TSN    |
+                                     +-----------+
+
+      Figure 2: Round-Robin Scheduler with User Message Interleaving
+
+   The support of the I-DATA chunk is negotiated during the association
+   setup using the Supported Extensions Parameter, as defined in
+   [<a href="./rfc5061" title='"Stream Control Transmission Protocol (SCTP) Dynamic Address Reconfiguration"'>RFC5061</a>].  If I-DATA support has been negotiated for an association,
+   I-DATA chunks are used for all user messages.  DATA chunks are not
+   permitted when I-DATA support has been negotiated.  It should be
+   noted that an SCTP implementation supporting I-DATA chunks needs to
+   allow the coexistence of associations using DATA chunks and
+   associations using I-DATA chunks.
+
+   In <a href="#section-2">Section 2</a>, this document specifies the user message interleaving
+   by defining the I-DATA chunk, the procedures to use it, and its
+   interactions with other SCTP extensions.  <a href="#section-3">Section 3</a> defines multiple
+   stream schedulers, and <a href="#section-4">Section 4</a> describes an extension to the socket
+   API for using the mechanism specified in this document.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.2.%20%20Conventions"></a><a class="selflink" href="#section-1.2" id="section-1.2">1.2</a>.  Conventions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20User%20Message%20Interleaving"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  User Message Interleaving</span>
+
+   The protocol mechanisms described in this document allow the
+   interleaving of user messages sent on different streams.  They do not
+   support the interleaving of multiple messages (ordered or unordered)
+   sent on the same stream.
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   The interleaving of user messages is required for WebRTC data
+   channels, as specified in [<a href="#ref-DATA-CHAN">DATA-CHAN</a>].
+
+   An SCTP implementation supporting user message interleaving is
+   REQUIRED to support the coexistence of associations using DATA chunks
+   and associations using I-DATA chunks.  If an SCTP implementation
+   supports user message interleaving and the Partial Reliability
+   extension described in [<a href="./rfc3758" title='"Stream Control Transmission Protocol (SCTP) Partial Reliability Extension"'>RFC3758</a>] or the Stream Reconfiguration
+   Extension described in [<a href="./rfc6525" title='"Stream Control Transmission Protocol (SCTP) Stream Reconfiguration"'>RFC6525</a>], it is REQUIRED to implement the
+   corresponding changes specified in <a href="#section-2.3">Section 2.3</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20The%20I-DATA%20Chunk%20Supporting%20User%20Message%20Interleaving"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  The I-DATA Chunk Supporting User Message Interleaving</span>
+
+   The following Figure 3 shows the new I-DATA chunk allowing user
+   message interleaving.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |   Type = 64   |  Res  |I|U|B|E|       Length = Variable       |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                              TSN                              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |        Stream Identifier      |           Reserved            |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                      Message Identifier                       |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |    Payload Protocol Identifier / Fragment Sequence Number     |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                           User Data                           /
+   \                                                               \
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                       Figure 3: I-DATA Chunk Format
+
+   The only differences between the I-DATA chunk in Figure 3 and the
+   DATA chunk defined in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] and [<a href="./rfc7053" title='"SACK- IMMEDIATELY Extension for the Stream Control Transmission Protocol"'>RFC7053</a>] are the addition of the
+   new Message Identifier (MID) and the new Fragment Sequence Number
+   (FSN) and the removal of the Stream Sequence Number (SSN).  The
+   Payload Protocol Identifier (PPID), which is already defined for DATA
+   chunks in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>], and the new FSN are stored at the same location
+   of the packet using the B bit to determine which value is stored at
+   the location.  The length of the I-DATA chunk header is 20 bytes,
+   which is 4 bytes more than the length of the DATA chunk header
+   defined in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] and [<a href="./rfc7053" title='"SACK- IMMEDIATELY Extension for the Stream Control Transmission Protocol"'>RFC7053</a>].
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   The old fields are:
+
+   Res: 4 bits
+      These bits are reserved.  They MUST be set to 0 by the sender and
+      MUST be ignored by the receiver.
+
+   I bit: 1 bit
+      The (I)mmediate Bit, if set, indicates that the receiver SHOULD
+      NOT delay the sending of the corresponding SACK chunk.  Same as
+      the I bit for DATA chunks, as specified in [<a href="./rfc7053" title='"SACK- IMMEDIATELY Extension for the Stream Control Transmission Protocol"'>RFC7053</a>].
+
+   U bit: 1 bit
+      The (U)nordered bit, if set, indicates the user message is
+      unordered.  Same as the U bit for DATA chunks, as specified in
+      [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   B bit: 1 bit
+      The (B)eginning fragment bit, if set, indicates the first fragment
+      of a user message.  Same as the B bit for DATA chunks, as
+      specified in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   E bit: 1 bit
+      The (E)nding fragment bit, if set, indicates the last fragment of
+      a user message.  Same as the E bit for DATA chunks, as specified
+      in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   Length: 16 bits (unsigned integer)
+      This field indicates the length in bytes of the DATA chunk from
+      the beginning of the Type field to the end of the User Data field,
+      excluding any padding.  Similar to the Length for DATA chunks, as
+      specified in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   TSN: 32 bits (unsigned integer)
+      This value represents the TSN for this I-DATA chunk.  Same as the
+      TSN for DATA chunks, as specified in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   Stream Identifier: 16 bits (unsigned integer)
+      Identifies the stream to which the user data belongs.  Same as the
+      Stream Identifier for DATA chunks, as specified in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   The new fields are:
+
+   Reserved: 16 bits (unsigned integer)
+      This field is reserved.  It MUST be set to 0 by the sender and
+      MUST be ignored by the receiver.
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   Message Identifier (MID): 32 bits (unsigned integer)
+      The MID is the same for all fragments of a user message; it is
+      used to determine which fragments (enumerated by the FSN) belong
+      to the same user message.  For ordered user messages, the MID is
+      also used by the SCTP receiver to deliver the user messages in the
+      correct order to the upper layer (similar to the SSN of the DATA
+      chunk defined in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>]).  The sender uses two counters for
+      each outgoing stream: one for ordered messages and one for
+      unordered messages.  All of these counters are independent and
+      initially 0.  They are incremented by 1 for each user message.
+      Please note that the serial number arithmetic defined in [<a href="./rfc1982" title='"Serial Number Arithmetic"'>RFC1982</a>]
+      using SERIAL_BITS = 32 applies.  Therefore, the sender MUST NOT
+      have more than 2**31 - 1 ordered messages for each outgoing stream
+      in flight and MUST NOT have more than 2**31 - 1 unordered messages
+      for each outgoing stream in flight.  A message is considered in
+      flight if at least one of its I-DATA chunks is not acknowledged in
+      a way that cannot be reneged (i.e., not acknowledged by the
+      cumulative TSN Ack).  Please note that the MID is in "network byte
+      order", a.k.a.  Big Endian.
+
+   Payload Protocol Identifier (PPID) / Fragment Sequence Number (FSN):
+      32 bits (unsigned integer)
+      If the B bit is set, this field contains the PPID of the user
+      message.  Note that in this case, this field is not touched by an
+      SCTP implementation; therefore, its byte order is not necessarily
+      in network byte order.  The upper layer is responsible for any
+      byte order conversions to this field, similar to the PPID of DATA
+      chunks.  In this case, the FSN is implicitly considered to be 0.
+      If the B bit is not set, this field contains the FSN.  The FSN is
+      used to enumerate all fragments of a single user message, starting
+      from 0 and incremented by 1.  The last fragment of a message MUST
+      have the E bit set.  Note that the FSN MAY wrap completely
+      multiple times, thus allowing arbitrarily large user messages.
+      For the FSN, the serial number arithmetic defined in [<a href="./rfc1982" title='"Serial Number Arithmetic"'>RFC1982</a>]
+      applies with SERIAL_BITS = 32.  Therefore, a sender MUST NOT have
+      more than 2**31 - 1 fragments of a single user message in flight.
+      A fragment is considered in flight if it is not acknowledged in a
+      way that cannot be reneged.  Please note that the FSN is in
+      "network byte order", a.k.a.  Big Endian.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Procedures"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Procedures</span>
+
+   This subsection describes how the support of the I-DATA chunk is
+   negotiated and how the I-DATA chunk is used by the sender and
+   receiver.
+
+   The handling of the I bit for the I-DATA chunk corresponds to the
+   handling of the I bit for the DATA chunk described in [<a href="./rfc7053" title='"SACK- IMMEDIATELY Extension for the Stream Control Transmission Protocol"'>RFC7053</a>].
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.1.%20%20Negotiation"></a><a class="selflink" href="#section-2.2.1" id="section-2.2.1">2.2.1</a>.  Negotiation</span>
+
+   An SCTP endpoint indicates user message interleaving support by
+   listing the I-DATA chunk within the Supported Extensions Parameter,
+   as defined in [<a href="./rfc5061" title='"Stream Control Transmission Protocol (SCTP) Dynamic Address Reconfiguration"'>RFC5061</a>].  User message interleaving has been
+   negotiated for an association if both endpoints have indicated I-DATA
+   support.
+
+   If user message interleaving support has been negotiated for an
+   association, I-DATA chunks MUST be used for all user messages and
+   DATA chunks MUST NOT be used.  If user message interleaving support
+   has not been negotiated for an association, DATA chunks MUST be used
+   for all user messages and I-DATA chunks MUST NOT be used.
+
+   An endpoint implementing the socket API specified in [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] MUST
+   NOT indicate user message interleaving support unless the user has
+   requested its use (e.g., via the socket API; see <a href="#section-4.3">Section 4.3</a>).  This
+   constraint is made since the usage of this chunk requires that the
+   application is capable of handling interleaved messages upon
+   reception within an association.  This is not the default choice
+   within the socket API (see the SCTP_FRAGMENT_INTERLEAVE socket option
+   in <a href="./rfc6458#section-8.1.20">Section 8.1.20 of [RFC6458]</a>); thus, the user MUST indicate to the
+   SCTP implementation its support for receiving completely interleaved
+   messages.
+
+   Note that stacks that do not implement [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] may use other
+   methods to indicate interleaved message support and thus indicate the
+   support of user message interleaving.  The crucial point is that the
+   SCTP stack MUST know that the application can handle interleaved
+   messages before indicating the I-DATA support.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.2.%20%20Sender-Side%20Considerations"></a><a class="selflink" href="#section-2.2.2" id="section-2.2.2">2.2.2</a>.  Sender-Side Considerations</span>
+
+   The sender-side usage of the I-DATA chunk is quite simple.  Instead
+   of using the TSN for fragmentation purposes, the sender uses the new
+   FSN field to indicate which fragment number is being sent.  The first
+   fragment MUST have the B bit set.  The last fragment MUST have the E
+   bit set.  All other fragments MUST NOT have the B or E bit set.  All
+   other properties of the existing SCTP DATA chunk also apply to the
+   I-DATA chunk, i.e., congestion control as well as receiver window
+   conditions MUST be observed, as defined in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>].
+
+   Note that the usage of this chunk implies the late assignment of the
+   actual TSN to any chunk being sent.  Each I-DATA chunk uses a single
+   TSN.  This way messages from other streams may be interleaved with
+   the fragmented message.  Please note that this is the only form of
+   interleaving support.  For example, it is not possible to interleave
+   multiple ordered or unordered user messages from the same stream.
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   The sender MUST NOT process (move user data into I-DATA chunks and
+   assign a TSN to it) more than one user message in any given stream at
+   any time.  At any time, a sender MAY process multiple user messages,
+   each of them on different streams.
+
+   The sender MUST assign TSNs to I-DATA chunks in a way that the
+   receiver can make progress.  One way to achieve this is to assign a
+   higher TSN to the later fragments of a user message and send out the
+   I-DATA chunks such that the TSNs are in sequence.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.3.%20%20Receiver-Side%20Considerations"></a><a class="selflink" href="#section-2.2.3" id="section-2.2.3">2.2.3</a>.  Receiver-Side Considerations</span>
+
+   Upon reception of an SCTP packet containing an I-DATA chunk whose
+   user message needs to be reassembled, the receiver MUST first use the
+   SID to identify the stream, consider the U bit to determine if it is
+   part of an ordered or unordered message, find the user message
+   identified by the MID, and use the FSN for reassembly of the message
+   and not the TSN.  The receiver MUST NOT make any assumption about the
+   TSN assignments of the sender.  Note that a non-fragmented message is
+   indicated by the fact that both the E and B bits are set.  A message
+   (either ordered or unordered) whose E and B bits are not both set may
+   be identified as being fragmented.
+
+   If I-DATA support has been negotiated for an association, the
+   reception of a DATA chunk is a violation of the above rules and
+   therefore the receiver of the DATA chunk MUST abort the association
+   by sending an ABORT chunk.  The ABORT chunk MAY include the 'Protocol
+   Violation' error cause.  The same applies if I-DATA support has not
+   been negotiated for an association and an I-DATA chunk is received.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Interaction%20with%20Other%20SCTP%20Extensions"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Interaction with Other SCTP Extensions</span>
+
+   The usage of the I-DATA chunk might interfere with other SCTP
+   extensions.  Future SCTP extensions MUST describe if and how they
+   interfere with the usage of I-DATA chunks.  For the SCTP extensions
+   already defined when this document was published, the details are
+   given in the following subsections.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.1.%20%20SCTP%20Partial%20Reliability%20Extension"></a><a class="selflink" href="#section-2.3.1" id="section-2.3.1">2.3.1</a>.  SCTP Partial Reliability Extension</span>
+
+   When the SCTP extension defined in [<a href="./rfc3758" title='"Stream Control Transmission Protocol (SCTP) Partial Reliability Extension"'>RFC3758</a>] is used in combination
+   with the user message interleaving extension, the new I-FORWARD-TSN
+   chunk MUST be used instead of the FORWARD-TSN chunk.  The difference
+   between the FORWARD-TSN and the I-FORWARD-TSN chunk is that the
+   16-bit Stream Sequence Number (SSN) has been replaced by the 32-bit
+   Message Identifier (MID), and the largest skipped MID can also be
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   provided for unordered messages.  Therefore, the principle applied to
+   ordered messages when using FORWARD-TSN chunks is applied to ordered
+   and unordered messages when using I-FORWARD-TSN chunks.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |   Type = 194  | Flags = 0x00  |      Length = Variable        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                       New Cumulative TSN                      |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |       Stream Identifier       |          Reserved           |U|
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                       Message Identifier                      |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   \                                                               \
+   /                                                               /
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |       Stream Identifier       |          Reserved           |U|
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                       Message Identifier                      |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                   Figure 4: I-FORWARD-TSN Chunk Format
+
+   The old fields are:
+
+   Flags: 8 bits (unsigned integer)
+      These bits are reserved.  They MUST be set to 0 by the sender and
+      MUST be ignored by the receiver.  Same as the Flags for FORWARD
+      TSN chunks, as specified in [<a href="./rfc3758" title='"Stream Control Transmission Protocol (SCTP) Partial Reliability Extension"'>RFC3758</a>].
+
+   Length: 16 bits (unsigned integer)
+      This field holds the length of the chunk.  Similar to the Length
+      for FORWARD TSN chunks, as specified in [<a href="./rfc3758" title='"Stream Control Transmission Protocol (SCTP) Partial Reliability Extension"'>RFC3758</a>].
+
+   New Cumulative TSN: 32 bits (unsigned integer)
+      This indicates the New Cumulative TSN to the data receiver.  Same
+      as the New Cumulative TSN for FORWARD TSN chunks, as specified in
+      [<a href="./rfc3758" title='"Stream Control Transmission Protocol (SCTP) Partial Reliability Extension"'>RFC3758</a>].
+
+   The new fields are:
+
+   Stream Identifier (SID): 16 bits (unsigned integer)
+      This field holds the stream number this entry refers to.
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   Reserved: 15 bits
+      This field is reserved.  It MUST be set to 0 by the sender and
+      MUST be ignored by the receiver.
+
+   U bit: 1 bit
+      The U bit specifies if the Message Identifier of this entry refers
+      to unordered messages (U bit is set) or ordered messages (U bit is
+      not set).
+
+   Message Identifier (MID): 32 bits (unsigned integer)
+      This field holds the largest Message Identifier for ordered or
+      unordered messages indicated by the U bit that was skipped for the
+      stream specified by the Stream Identifier.  For ordered messages,
+      this is similar to the FORWARD-TSN chunk, just replacing the
+      16-bit SSN by the 32-bit MID.
+
+   Support for the I-FORWARD-TSN chunk is negotiated during the SCTP
+   association setup via the Supported Extensions Parameter, as defined
+   in [<a href="./rfc5061" title='"Stream Control Transmission Protocol (SCTP) Dynamic Address Reconfiguration"'>RFC5061</a>].  The partial reliability extension is negotiated and
+   can be used in combination with user message interleaving only if
+   both endpoints indicated their support of user message interleaving
+   and the I-FORWARD-TSN chunk.
+
+   The FORWARD-TSN chunk MUST be used in combination with the DATA chunk
+   and MUST NOT be used in combination with the I-DATA chunk.  The
+   I-FORWARD-TSN chunk MUST be used in combination with the I-DATA chunk
+   and MUST NOT be used in combination with the DATA chunk.
+
+   If I-FORWARD-TSN support has been negotiated for an association, the
+   reception of a FORWARD-TSN chunk is a violation of the above rules
+   and therefore the receiver of the FORWARD-TSN chunk MUST abort the
+   association by sending an ABORT chunk.  The ABORT chunk MAY include
+   the 'Protocol Violation' error cause.  The same applies if
+   I-FORWARD-TSN support has not been negotiated for an association and
+   a FORWARD-TSN chunk is received.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.2.%20%20SCTP%20Stream%20Reconfiguration%20Extension"></a><a class="selflink" href="#section-2.3.2" id="section-2.3.2">2.3.2</a>.  SCTP Stream Reconfiguration Extension</span>
+
+   When an association resets the SSN using the SCTP extension defined
+   in [<a href="./rfc6525" title='"Stream Control Transmission Protocol (SCTP) Stream Reconfiguration"'>RFC6525</a>], the two counters (one for the ordered messages, one for
+   the unordered messages) used for the MIDs MUST be reset to 0.
+
+   Since most schedulers, especially all schedulers supporting user
+   message interleaving, require late TSN assignment, it should be noted
+   that the implementation of [<a href="./rfc6525" title='"Stream Control Transmission Protocol (SCTP) Stream Reconfiguration"'>RFC6525</a>] needs to handle this.
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Stream%20Schedulers"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Stream Schedulers</span>
+
+   This section defines several stream schedulers.  The stream
+   schedulers may behave differently depending on whether or not user
+   message interleaving has been negotiated for the association.  An
+   implementation MAY implement any subset of them.  If the
+   implementation is used for WebRTC data channels, as specified in
+   [<a href="#ref-DATA-CHAN">DATA-CHAN</a>], it MUST implement the Weighted Fair Queueing Scheduler
+   defined in <a href="#section-3.6">Section 3.6</a>.
+
+   The selection of the stream scheduler is done at the sender side.
+   There is no mechanism provided for signaling the stream scheduler
+   being used to the receiver side or even for letting the receiver side
+   influence the selection of the stream scheduler used at the sender
+   side.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20First-Come%2C%20First-Served%20Scheduler%20%28SCTP_SS_FCFS%29"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  First-Come, First-Served Scheduler (SCTP_SS_FCFS)</span>
+
+   The simple first-come, first-served scheduler of user messages is
+   used.  It just passes through the messages in the order in which they
+   have been delivered by the application.  No modification of the order
+   is done at all.  The usage of user message interleaving does not
+   affect the sending of the chunks, except that I-DATA chunks are used
+   instead of DATA chunks.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2.%20%20Round-Robin%20Scheduler%20%28SCTP_SS_RR%29"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a>.  Round-Robin Scheduler (SCTP_SS_RR)</span>
+
+   When not interleaving user messages, this scheduler provides a fair
+   scheduling based on the number of user messages by cycling around
+   non-empty stream queues.  When interleaving user messages, this
+   scheduler provides a fair scheduling based on the number of I-DATA
+   chunks by cycling around non-empty stream queues.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3.%20%20Round-Robin%20Scheduler%20per%20Packet%20%28SCTP_SS_RR_PKT%29"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a>.  Round-Robin Scheduler per Packet (SCTP_SS_RR_PKT)</span>
+
+   This is a round-robin scheduler, which only switches streams when
+   starting to fill a new packet.  It bundles only DATA or I-DATA chunks
+   referring to the same stream in a packet.  This scheduler minimizes
+   head-of-line blocking when a packet is lost because only a single
+   stream is affected.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.4.%20%20Priority-Based%20Scheduler%20%28SCTP_SS_PRIO%29"></a><a class="selflink" href="#section-3.4" id="section-3.4">3.4</a>.  Priority-Based Scheduler (SCTP_SS_PRIO)</span>
+
+   Scheduling of user messages with strict priorities is used.  The
+   priority is configurable per outgoing SCTP stream.  Streams having a
+   higher priority will be scheduled first and when multiple streams
+   have the same priority, the scheduling between them is implementation
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   dependent.  When the scheduler interleaves user messages, the sending
+   of large, lower-priority user messages will not delay the sending of
+   higher-priority user messages.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.5.%20%20Fair%20Capacity%20Scheduler%20%28SCTP_SS_FC%29"></a><a class="selflink" href="#section-3.5" id="section-3.5">3.5</a>.  Fair Capacity Scheduler (SCTP_SS_FC)</span>
+
+   A fair capacity distribution between the streams is used.  This
+   scheduler considers the lengths of the messages of each stream and
+   schedules them in a specific way to maintain an equal capacity for
+   all streams.  The details are implementation dependent.  interleaving
+   user messages allows for a better realization of the fair capacity
+   usage.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.6.%20%20Weighted%20Fair%20Queueing%20Scheduler%20%28SCTP_SS_WFQ%29"></a><a class="selflink" href="#section-3.6" id="section-3.6">3.6</a>.  Weighted Fair Queueing Scheduler (SCTP_SS_WFQ)</span>
+
+   A Weighted Fair Queueing scheduler between the streams is used.  The
+   weight is configurable per outgoing SCTP stream.  This scheduler
+   considers the lengths of the messages of each stream and schedules
+   them in a specific way to use the capacity according to the given
+   weights.  If the weight of stream S1 is n times the weight of stream
+   S2, the scheduler should assign to stream S1 n times the capacity it
+   assigns to stream S2.  The details are implementation dependent.
+   Interleaving user messages allows for a better realization of the
+   capacity usage according to the given weights.
+
+   This scheduler, in combination with user message interleaving, is
+   used for WebRTC data channels, as specified in [<a href="#ref-DATA-CHAN">DATA-CHAN</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Socket%20API%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Socket API Considerations</span>
+
+   This section describes how the socket API defined in [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] is
+   extended to allow applications to use the extension described in this
+   document.
+
+   Please note that this section is informational only.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Exposure%20of%20the%20Stream%20Sequence%20Number%20%28SSN%29"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Exposure of the Stream Sequence Number (SSN)</span>
+
+   The socket API defined in [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>] defines several structures in
+   which the SSN of a received user message is exposed to the
+   application.  The list of these structures includes:
+
+   struct sctp_sndrcvinfo
+      Specified in <a href="./rfc6458#section-5.3.2">Section 5.3.2 of [RFC6458]</a> and marked as deprecated.
+
+   struct sctp_extrcvinfo
+      Specified in <a href="./rfc6458#section-5.3.3">Section 5.3.3 of [RFC6458]</a> and marked as deprecated.
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   struct sctp_rcvinfo
+      Specified in <a href="./rfc6458#section-5.3.5">Section 5.3.5 of [RFC6458]</a>.
+
+   If user message interleaving is used, the lower-order 16 bits of the
+   MID are used as the SSN when filling out these structures.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20SCTP_ASSOC_CHANGE%20Notification"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  SCTP_ASSOC_CHANGE Notification</span>
+
+   When an SCTP_ASSOC_CHANGE notification (specified in <a href="./rfc6458#section-6.1.1">Section 6.1.1 of
+   [RFC6458]</a>) is delivered indicating a sac_state of SCTP_COMM_UP or
+   SCTP_RESTART for an SCTP association where both peers support the
+   I-DATA chunk, SCTP_ASSOC_SUPPORTS_INTERLEAVING should be listed in
+   the sac_info field.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Socket%20Options"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Socket Options</span>
+
+   +-----------------------------+-------------------------+-----+-----+
+   | Option Name                 | Data Type               | Get | Set |
+   +-----------------------------+-------------------------+-----+-----+
+   | SCTP_INTERLEAVING_SUPPORTED | struct sctp_assoc_value |  X  |  X  |
+   | SCTP_STREAM_SCHEDULER       | struct sctp_assoc_value |  X  |  X  |
+   | SCTP_STREAM_SCHEDULER_VALUE | struct                  |  X  |  X  |
+   |                             | sctp_stream_value       |     |     |
+   +-----------------------------+-------------------------+-----+-----+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.1.%20%20Enable%20or%20Disable%20the%20Support%20of%20User%20Message%20Interleaving"></a><a class="selflink" href="#section-4.3.1" id="section-4.3.1">4.3.1</a>.  Enable or Disable the Support of User Message Interleaving</span>
+        (SCTP_INTERLEAVING_SUPPORTED)
+
+   This socket option allows the enabling or disabling of the
+   negotiation of user message interleaving support for future
+   associations.  For existing associations, it allows for querying
+   whether or not user message interleaving support was negotiated on a
+   particular association.
+
+   This socket option uses IPPROTO_SCTP as its level and
+   SCTP_INTERLEAVING_SUPPORTED as its name.  It can be used with
+   getsockopt() and setsockopt().  The socket option value uses the
+   following structure defined in [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>]:
+
+   struct sctp_assoc_value {
+     sctp_assoc_t assoc_id;
+     uint32_t assoc_value;
+   };
+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   assoc_id:  This parameter is ignored for one-to-one style sockets.
+      For one-to-many style sockets, this parameter indicates upon which
+      association the user is performing an action.  The special
+      sctp_assoc_t SCTP_FUTURE_ASSOC can also be used; it is an error to
+      use SCTP_{CURRENT|ALL}_ASSOC in assoc_id.
+
+   assoc_value:  A non-zero value encodes the enabling of user message
+      interleaving, whereas a value of zero encodes the disabling of
+      user message interleaving.
+
+   sctp_opt_info() needs to be extended to support
+   SCTP_INTERLEAVING_SUPPORTED.
+
+   An application using user message interleaving should also set the
+   fragment interleave level to 2 by using the SCTP_FRAGMENT_INTERLEAVE
+   socket option specified in <a href="./rfc6458#section-8.1.20">Section 8.1.20 of [RFC6458]</a>.  This allows
+   the interleaving of user messages from different streams.  Please
+   note that it does not allow the interleaving of user messages
+   (ordered or unordered) on the same stream.  Failure to set this
+   option can possibly lead to application deadlock.  Some
+   implementations might therefore put some restrictions on setting
+   combinations of these values.  Setting the interleaving level to at
+   least 2 before enabling the negotiation of user message interleaving
+   should work on all platforms.  Since the default fragment interleave
+   level is not 2, user message interleaving is disabled per default.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.2.%20%20Get%20or%20Set%20the%20Stream%20Scheduler%20%28SCTP_STREAM_SCHEDULER%29"></a><a class="selflink" href="#section-4.3.2" id="section-4.3.2">4.3.2</a>.  Get or Set the Stream Scheduler (SCTP_STREAM_SCHEDULER)</span>
+
+   A stream scheduler can be selected with the SCTP_STREAM_SCHEDULER
+   option for setsockopt().  The struct sctp_assoc_value is used to
+   specify the association for which the scheduler should be changed and
+   the value of the desired algorithm.
+
+   The definition of struct sctp_assoc_value is the same as in
+   [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>]:
+
+   struct sctp_assoc_value {
+     sctp_assoc_t assoc_id;
+     uint32_t assoc_value;
+   };
+
+   assoc_id:  Holds the identifier of the association for which the
+      scheduler should be changed.  The special
+      SCTP_{FUTURE|CURRENT|ALL}_ASSOC can also be used.  This parameter
+      is ignored for one-to-one style sockets.
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   assoc_value:  This specifies which scheduler is used.  The following
+      constants can be used:
+
+      SCTP_SS_DEFAULT:  The default scheduler used by the SCTP
+         implementation.  Typical values are SCTP_SS_FCFS or SCTP_SS_RR.
+
+      SCTP_SS_FCFS:  Use the scheduler specified in <a href="#section-3.1">Section 3.1</a>.
+
+      SCTP_SS_RR:  Use the scheduler specified in <a href="#section-3.2">Section 3.2</a>.
+
+      SCTP_SS_RR_PKT:  Use the scheduler specified in <a href="#section-3.3">Section 3.3</a>.
+
+      SCTP_SS_PRIO:  Use the scheduler specified in <a href="#section-3.4">Section 3.4</a>.  The
+         priority can be assigned with the sctp_stream_value struct.
+         The higher the assigned value, the lower the priority.  That
+         is, the default value 0 is the highest priority, and therefore
+         the default scheduling will be used if no priorities have been
+         assigned.
+
+      SCTP_SS_FB:  Use the scheduler specified in <a href="#section-3.5">Section 3.5</a>.
+
+      SCTP_SS_WFQ:  Use the scheduler specified in <a href="#section-3.6">Section 3.6</a>.  The
+         weight can be assigned with the sctp_stream_value struct.
+
+   sctp_opt_info() needs to be extended to support
+   SCTP_STREAM_SCHEDULER.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.3.%20%20Get%20or%20Set%20the%20Stream%20Scheduler%20Parameter"></a><a class="selflink" href="#section-4.3.3" id="section-4.3.3">4.3.3</a>.  Get or Set the Stream Scheduler Parameter</span>
+        (SCTP_STREAM_SCHEDULER_VALUE)
+
+   Some schedulers require additional information to be set for
+   individual streams as shown in the following table:
+
+                   +-----------------+-----------------+
+                   | Name            | Per-Stream Info |
+                   +-----------------+-----------------+
+                   | SCTP_SS_DEFAULT |       n/a       |
+                   | SCTP_SS_FCFS    |        no       |
+                   | SCTP_SS_RR      |        no       |
+                   | SCTP_SS_RR_PKT  |        no       |
+                   | SCTP_SS_PRIO    |       yes       |
+                   | SCTP_SS_FB      |        no       |
+                   | SCTP_SS_WFQ     |       yes       |
+                   +-----------------+-----------------+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   This is achieved with the SCTP_STREAM_SCHEDULER_VALUE option and the
+   corresponding struct sctp_stream_value.  The definition of struct
+   sctp_stream_value is as follows:
+
+   struct sctp_stream_value {
+     sctp_assoc_t assoc_id;
+     uint16_t stream_id;
+     uint16_t stream_value;
+   };
+
+   assoc_id:  Holds the identifier of the association for which the
+      scheduler should be changed.  The special
+      SCTP_{FUTURE|CURRENT|ALL}_ASSOC can also be used.  This parameter
+      is ignored for one-to-one style sockets.
+
+   stream_id:  Holds the identifier of the stream for which additional
+      information has to be provided.
+
+   stream_value:  The meaning of this field depends on the scheduler
+      specified.  It is ignored when the scheduler does not need
+      additional information.
+
+   sctp_opt_info() needs to be extended to support
+   SCTP_STREAM_SCHEDULER_VALUE.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.4.%20%20Explicit%20EOR%20Marking"></a><a class="selflink" href="#section-4.4" id="section-4.4">4.4</a>.  Explicit EOR Marking</span>
+
+   Using explicit End of Record (EOR) marking for an SCTP association
+   supporting user message interleaving allows the user to interleave
+   the sending of user messages on different streams.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  IANA Considerations</span>
+
+   Two new chunk types have been assigned by IANA.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20I-DATA%20Chunk"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  I-DATA Chunk</span>
+
+   IANA has assigned the chunk type for this chunk from the pool of
+   chunks with the upper two bits set to '01'.  This appears in the
+   "Chunk Types" registry for SCTP as follows:
+
+   +----------+--------------------------------------------+-----------+
+   | ID Value | Chunk Type                                 | Reference |
+   +----------+--------------------------------------------+-----------+
+   | 64       | Payload Data supporting Interleaving       | <a href="./rfc8260">RFC 8260</a>  |
+   |          | (I-DATA)                                   |           |
+   +----------+--------------------------------------------+-----------+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+   The registration table (as defined in [<a href="./rfc6096" title='"Stream Control Transmission Protocol (SCTP) Chunk Flags Registration"'>RFC6096</a>]) for the chunk flags
+   of this chunk type is initially as follows:
+
+            +------------------+-----------------+-----------+
+            | Chunk Flag Value | Chunk Flag Name | Reference |
+            +------------------+-----------------+-----------+
+            | 0x01             | E bit           | <a href="./rfc8260">RFC 8260</a>  |
+            | 0x02             | B bit           | <a href="./rfc8260">RFC 8260</a>  |
+            | 0x04             | U bit           | <a href="./rfc8260">RFC 8260</a>  |
+            | 0x08             | I bit           | <a href="./rfc8260">RFC 8260</a>  |
+            | 0x10             | Unassigned      |           |
+            | 0x20             | Unassigned      |           |
+            | 0x40             | Unassigned      |           |
+            | 0x80             | Unassigned      |           |
+            +------------------+-----------------+-----------+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20I-FORWARD-TSN%20Chunk"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  I-FORWARD-TSN Chunk</span>
+
+   IANA has assigned the chunk type for this chunk from the pool of
+   chunks with the upper two bits set to '11'.  This appears in the
+   "Chunk Types" registry for SCTP as follows:
+
+                 +----------+---------------+-----------+
+                 | ID Value | Chunk Type    | Reference |
+                 +----------+---------------+-----------+
+                 | 194      | I-FORWARD-TSN | <a href="./rfc8260">RFC 8260</a>  |
+                 +----------+---------------+-----------+
+
+   The registration table (as defined in [<a href="./rfc6096" title='"Stream Control Transmission Protocol (SCTP) Chunk Flags Registration"'>RFC6096</a>]) for the chunk flags
+   of this chunk type is initially empty.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   This document does not add any additional security considerations in
+   addition to the ones given in [<a href="./rfc4960" title='"Stream Control Transmission Protocol"'>RFC4960</a>] and [<a href="./rfc6458" title='"Sockets API Extensions for the Stream Control Transmission Protocol (SCTP)"'>RFC6458</a>].
+
+   It should be noted that the application has to consent that it is
+   willing to do the more complex reassembly support required for user
+   message interleaving.  When doing so, an application has to provide a
+   reassembly buffer for each incoming stream.  It has to protect itself
+   against these buffers taking too many resources.  If user message
+   interleaving is not used, only a single reassembly buffer needs to be
+   provided for each association.  But the application has to protect
+   itself for excessive resource usages there too.
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20References"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Normative%20References"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC1982">RFC1982</a>]  Elz, R. and R. Bush, "Serial Number Arithmetic", <a href="./rfc1982">RFC 1982</a>,
+              DOI 10.17487/RFC1982, August 1996,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc1982">https://www.rfc-editor.org/info/rfc1982</a>&gt;.
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3758">RFC3758</a>]  Stewart, R., Ramalho, M., Xie, Q., Tuexen, M., and P.
+              Conrad, "Stream Control Transmission Protocol (SCTP)
+              Partial Reliability Extension", <a href="./rfc3758">RFC 3758</a>,
+              DOI 10.17487/RFC3758, May 2004,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3758">https://www.rfc-editor.org/info/rfc3758</a>&gt;.
+
+   [<a id="ref-RFC4960">RFC4960</a>]  Stewart, R., Ed., "Stream Control Transmission Protocol",
+              <a href="./rfc4960">RFC 4960</a>, DOI 10.17487/RFC4960, September 2007,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4960">https://www.rfc-editor.org/info/rfc4960</a>&gt;.
+
+   [<a id="ref-RFC5061">RFC5061</a>]  Stewart, R., Xie, Q., Tuexen, M., Maruyama, S., and M.
+              Kozuka, "Stream Control Transmission Protocol (SCTP)
+              Dynamic Address Reconfiguration", <a href="./rfc5061">RFC 5061</a>,
+              DOI 10.17487/RFC5061, September 2007,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5061">https://www.rfc-editor.org/info/rfc5061</a>&gt;.
+
+   [<a id="ref-RFC6096">RFC6096</a>]  Tuexen, M. and R. Stewart, "Stream Control Transmission
+              Protocol (SCTP) Chunk Flags Registration", <a href="./rfc6096">RFC 6096</a>,
+              DOI 10.17487/RFC6096, January 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6096">https://www.rfc-editor.org/info/rfc6096</a>&gt;.
+
+   [<a id="ref-RFC6525">RFC6525</a>]  Stewart, R., Tuexen, M., and P. Lei, "Stream Control
+              Transmission Protocol (SCTP) Stream Reconfiguration",
+              <a href="./rfc6525">RFC 6525</a>, DOI 10.17487/RFC6525, February 2012,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6525">https://www.rfc-editor.org/info/rfc6525</a>&gt;.
+
+   [<a id="ref-RFC7053">RFC7053</a>]  Tuexen, M., Ruengeler, I., and R. Stewart, "SACK-
+              IMMEDIATELY Extension for the Stream Control Transmission
+              Protocol", <a href="./rfc7053">RFC 7053</a>, DOI 10.17487/RFC7053, November 2013,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7053">https://www.rfc-editor.org/info/rfc7053</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Informative%20References"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Informative References</span>
+
+   [<a id="ref-DATA-CHAN">DATA-CHAN</a>]
+              Jesup, R., Loreto, S., and M. Tuexen, "WebRTC Data
+              Channels", Work in Progress,
+              <a href="./draft-ietf-rtcweb-data-channel-13">draft-ietf-rtcweb-data-channel-13</a>, January 2015.
+
+   [<a id="ref-RFC3261">RFC3261</a>]  Rosenberg, J., Schulzrinne, H., Camarillo, G., Johnston,
+              A., Peterson, J., Sparks, R., Handley, M., and E.
+              Schooler, "SIP: Session Initiation Protocol", <a href="./rfc3261">RFC 3261</a>,
+              DOI 10.17487/RFC3261, June 2002,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3261">https://www.rfc-editor.org/info/rfc3261</a>&gt;.
+
+   [<a id="ref-RFC6458">RFC6458</a>]  Stewart, R., Tuexen, M., Poon, K., Lei, P., and V.
+              Yasevich, "Sockets API Extensions for the Stream Control
+              Transmission Protocol (SCTP)", <a href="./rfc6458">RFC 6458</a>,
+              DOI 10.17487/RFC6458, December 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6458">https://www.rfc-editor.org/info/rfc6458</a>&gt;.
+
+Acknowledgments
+
+   The authors wish to thank Benoit Claise, Julian Cordes, Spencer
+   Dawkins, Gorry Fairhurst, Lennart Grahl, Christer Holmberg, Mirja
+   Kuehlewind, Marcelo Ricardo Leitner, Karen E. Egede Nielsen, Maksim
+   Proshin, Eric Rescorla, Irene Ruengeler, Felix Weinrank, Michael
+   Welzl, Magnus Westerlund, and Lixia Zhang for their invaluable
+   comments.
+
+   This work has received funding from the European Union's Horizon 2020
+   research and innovation program under grant agreement No. 644334
+   (NEAT).  The views expressed are solely those of the authors.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Stewart, et al.              Standards Track                   [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc8260">RFC 8260</a>         Stream Schedulers and the I-DATA Chunk    November 2017</span>
+
+
+Authors' Addresses
+
+   Randall R. Stewart
+   Netflix, Inc.
+   Chapin, SC  29036
+   United States of America
+
+   Email: randall@lakerest.net
+
+
+   Michael Tuexen
+   Muenster University of Applied Sciences
+   Stegerwaldstrasse 39
+   48565 Steinfurt
+   Germany
+
+   Email: tuexen@fh-muenster.de
+
+
+   Salvatore Loreto
+   Ericsson
+   Torshamnsgatan 21
+   164 80 Stockholm
+   Sweden
+
+   Email: Salvatore.Loreto@ericsson.com
+
+
+   Robin Seggelmann
+   Metafinanz Informationssysteme GmbH
+   Leopoldstrasse 146
+   80804 Muenchen
+   Germany
+
+   Email: rfc@robin-seggelmann.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Stewart, et al.              Standards Track                   [Page 23]
+</pre>
+</body></html>

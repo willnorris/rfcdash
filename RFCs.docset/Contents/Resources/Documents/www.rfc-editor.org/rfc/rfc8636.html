@@ -1,0 +1,1174 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)              L. Hornquist Astrand
+Request for Comments: 8636                                    Apple, Inc
+Updates: <a href="./rfc4556">4556</a>                                                     L. Zhu
+Category: Standards Track                             Oracle Corporation
+ISSN: 2070-1721                                                M. Cullen
+                                                       Painless Security
+                                                               G. Hudson
+                                                                     MIT
+                                                               July 2019
+
+
+Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)
+                           Algorithm Agility
+
+Abstract
+
+   This document updates the Public Key Cryptography for Initial
+   Authentication in Kerberos (PKINIT) standard (<a href="./rfc4556">RFC 4556</a>) to remove
+   protocol structures tied to specific cryptographic algorithms.  The
+   PKINIT key derivation function is made negotiable, and the digest
+   algorithms for signing the pre-authentication data and the client's
+   X.509 certificates are made discoverable.
+
+   These changes provide preemptive protection against vulnerabilities
+   discovered in the future in any specific cryptographic algorithm and
+   allow incremental deployment of newer algorithms.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8636">https://www.rfc-editor.org/info/rfc8636</a>.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2019 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+   This document may contain material from IETF Documents or IETF
+   Contributions published or made publicly available before November
+   10, 2008.  The person(s) controlling the copyright in some of this
+   material may not have granted the IETF Trust the right to allow
+   modifications of such material outside the IETF Standards Process.
+   Without obtaining an adequate license from the person(s) controlling
+   the copyright in such materials, this document may not be modified
+   outside the IETF Standards Process, and derivative works of it may
+   not be created outside the IETF Standards Process, except to format
+   it for publication as an RFC or to translate it into languages other
+   than English.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Requirements Notation . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-3">3</a>.  paChecksum Agility  . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-4">4</a>.  CMS Digest Algorithm Agility  . . . . . . . . . . . . . . . .   <a href="#page-5">5</a>
+   <a href="#section-5">5</a>.  X.509 Certificate Signer Algorithm Agility  . . . . . . . . .   <a href="#page-5">5</a>
+   <a href="#section-6">6</a>.  KDF Agility . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-7">7</a>.  Interoperability  . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+   <a href="#section-8">8</a>.  Test Vectors  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+     <a href="#section-8.1">8.1</a>.  Common Inputs . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+     <a href="#section-8.2">8.2</a>.  Test Vector for SHA-1, enctype 18 . . . . . . . . . . . .  <a href="#page-12">12</a>
+       <a href="#section-8.2.1">8.2.1</a>.  Specific Inputs . . . . . . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+       <a href="#section-8.2.2">8.2.2</a>.  Outputs . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+     <a href="#section-8.3">8.3</a>.  Test Vector for SHA-256, enctype 18 . . . . . . . . . . .  <a href="#page-13">13</a>
+       <a href="#section-8.3.1">8.3.1</a>.  Specific Inputs . . . . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+       <a href="#section-8.3.2">8.3.2</a>.  Outputs . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+     <a href="#section-8.4">8.4</a>.  Test Vector for SHA-512, enctype 16 . . . . . . . . . . .  <a href="#page-13">13</a>
+       <a href="#section-8.4.1">8.4.1</a>.  Specific Inputs . . . . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+       <a href="#section-8.4.2">8.4.2</a>.  Outputs . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+   <a href="#section-9">9</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .  <a href="#page-13">13</a>
+   <a href="#section-10">10</a>. IANA Considerations . . . . . . . . . . . . . . . . . . . . .  <a href="#page-15">15</a>
+   <a href="#section-11">11</a>. References  . . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-11.1">11.1</a>.  Normative References . . . . . . . . . . . . . . . . . .  <a href="#page-15">15</a>
+     <a href="#section-11.2">11.2</a>.  Informative References . . . . . . . . . . . . . . . . .  <a href="#page-16">16</a>
+   <a href="#appendix-A">Appendix A</a>.  PKINIT ASN.1 Module  . . . . . . . . . . . . . . . .  <a href="#page-18">18</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-21">21</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-21">21</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The Public Key Cryptography for Initial Authentication in Kerberos
+   (PKINIT) standard [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] defines several protocol structures that
+   are either tied to SHA-1 [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>] or do not support negotiation or
+   discovery but are instead based on local policy:
+
+   o  The checksum algorithm in the authentication request is hardwired
+      to use SHA-1.
+
+   o  The acceptable digest algorithms for signing the authentication
+      data are not discoverable.
+
+   o  The key derivation function in <a href="./rfc4556#section-3.2.3.1">Section 3.2.3.1 of [RFC4556]</a> is
+      hardwired to use SHA-1.
+
+   o  The acceptable digest algorithms for signing the client X.509
+      certificates are not discoverable.
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   In August 2004, Xiaoyun Wang's research group reported MD4 [<a href="./rfc6150" title='"MD4 to Historic Status"'>RFC6150</a>]
+   collisions [<a href="#ref-WANG04" title='"Cryptanalysis of the Hash Functions MD4 and RIPEMD"'>WANG04</a>], alongside attacks on later hash functions
+   including MD5 [<a href="./rfc1321" title='"The MD5 Message-Digest Algorithm"'>RFC1321</a>] and SHA-1 [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>].  These attacks and their
+   consequences are discussed in [<a href="./rfc6194" title='"Security Considerations for the SHA-0 and SHA-1 Message-Digest Algorithms"'>RFC6194</a>].  These discoveries
+   challenged the security of protocols relying on the collision-
+   resistance properties of these hashes.
+
+   The Internet Engineering Task Force (IETF) called for action to
+   update existing protocols to provide crypto algorithm agility so that
+   protocols support multiple cryptographic algorithms (including hash
+   functions) and provide clean, tested transition strategies between
+   algorithms, as recommended by <a href="https://www.rfc-editor.org/bcp/bcp201">BCP 201</a> [<a href="./rfc7696" title='"Guidelines for Cryptographic Algorithm Agility and Selecting Mandatory-to-Implement Algorithms"'>RFC7696</a>].
+
+   To address these concerns, new key derivation functions (KDFs),
+   identified by object identifiers, are defined.  The PKINIT client
+   provides a list of KDFs in the request, and the Key Distribution
+   Center (KDC) picks one in the response.  Thus, a mutually supported
+   KDF is negotiated.
+
+   Furthermore, structures are defined to allow the client to discover
+   the Cryptographic Message Syntax (CMS) [<a href="./rfc5652" title='"Cryptographic Message Syntax (CMS)"'>RFC5652</a>] digest algorithms
+   supported by the KDC for signing the pre-authentication data and the
+   client X.509 certificate.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Requirements%20Notation"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Requirements Notation</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20paChecksum%20Agility"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  paChecksum Agility</span>
+
+   The paChecksum defined in <a href="./rfc4556#section-3.2.1">Section 3.2.1 of [RFC4556]</a> provides a
+   cryptographic binding between the client's pre-authentication data
+   and the corresponding Kerberos request body.  This also prevents the
+   KDC-REQ body from being tampered with.  SHA-1 is the only allowed
+   checksum algorithm defined in [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>].  This facility relies on the
+   collision-resistance properties of the SHA-1 checksum [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>].
+
+   When the reply key delivery mechanism is based on public key
+   encryption as described in <a href="./rfc4556#section-3.2.3.2">Section 3.2.3.2 of [RFC4556]</a>, the
+   asChecksum in the KDC reply provides integrity protection for the
+   unauthenticated clear text in these messages and the binding between
+   the pre-authentication and the ticket request and response messages.
+   However, if the reply key delivery mechanism is based on the Diffie-
+   Hellman key agreement as described in <a href="./rfc4556#section-3.2.3.1">Section 3.2.3.1 of [RFC4556]</a>,
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   the security provided by using SHA-1 in the paChecksum is weak, and
+   nothing else cryptographically binds the Authentication Service (AS)
+   request to the ticket response.  In this case, the new KDF selected
+   by the KDC, as described in <a href="#section-6">Section 6</a>, provides the cryptographic
+   binding and integrity protection.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20CMS%20Digest%20Algorithm%20Agility"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  CMS Digest Algorithm Agility</span>
+
+   <a href="./rfc4556#section-3.2.2">Section 3.2.2 of [RFC4556]</a> is updated to add optional typed data to
+   the KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED error.  When a KDC
+   implementation conforming to this specification returns this error
+   code, it MAY include a list of supported CMS types signifying the
+   digest algorithms supported by the KDC in decreasing order of
+   preference.  This is accomplished by including a
+   TD_CMS_DATA_DIGEST_ALGORITHMS typed data element in the error data.
+
+   td-cms-digest-algorithms INTEGER ::= 111
+
+   The corresponding data for the TD_CMS_DATA_DIGEST_ALGORITHMS contains
+   the TD-CMS-DIGEST-ALGORITHMS-DATA structure, which is ASN.1
+   Distinguished Encoding Rules (DER) [<a href="#ref-X680" title='"Information technology - Abstract Syntax Notation One (ASN.1): Specification of basic notation"'>X680</a>] [<a href="#ref-X690" title='"Information technology - ASN.1 encoding Rules: Specification of Basic Encoding Rules (BER), Canonical Encoding Rules (CER) and Distinguished Encoding Rules (DER)"'>X690</a>] encoded and is
+   defined as follows:
+
+   TD-CMS-DIGEST-ALGORITHMS-DATA ::= SEQUENCE OF
+       AlgorithmIdentifier
+           -- Contains the list of CMS algorithm [<a href="./rfc5652" title='"Cryptographic Message Syntax (CMS)"'>RFC5652</a>]
+           -- identifiers indicating the digest algorithms
+           -- acceptable to the KDC for signing CMS data in
+           -- decreasing order of preference.
+
+   The algorithm identifiers in TD-CMS-DIGEST-ALGORITHMS identify the
+   digest algorithms supported by the KDC.
+
+   This information sent by the KDC via TD_CMS_DATA_DIGEST_ALGORITHMS
+   can facilitate troubleshooting when none of the digest algorithms
+   supported by the client is supported by the KDC.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20X.509%20Certificate%20Signer%20Algorithm%20Agility"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  X.509 Certificate Signer Algorithm Agility</span>
+
+   <a href="./rfc4556#section-3.2.2">Section 3.2.2 of [RFC4556]</a> is updated to add optional typed data to
+   the KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED error.  When a KDC conforming
+   to this specification returns this error, it MAY send a list of
+   digest algorithms acceptable to the KDC for use by the certification
+   authority (CA) in signing the client's X.509 certificate in
+   decreasing order of preference.  This is accomplished by including a
+   TD_CERT_DIGEST_ALGORITHMS typed data element in the error data.  The
+   corresponding data contains the ASN.1 DER encoding of the TD-CERT-
+   DIGEST-ALGORITHMS-DATA structure defined as follows:
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   td-cert-digest-algorithms INTEGER ::= 112
+
+   TD-CERT-DIGEST-ALGORITHMS-DATA ::= SEQUENCE {
+           allowedAlgorithms [0] SEQUENCE OF AlgorithmIdentifier,
+                      -- Contains the list of CMS algorithm [<a href="./rfc5652" title='"Cryptographic Message Syntax (CMS)"'>RFC5652</a>]
+                      -- identifiers indicating the digest algorithms
+                      -- that are used by the CA to sign the client's
+                      -- X.509 certificate and are acceptable to the KDC
+                      -- in the process of validating the client's X.509
+                      -- certificate in decreasing order of
+                      -- preference.
+           rejectedAlgorithm [1] AlgorithmIdentifier OPTIONAL,
+                      -- This identifies the digest algorithm that was
+                      -- used to sign the client's X.509 certificate and
+                      -- has been rejected by the KDC in the process of
+                      -- validating the client's X.509 certificate
+                      -- [<a href="./rfc5280" title='"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"'>RFC5280</a>].
+           ...
+   }
+
+   The KDC fills in the allowedAlgorithm field with the list of
+   algorithm [<a href="./rfc5652" title='"Cryptographic Message Syntax (CMS)"'>RFC5652</a>] identifiers indicating digest algorithms that are
+   used by the CA to sign the client's X.509 certificate and are
+   acceptable to the KDC in the process of validating the client's X.509
+   certificate in decreasing order of preference.  The rejectedAlgorithm
+   field identifies the signing algorithm for use in signing the
+   client's X.509 certificate that has been rejected by the KDC in the
+   process of validating the client's certificate [<a href="./rfc5280" title='"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"'>RFC5280</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20KDF%20Agility"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  KDF Agility</span>
+
+   <a href="./rfc4556#section-3.2.3.1">Section 3.2.3.1 of [RFC4556]</a> is updated to define additional key
+   derivation functions (KDFs) to derive a Kerberos protocol key based
+   on the secret value generated by the Diffie-Hellman key exchange.
+   <a href="./rfc4556#section-3.2.1">Section 3.2.1 of [RFC4556]</a> is updated to add a new field to the
+   AuthPack structure to indicate which new KDFs are supported by the
+   client.  <a href="./rfc4556#section-3.2.3">Section 3.2.3 of [RFC4556]</a> is updated to add a new field to
+   the DHRepInfo structure to indicate which KDF is selected by the KDC.
+
+   The KDF algorithm described in this document (based on [<a href="#ref-SP80056A" title='"Recommendation for Pair-Wise Key-Establishment Schemes Using Discrete Logarithm Cryptography"'>SP80056A</a>])
+   can be implemented using any cryptographic hash function.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   A new KDF for PKINIT usage is identified by an object identifier.
+   The following KDF object identifiers are defined:
+
+   id-pkinit OBJECT IDENTIFIER ::=
+            { iso(1) identified-organization(3) dod(6) internet(1)
+              security(5) kerberosv5(2) pkinit (3) }
+       -- Defined in <a href="./rfc4556">RFC 4556</a> and quoted here for the reader.
+
+   id-pkinit-kdf OBJECT IDENTIFIER      ::= { id-pkinit kdf(6) }
+       -- PKINIT KDFs
+
+   id-pkinit-kdf-ah-sha1 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha1(1) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-1
+
+   id-pkinit-kdf-ah-sha256 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha256(2) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-256
+
+   id-pkinit-kdf-ah-sha512 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha512(3) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-512
+
+   id-pkinit-kdf-ah-sha384 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha384(4) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-384
+
+   Where id-pkinit is defined in [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>].  All key derivation
+   functions specified above use the one-step key derivation method
+   described in Section 5.8.2.1 of [<a href="#ref-SP80056A" title='"Recommendation for Pair-Wise Key-Establishment Schemes Using Discrete Logarithm Cryptography"'>SP80056A</a>], choosing the ASN.1 format
+   for FixedInfo, and Section 4.1 of [<a href="#ref-SP80056C" title='"Recommendation for Key-Derivation Methods in Key-Establishment Schemes"'>SP80056C</a>], choosing option 1 for
+   the auxiliary function H.  id-pkinit-kdf-ah-sha1 uses SHA-1 [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>]
+   as the hash function.  id-pkinit-kdf-ah-sha256, id-pkinit-kdf-ah-
+   sha356, and id-pkinit-kdf-ah-sha512 use SHA-256 [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>], SHA-384
+   [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>], and SHA-512 [<a href="./rfc6234" title='"US Secure Hash Algorithms (SHA and SHA-based HMAC and HKDF)"'>RFC6234</a>], respectively.
+
+   To name the input parameters, an abbreviated version of the key
+   derivation method is described below.
+
+   1.  reps = ceiling(L/H_outputBits)
+
+   2.  Initialize a 32-bit, big-endian bit string counter as 1.
+
+   3.  For i = 1 to reps by 1, do the following:
+
+       1.  Compute Hashi = H(counter || Z || OtherInfo).
+
+       2.  Increment counter (not to exceed 2^32-1)
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   4.  Set key_material = Hash1 || Hash2 || ... so that the length of
+       key_material is L bits, truncating the last block as necessary.
+
+   5.  The above KDF produces a bit string of length L in bits as the
+       keying material.  The AS reply key is the output of random-to-
+       key() [<a href="./rfc3961" title='"Encryption and Checksum Specifications for Kerberos 5"'>RFC3961</a>], using that keying material as the input.
+
+   The input parameters for these KDFs are provided as follows:
+
+   o  H_outputBits is 160 bits for id-pkinit-kdf-ah-sha1, 256 bits for
+      id-pkinit-kdf-ah-sha256, 384 bits for id-pkinit-kdf-ah-sha384, and
+      512 bits for id-pkinit-kdf-ah-sha512.
+
+   o  max_H_inputBits is 2^64.
+
+   o  The secret value (Z) is the shared secret value generated by the
+      Diffie-Hellman exchange.  The Diffie-Hellman shared value is first
+      padded with leading zeros such that the size of the secret value
+      in octets is the same as that of the modulus, then represented as
+      a string of octets in big-endian order.
+
+   o  The key data length (L) is the key-generation seed length in bits
+      [<a href="./rfc3961" title='"Encryption and Checksum Specifications for Kerberos 5"'>RFC3961</a>] for the Authentication Service (AS) reply key.  The
+      enctype of the AS reply key is selected according to [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>].
+
+   o  The algorithm identifier (algorithmID) input parameter is the
+      identifier of the respective KDF.  For example, this is id-pkinit-
+      kdf-ah-sha1 if the KDF uses SHA-1 as the hash.
+
+   o  The initiator identifier (partyUInfo) contains the ASN.1 DER
+      encoding of the KRB5PrincipalName [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] that identifies the
+      client as specified in the AS-REQ [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>] in the request.
+
+   o  The recipient identifier (partyVInfo) contains the ASN.1 DER
+      encoding of the KRB5PrincipalName [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] that identifies the
+      ticket-granting server (TGS) as specified in the AS-REQ [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>]
+      in the request.
+
+   o  The supplemental public information (suppPubInfo) is the ASN.1 DER
+      encoding of the PkinitSuppPubInfo structure, as defined later in
+      this section.
+
+   o  The supplemental private information (suppPrivInfo) is absent.
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   OtherInfo is the ASN.1 DER encoding of the following sequence:
+
+   OtherInfo ::= SEQUENCE {
+           algorithmID   AlgorithmIdentifier,
+           partyUInfo     [0] OCTET STRING,
+           partyVInfo     [1] OCTET STRING,
+           suppPubInfo    [2] OCTET STRING OPTIONAL,
+           suppPrivInfo   [3] OCTET STRING OPTIONAL
+   }
+
+   The PkinitSuppPubInfo structure is defined as follows:
+
+   PkinitSuppPubInfo ::= SEQUENCE {
+          enctype           [0] Int32,
+              -- The enctype of the AS reply key.
+          as-REQ            [1] OCTET STRING,
+              -- The DER encoding of the AS-REQ [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>] from the
+              -- client.
+          pk-as-rep         [2] OCTET STRING,
+              -- The DER encoding of the PA-PK-AS-REP [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] in the
+              -- KDC reply.
+          ...
+   }
+
+   The PkinitSuppPubInfo structure contains mutually known public
+   information specific to the authentication exchange.  The enctype
+   field is the enctype of the AS reply key as selected according to
+   [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>].  The as-REQ field contains the DER encoding of the AS-REQ
+   type [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>] in the request sent from the client to the KDC.  Note
+   that the as-REQ field does not include the wrapping 4-octet length
+   when TCP is used.  The pk-as-rep field contains the DER encoding of
+   the PA-PK-AS-REP [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] type in the KDC reply.  The
+   PkinitSuppPubInfo provides a cryptographic binding between the pre-
+   authentication data and the corresponding ticket request and
+   response, thus addressing the concerns described in <a href="#section-3">Section 3</a>.
+
+   The KDF is negotiated between the client and the KDC.  The client
+   sends an unordered set of supported KDFs in the request, and the KDC
+   picks one from the set in the reply.
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   To accomplish this, the AuthPack structure in [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] is extended
+   as follows:
+
+   AuthPack ::= SEQUENCE {
+          pkAuthenticator   [0] PKAuthenticator,
+          clientPublicValue [1] SubjectPublicKeyInfo OPTIONAL,
+          supportedCMSTypes [2] SEQUENCE OF AlgorithmIdentifier
+                   OPTIONAL,
+          clientDHNonce     [3] DHNonce OPTIONAL,
+          ...,
+          supportedKDFs     [4] SEQUENCE OF KDFAlgorithmId OPTIONAL,
+              -- Contains an unordered set of KDFs supported by the
+              -- client.
+          ...
+   }
+
+   KDFAlgorithmId ::= SEQUENCE {
+          kdf-id            [0] OBJECT IDENTIFIER,
+              -- The object identifier of the KDF
+          ...
+   }
+
+   The new supportedKDFs field contains an unordered set of KDFs
+   supported by the client.
+
+   The KDFAlgorithmId structure contains an object identifier that
+   identifies a KDF.  The algorithm of the KDF and its parameters are
+   defined by the corresponding specification of that KDF.
+
+   The DHRepInfo structure in [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] is extended as follows:
+
+   DHRepInfo ::= SEQUENCE {
+           dhSignedData         [0] IMPLICIT OCTET STRING,
+           serverDHNonce        [1] DHNonce OPTIONAL,
+           ...,
+           kdf                  [2] KDFAlgorithmId OPTIONAL,
+               -- The KDF picked by the KDC.
+           ...
+   }
+
+   The new kdf field in the extended DHRepInfo structure identifies the
+   KDF picked by the KDC.  If the supportedKDFs field is present in the
+   request, a KDC conforming to this specification MUST choose one of
+   the KDFs supported by the client and indicate its selection in the
+   kdf field in the reply.  If the supportedKDFs field is absent in the
+   request, the KDC MUST omit the kdf field in the reply and use the key
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   derivation function from <a href="./rfc4556#section-3.2.3.1">Section 3.2.3.1 of [RFC4556]</a>.  If none of
+   the KDFs supported by the client is acceptable to the KDC, the KDC
+   MUST reply with the new error code KDC_ERR_NO_ACCEPTABLE_KDF:
+
+   o  KDC_ERR_NO_ACCEPTABLE_KDF 100
+
+   If the client fills the supportedKDFs field in the request but the
+   kdf field in the reply is not present, the client can deduce that the
+   KDC is not updated to conform with this specification, or that the
+   exchange was subjected to a downgrade attack.  It is a matter of
+   local policy on the client whether to reject the reply when the kdf
+   field is absent in the reply; if compatibility with non-updated KDCs
+   is not a concern, the reply should be rejected.
+
+   Implementations conforming to this specification MUST support
+   id-pkinit-kdf-ah-sha256.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Interoperability"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Interoperability</span>
+
+   An old client interoperating with a new KDC will not recognize a
+   TD-CMS-DIGEST-ALGORITHMS-DATA element in a
+   KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED error or a TD-CERT-DIGEST-
+   ALGORITHMS-DATA element in a KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED
+   error.  Because the error data is encoded as typed data, the client
+   will ignore the unrecognized elements.
+
+   An old KDC interoperating with a new client will not include a
+   TD-CMS-DIGEST-ALGORITHMS-DATA element in a
+   KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED error or a TD-CERT-DIGEST-
+   ALGORITHMS-DATA element in a KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED
+   error.  To the client, this appears just as if a new KDC elected not
+   to include a list of digest algorithms.
+
+   An old client interoperating with a new KDC will not include the
+   supportedKDFs field in the request.  The KDC MUST omit the kdf field
+   in the reply and use the [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] KDF as expected by the client or
+   reject the request if local policy forbids use of the old KDF.
+
+   A new client interoperating with an old KDC will include the
+   supportedKDFs field in the request; this field will be ignored as an
+   unknown extension by the KDC.  The KDC will omit the kdf field in the
+   reply and will use the [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] KDF.  The client can deduce from the
+   omitted kdf field that the KDC is not updated to conform to this
+   specification or that the exchange was subjected to a downgrade
+   attack.  The client MUST use the [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] KDF or reject the reply if
+   local policy forbids the use of the old KDF.
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Test%20Vectors"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Test Vectors</span>
+
+   This section contains test vectors for the KDF defined above.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.1.%20%20Common%20Inputs"></a><a class="selflink" href="#section-8.1" id="section-8.1">8.1</a>.  Common Inputs</span>
+
+Z: Length = 256 bytes, Hex Representation = (All Zeros)
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/00000000%2000000000%2000000000%2000000000%20000000000%2000000000%2000000000%2000000000"></a><a class="selflink" href="#section-00000000" id="section-00000000">00000000</a> 00000000 00000000 00000000 000000000 00000000 00000000 00000000</span>
+
+client: Length = 9 bytes, ASCII Representation = lha@SU.SE
+
+server: Length = 18 bytes, ASCII Representation = krbtgt/SU.SE@SU.SE
+
+as-req: Length = 10 bytes, Hex Representation =
+AAAAAAAA AAAAAAAA AAAA
+
+pk-as-rep:  Length = 9 bytes, Hex Representation =
+BBBBBBBB BBBBBBBB BB
+
+ticket: Length =  55 bytes, Hex Representation =
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/61353033%20A0030201%2005A1071B%200553552E%205345A210%20300EA003%20020101A1%200730051B"></a><a class="selflink" href="#section-61353033" id="section-61353033">61353033</a> A0030201 05A1071B 0553552E 5345A210 300EA003 020101A1 0730051B</span>
+036C6861 A311300F A0030201 12A20804 0668656A 68656A
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.%20%20Test%20Vector%20for%20SHA-1%2C%20enctype%2018"></a><a class="selflink" href="#section-8.2" id="section-8.2">8.2</a>.  Test Vector for SHA-1, enctype 18</span>
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.1.%20%20Specific%20Inputs"></a><a class="selflink" href="#section-8.2.1" id="section-8.2.1">8.2.1</a>.  Specific Inputs</span>
+
+   algorithm-id: (id-pkinit-kdf-ah-sha1) Length = 8 bytes, Hex
+   Representation = 2B060105 02030601
+
+   enctype: (aes256-cts-hmac-sha1-96) Length = 1 byte, Decimal
+   Representation = 18
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.2.2.%20%20Outputs"></a><a class="selflink" href="#section-8.2.2" id="section-8.2.2">8.2.2</a>.  Outputs</span>
+
+ key-material: Length = 32 bytes, Hex Representation =
+ E6AB38C9 413E035B B079201E D0B6B73D 8D49A814 A737C04E E6649614 206F73AD
+
+ key: Length = 32 bytes, Hex Representation =
+ E6AB38C9 413E035B B079201E D0B6B73D 8D49A814 A737C04E E6649614 206F73AD
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.3.%20%20Test%20Vector%20for%20SHA-256%2C%20enctype%2018"></a><a class="selflink" href="#section-8.3" id="section-8.3">8.3</a>.  Test Vector for SHA-256, enctype 18</span>
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.3.1.%20%20Specific%20Inputs"></a><a class="selflink" href="#section-8.3.1" id="section-8.3.1">8.3.1</a>.  Specific Inputs</span>
+
+   algorithm-id: (id-pkinit-kdf-ah-sha256) Length = 8 bytes, Hex
+   Representation = 2B060105 02030602
+
+   enctype: (aes256-cts-hmac-sha1-96) Length = 1 byte, Decimal
+   Representation = 18
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.3.2.%20%20Outputs"></a><a class="selflink" href="#section-8.3.2" id="section-8.3.2">8.3.2</a>.  Outputs</span>
+
+ key-material: Length = 32 bytes, Hex Representation =
+ 77EF4E48 C420AE3F EC75109D 7981697E ED5D295C 90C62564 F7BFD101 FA9bC1D5
+
+ key: Length = 32 bytes, Hex Representation =
+ 77EF4E48 C420AE3F EC75109D 7981697E ED5D295C 90C62564 F7BFD101 FA9bC1D5
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.4.%20%20Test%20Vector%20for%20SHA-512%2C%20enctype%2016"></a><a class="selflink" href="#section-8.4" id="section-8.4">8.4</a>.  Test Vector for SHA-512, enctype 16</span>
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.4.1.%20%20Specific%20Inputs"></a><a class="selflink" href="#section-8.4.1" id="section-8.4.1">8.4.1</a>.  Specific Inputs</span>
+
+   algorithm-id: (id-pkinit-kdf-ah-sha512) Length = 8 bytes, Hex
+   Representation = 2B060105 02030603
+
+   enctype: (des3-cbc-sha1-kd) Length = 1 byte, Decimal
+   Representation = 16
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.4.2.%20%20Outputs"></a><a class="selflink" href="#section-8.4.2" id="section-8.4.2">8.4.2</a>.  Outputs</span>
+
+   key-material: Length = 24 bytes, Hex Representation =
+   D3C78A79 D65213EF E9A826F7 5DFB01F7 2362FB16 FB01DAD6
+
+   key: Length = 32 bytes, Hex Representation =
+   D3C78A79 D65213EF E9A826F7 5DFB01F7 2362FB16 FB01DAD6
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Security%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Security Considerations</span>
+
+   This document describes negotiation of checksum types, key derivation
+   functions, and other cryptographic functions.  If a given negotiation
+   is unauthenticated, care must be taken to accept only secure values;
+   to do otherwise allows an active attacker to perform a downgrade
+   attack.
+
+   The discovery method described in <a href="#section-4">Section 4</a> uses a Kerberos error
+   message, which is unauthenticated in a typical exchange.  An attacker
+   may attempt to downgrade a client to a weaker CMS type by forging a
+   KDC_ERR_DIGEST_IN_SIGNED_DATA_NOT_ACCEPTED error.  It is a matter of
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   local policy whether a client accepts a downgrade to a weaker CMS
+   type and whether the KDC accepts the weaker CMS type.  A client may
+   reasonably assume that the real KDC implements all hash functions
+   used in the client's X.509 certificate, and so the client may refuse
+   attempts to downgrade to weaker hash functions.
+
+   The discovery method described in <a href="#section-5">Section 5</a> also uses a Kerberos
+   error message.  An attacker may attempt to downgrade a client to a
+   certificate using a weaker signing algorithm by forging a
+   KDC_ERR_DIGEST_IN_CERT_NOT_ACCEPTED error.  It is a matter of local
+   policy whether a client accepts a downgrade to a weaker certificate
+   and whether the KDC accepts the weaker certificate.  This attack is
+   only possible if the client device possesses multiple client
+   certificates of varying strengths.
+
+   In the KDF negotiation method described in <a href="#section-6">Section 6</a>, the client
+   supportedKDFs value is protected by the signature on the
+   signedAuthPack field in the request.  If this signature algorithm is
+   vulnerable to collision attacks, an attacker may attempt to downgrade
+   the negotiation by substituting an AuthPack with a different or
+   absent supportedKDFs value, using a PKINIT freshness token [<a href="./rfc8070" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT) Freshness Extension"'>RFC8070</a>]
+   to partially control the legitimate AuthPack value.  A client that is
+   performing anonymous PKINIT [<a href="./rfc8062" title='"Anonymity Support for Kerberos"'>RFC8062</a>] does not sign the AuthPack, so
+   an attacker can easily remove the supportedKDFs value in this case.
+   Finally, the kdf field in the DHRepInfo of the KDC response is
+   unauthenticated and could be altered or removed by an attacker,
+   although this alteration will likely result in a decryption failure
+   by the client rather than a successful downgrade.  It is a matter of
+   local policy whether a client accepts a downgrade to the old KDF and
+   whether the KDC allows the use of the old KDF.
+
+   The paChecksum field, which binds the client pre-authentication data
+   to the Kerberos request body, remains fixed at SHA-1.  If an attacker
+   substitutes a different request body using an attack against SHA-1 (a
+   second preimage attack is likely required as the attacker does not
+   control any part of the legitimate request body), the KDC will not
+   detect the substitution.  Instead, if a new KDF is negotiated, the
+   client will detect the substitution by failing to decrypt the reply.
+
+   An attacker may attempt to impersonate the KDC to the client via an
+   attack on the hash function used in the dhSignedData signature,
+   substituting the attacker's subjectPublicKey for the legitimate one
+   without changing the hash value.  It is a matter of local policy
+   which hash function the KDC uses in its signature and which hash
+   functions the client will accept in the KDC signature.  A KDC may
+   reasonably assume that the client implements all hash functions used
+   in the KDF algorithms listed the supportedKDFs field of the request.
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  IANA Considerations</span>
+
+   IANA has made the following assignments in the Kerberos "Pre-
+   authentication and Typed Data" registry created by Section 7.1 of <a href="./rfc6113">RFC</a>
+   <a href="./rfc6113">6113</a>.
+
+               TD-CMS-DIGEST-ALGORITHMS   111  [<a href="./rfc8636">RFC8636</a>]
+               TD-CERT-DIGEST-ALGORITHMS  112  [<a href="./rfc8636">RFC8636</a>]
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20References"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.1.%20%20Normative%20References"></a><a class="selflink" href="#section-11.1" id="section-11.1">11.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3961">RFC3961</a>]  Raeburn, K., "Encryption and Checksum Specifications for
+              Kerberos 5", <a href="./rfc3961">RFC 3961</a>, DOI 10.17487/RFC3961, February
+              2005, &lt;<a href="https://www.rfc-editor.org/info/rfc3961">https://www.rfc-editor.org/info/rfc3961</a>&gt;.
+
+   [<a id="ref-RFC4120">RFC4120</a>]  Neuman, C., Yu, T., Hartman, S., and K. Raeburn, "The
+              Kerberos Network Authentication Service (V5)", <a href="./rfc4120">RFC 4120</a>,
+              DOI 10.17487/RFC4120, July 2005,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4120">https://www.rfc-editor.org/info/rfc4120</a>&gt;.
+
+   [<a id="ref-RFC4556">RFC4556</a>]  Zhu, L. and B. Tung, "Public Key Cryptography for Initial
+              Authentication in Kerberos (PKINIT)", <a href="./rfc4556">RFC 4556</a>,
+              DOI 10.17487/RFC4556, June 2006,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc4556">https://www.rfc-editor.org/info/rfc4556</a>&gt;.
+
+   [<a id="ref-RFC5280">RFC5280</a>]  Cooper, D., Santesson, S., Farrell, S., Boeyen, S.,
+              Housley, R., and W. Polk, "Internet X.509 Public Key
+              Infrastructure Certificate and Certificate Revocation List
+              (CRL) Profile", <a href="./rfc5280">RFC 5280</a>, DOI 10.17487/RFC5280, May 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5280">https://www.rfc-editor.org/info/rfc5280</a>&gt;.
+
+   [<a id="ref-RFC5652">RFC5652</a>]  Housley, R., "Cryptographic Message Syntax (CMS)", STD 70,
+              <a href="./rfc5652">RFC 5652</a>, DOI 10.17487/RFC5652, September 2009,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5652">https://www.rfc-editor.org/info/rfc5652</a>&gt;.
+
+   [<a id="ref-RFC6234">RFC6234</a>]  Eastlake 3rd, D. and T. Hansen, "US Secure Hash Algorithms
+              (SHA and SHA-based HMAC and HKDF)", <a href="./rfc6234">RFC 6234</a>,
+              DOI 10.17487/RFC6234, May 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6234">https://www.rfc-editor.org/info/rfc6234</a>&gt;.
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+   [<a id="ref-SP80056A">SP80056A</a>] Barker, E., Chen, L., Roginsky, A., Vassilev, A., and R.
+              Davis, "Recommendation for Pair-Wise Key-Establishment
+              Schemes Using Discrete Logarithm Cryptography", NIST
+              Special Publications 800-56A, Revision 3,
+              DOI 10.6028/NIST.SP.800-56Ar3, April 2018,
+              &lt;<a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Ar3.pdf">https://nvlpubs.nist.gov/nistpubs/SpecialPublications/</a>
+              <a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Ar3.pdf">NIST.SP.800-56Ar3.pdf</a>&gt;.
+
+   [<a id="ref-SP80056C">SP80056C</a>] Barker, E., Chen, L., and R. Davis, "Recommendation for
+              Key-Derivation Methods in Key-Establishment Schemes", NIST
+              Special Publications 800-56C, Revision 1,
+              DOI 10.6028/NIST.SP.800-56Cr1, April 2018,
+              &lt;<a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Cr1.pdf">https://nvlpubs.nist.gov/nistpubs/SpecialPublications/</a>
+              <a href="https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-56Cr1.pdf">NIST.SP.800-56Cr1.pdf</a>&gt;.
+
+   [<a id="ref-X680">X680</a>]     ITU-T, "Information technology - Abstract Syntax Notation
+              One (ASN.1): Specification of basic notation", ITU-T
+              Recommendation X.680, August 2015,
+              &lt;<a href="https://www.itu.int/rec/T-REC-X.680-201508-I/en">https://www.itu.int/rec/T-REC-X.680-201508-I/en</a>&gt;.
+
+   [<a id="ref-X690">X690</a>]     ITU-T, "Information technology - ASN.1 encoding Rules:
+              Specification of Basic Encoding Rules (BER), Canonical
+              Encoding Rules (CER) and Distinguished Encoding Rules
+              (DER)", ITU-T Recommendation X.690, August 2015,
+              &lt;<a href="https://www.itu.int/rec/T-REC-X.690-201508-I/en">https://www.itu.int/rec/T-REC-X.690-201508-I/en</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.2.%20%20Informative%20References"></a><a class="selflink" href="#section-11.2" id="section-11.2">11.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC1321">RFC1321</a>]  Rivest, R., "The MD5 Message-Digest Algorithm", <a href="./rfc1321">RFC 1321</a>,
+              DOI 10.17487/RFC1321, April 1992,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc1321">https://www.rfc-editor.org/info/rfc1321</a>&gt;.
+
+   [<a id="ref-RFC6150">RFC6150</a>]  Turner, S. and L. Chen, "MD4 to Historic Status",
+              <a href="./rfc6150">RFC 6150</a>, DOI 10.17487/RFC6150, March 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6150">https://www.rfc-editor.org/info/rfc6150</a>&gt;.
+
+   [<a id="ref-RFC6194">RFC6194</a>]  Polk, T., Chen, L., Turner, S., and P. Hoffman, "Security
+              Considerations for the SHA-0 and SHA-1 Message-Digest
+              Algorithms", <a href="./rfc6194">RFC 6194</a>, DOI 10.17487/RFC6194, March 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6194">https://www.rfc-editor.org/info/rfc6194</a>&gt;.
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   [<a id="ref-RFC7696">RFC7696</a>]  Housley, R., "Guidelines for Cryptographic Algorithm
+              Agility and Selecting Mandatory-to-Implement Algorithms",
+              <a href="https://www.rfc-editor.org/bcp/bcp201">BCP 201</a>, <a href="./rfc7696">RFC 7696</a>, DOI 10.17487/RFC7696, November 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7696">https://www.rfc-editor.org/info/rfc7696</a>&gt;.
+
+   [<a id="ref-RFC8062">RFC8062</a>]  Zhu, L., Leach, P., Hartman, S., and S. Emery, Ed.,
+              "Anonymity Support for Kerberos", <a href="./rfc8062">RFC 8062</a>,
+              DOI 10.17487/RFC8062, February 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8062">https://www.rfc-editor.org/info/rfc8062</a>&gt;.
+
+   [<a id="ref-RFC8070">RFC8070</a>]  Short, M., Ed., Moore, S., and P. Miller, "Public Key
+              Cryptography for Initial Authentication in Kerberos
+              (PKINIT) Freshness Extension", <a href="./rfc8070">RFC 8070</a>,
+              DOI 10.17487/RFC8070, February 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8070">https://www.rfc-editor.org/info/rfc8070</a>&gt;.
+
+   [<a id="ref-WANG04">WANG04</a>]   Wang, X., Lai, X., Feng, D., Chen, H., and X. Yu,
+              "Cryptanalysis of the Hash Functions MD4 and RIPEMD",
+              Advances in Cryptology - EUROCRYPT 2005,
+              DOI 10.1007/11426639_1, August 2004.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20PKINIT%20ASN.1%20Module"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  PKINIT ASN.1 Module</span>
+
+   KerberosV5-PK-INIT-Agility-SPEC {
+          iso(1) identified-organization(3) dod(6) internet(1)
+          security(5) kerberosV5(2) modules(4) pkinit(5) agility (1)
+   } DEFINITIONS EXPLICIT TAGS ::= BEGIN
+
+   IMPORTS
+      AlgorithmIdentifier, SubjectPublicKeyInfo
+          FROM PKIX1Explicit88 { iso (1)
+            identified-organization (3) dod (6) internet (1)
+            security (5) mechanisms (5) pkix (7) id-mod (0)
+            id-pkix1-explicit (18) }
+            -- As defined in <a href="./rfc5280">RFC 5280</a>.
+
+      Ticket, Int32, Realm, EncryptionKey, Checksum
+          FROM KerberosV5Spec2 { iso(1) identified-organization(3)
+            dod(6) internet(1) security(5) kerberosV5(2)
+            modules(4) krb5spec2(2) }
+            -- as defined in <a href="./rfc4120">RFC 4120</a>.
+
+      PKAuthenticator, DHNonce, id-pkinit
+          FROM KerberosV5-PK-INIT-SPEC {
+            iso(1) identified-organization(3) dod(6) internet(1)
+            security(5) kerberosV5(2) modules(4) pkinit(5) };
+            -- as defined in <a href="./rfc4556">RFC 4556</a>.
+
+   id-pkinit-kdf OBJECT IDENTIFIER      ::= { id-pkinit kdf(6) }
+       -- PKINIT KDFs
+
+   id-pkinit-kdf-ah-sha1 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha1(1) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-1
+
+   id-pkinit-kdf-ah-sha256 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha256(2) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-256
+
+   id-pkinit-kdf-ah-sha512 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha512(3) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-512
+
+   id-pkinit-kdf-ah-sha384 OBJECT IDENTIFIER
+       ::= { id-pkinit-kdf sha384(4) }
+       -- SP800-56A ASN.1 structured hash-based KDF using SHA-384
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   TD-CMS-DIGEST-ALGORITHMS-DATA ::= SEQUENCE OF
+       AlgorithmIdentifier
+           -- Contains the list of CMS algorithm [<a href="./rfc5652" title='"Cryptographic Message Syntax (CMS)"'>RFC5652</a>]
+           -- identifiers indicating the digest algorithms
+           -- acceptable to the KDC for signing CMS data in
+           -- decreasing order of preference.
+
+   TD-CERT-DIGEST-ALGORITHMS-DATA ::= SEQUENCE {
+          allowedAlgorithms [0] SEQUENCE OF AlgorithmIdentifier,
+              -- Contains the list of CMS algorithm [<a href="./rfc5652" title='"Cryptographic Message Syntax (CMS)"'>RFC5652</a>]
+              -- identifiers indicating the digest algorithms
+              -- that are used by the CA to sign the client's
+              -- X.509 certificate and are acceptable to the KDC
+              -- in the process of validating the client's X.509
+              -- certificate in decreasing order of
+              -- preference.
+          rejectedAlgorithm [1] AlgorithmIdentifier OPTIONAL,
+              -- This identifies the digest algorithm that was
+              -- used to sign the client's X.509 certificate and
+              -- has been rejected by the KDC in the process of
+              -- validating the client's X.509 certificate
+              -- [<a href="./rfc5280" title='"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"'>RFC5280</a>].
+          ...
+   }
+
+   OtherInfo ::= SEQUENCE {
+           algorithmID   AlgorithmIdentifier,
+           partyUInfo     [0] OCTET STRING,
+           partyVInfo     [1] OCTET STRING,
+           suppPubInfo    [2] OCTET STRING OPTIONAL,
+           suppPrivInfo   [3] OCTET STRING OPTIONAL
+   }
+
+   PkinitSuppPubInfo ::= SEQUENCE {
+          enctype           [0] Int32,
+              -- The enctype of the AS reply key.
+          as-REQ            [1] OCTET STRING,
+              -- The DER encoding of the AS-REQ [<a href="./rfc4120" title='"The Kerberos Network Authentication Service (V5)"'>RFC4120</a>] from the
+              -- client.
+          pk-as-rep         [2] OCTET STRING,
+              -- The DER encoding of the PA-PK-AS-REP [<a href="./rfc4556" title='"Public Key Cryptography for Initial Authentication in Kerberos (PKINIT)"'>RFC4556</a>] in the
+              -- KDC reply.
+          ...
+   }
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+   AuthPack ::= SEQUENCE {
+          pkAuthenticator   [0] PKAuthenticator,
+          clientPublicValue [1] SubjectPublicKeyInfo OPTIONAL,
+          supportedCMSTypes [2] SEQUENCE OF AlgorithmIdentifier
+                   OPTIONAL,
+          clientDHNonce     [3] DHNonce OPTIONAL,
+          ...,
+          supportedKDFs     [4] SEQUENCE OF KDFAlgorithmId OPTIONAL,
+              -- Contains an unordered set of KDFs supported by the
+              -- client.
+          ...
+   }
+
+   KDFAlgorithmId ::= SEQUENCE {
+          kdf-id            [0] OBJECT IDENTIFIER,
+              -- The object identifier of the KDF
+          ...
+   }
+
+   DHRepInfo ::= SEQUENCE {
+          dhSignedData      [0] IMPLICIT OCTET STRING,
+          serverDHNonce     [1] DHNonce OPTIONAL,
+          ...,
+          kdf               [2] KDFAlgorithmId OPTIONAL,
+              -- The KDF picked by the KDC.
+          ...
+   }
+   END
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Hornquist Astrand, et al.    Standards Track                   [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc8636">RFC 8636</a>                PKINIT Algorithm Agility               July 2019</span>
+
+
+Acknowledgements
+
+   Jeffery Hutzelman, Shawn Emery, Tim Polk, Kelley Burgin, Ben Kaduk,
+   Scott Bradner, and Eric Rescorla reviewed the document and provided
+   suggestions for improvements.
+
+Authors' Addresses
+
+   Love Hornquist Astrand
+   Apple, Inc
+   Cupertino, CA
+   United States of America
+
+   Email: lha@apple.com
+
+
+   Larry Zhu
+   Oracle Corporation
+   500 Oracle Parkway
+   Redwood Shores, CA  94065
+   United States of America
+
+   Email: larryzhu@live.com
+
+
+   Margaret Cullen
+   Painless Security
+   4 High St, Suite 134
+   North Andover, MA  01845
+   United States of America
+
+   Phone: +1 781-405-7464
+   Email: margaret@painless-security.com
+
+
+   Greg Hudson
+   MIT
+
+   Email: ghudson@mit.edu
+
+
+
+
+
+
+
+
+
+
+
+
+Hornquist Astrand, et al.    Standards Track                   [Page 21]
+</pre>
+</body></html>

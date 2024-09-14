@@ -1,0 +1,222 @@
+<html><head></head><body><pre>Network Working Group                                  M. Elie
+Request for Comments #64                               UCLA
+
+
+                         Getting Rid of Marking
+
+
+      Though we realize that this improvement is perhaps somewhat late
+to be implemented, we believe that there exist better solutions than
+marking and suggest a simple modification to the IMP-HOST interface
+which would avoid it.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20The%20harm."></a><a class="selflink" href="#section-1" id="section-1">1</a>. The harm.</span>
+
+      Marking was introduced to suit the sending Host because it permits
+the text of a message to start on a word boundary, however, it does not
+suit the receiving Host with a different word length. Moreover,it
+introduces in the message useless bits. Let us illustrate this by the
+example of our Sigma 7, a 32 bit machine.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1%20Inefficiency%20in%20Computation"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a> Inefficiency in Computation</span>
+
+      Suppose we receive a message from an 18 bit machine (figure 1.1)
+coded in 8 bit ASCII characters which will eventually become standard on
+the network.  In order to translate this message into our EBCDIC
+internal code, for instance.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/0%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%2017"></a><a class="selflink" href="#section-0" id="section-0">0</a>                        17  </span>         0                           31
+--------------------------            ------------------------------
+|        leader          |            |           leader           |
+--------------------------            ------------------------------
+|               | 0 0 0 1|            | 0 0 0 1 |                  |
+--------------------------            -----------                  |
+|                        |            |                            |
+|                        |            |                            |
+|                        |            |                            |
+| message                |            | message                    |
+|                        |            |                            |
+|                        |            |                            |
+|                        |            |                            |
+|                        |            |                            |
+|                        |            |                            |
+|                        |            |                            |
+
+                            figure 1.1
+
+
+
+
+
+
+<span class="grey">                                                                [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc64">RFC 64</a>                   Getting Rid of Marking</span>
+
+
+we first have to shift the whole message. We must detect the firsl 1
+following the leader, and from this determine that we must shift the
+message 4 bits to the left. This takes approximately 12 µsec per double
+word, which makes 1,5 msec per full regular message. This is not huge,
+but still it is about one-third of the time it will take to translate
+the message in internal code.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.2%20Inefficiency%20in%20transmission"></a><a class="selflink" href="#section-1.2" id="section-1.2">1.2</a> Inefficiency in transmission</span>
+
+      More important is the inefficiency resulting from adding
+unnecessary bits to the message, especially if it turns out that one
+character messages are used. Figure 1.2 shows the example of a 1
+character text sent by the sigma 7, which results in transmitting 112
+bits to carry 8 bits of information, thus leading to an efficiency
+factor of 0.07. Supression of marking would
+
+                            -----------------------------------
+   Sigma 7                  |           leader                |
+                            -----------------------------------
+   Message                  |00000000000000000000000000000001 |
+                            -----------------------------------
+                            | text | 000000000000000000000000 |
+                            -----------------------------------
+   16 bits of padding       | 1000000000000000 |
+   added by sending IMP     --------------------
+
+                                figure 1.2
+
+increase this efficiency to 0.10. For a 32 bit text (length of some
+control commands), it would increase the efficiency form 0.28 to 0.4.
+For one packet messages, the efficiency would still be increased by 3%.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20A%20remedy."></a><a class="selflink" href="#section-2" id="section-2">2</a>. A remedy.</span>
+
+      This is a suggested modification of the Host-Imp users interface
+which has been tentatively sketched on diagrams extracted form BBN 1822
+report.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">                                                                [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc64">RFC 64</a>                   Getting Rid of Marking</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1%20Host%20to%20Imp"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a> Host to Imp</span>
+
+      The modification consists of adding a counter to 32, enabled
+as the beginning of a message, and incremented at each bit passed to the
+IMP; when it reaches 32 it forces a "word complete" signal asking for a
+new word in the shift register and resetting the word length counter;
+thus the unused bits in the last word of the leader are not transmitted
+and the message starts with the next word (see figure 2.1)
+
+   0                                       23
+   ------------------------------------------
+   |             leader                     |
+   |                   ----------------------
+   |                   | XXXXXXXXXXXXXXXX   | &lt;- contents of
+   |-----------------------------------------    sending Host memory
+   |                                        |    (24 bits)
+   |            Message                     |
+   |                                        |
+
+   Corresponding message in the sending IMP memory
+
+
+   0                             15
+   --------------------------------
+   |                              |
+   |                              |
+   |         leader               |
+   |                              |
+   --------------------------------
+   |                              |
+   |   message                    |
+   |                              |
+
+
+                                figure 2.1
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2%20Imp%20to%20Host"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a> Imp to Host</span>
+
+      The modification consists of adding a counter to 32. When 32 bits
+have entered the shift register form the Imp at the beginning of a new
+message, the counter allows the register to be shifted up to the point
+to be full (which is detected by the word length counter) without
+entering any new bit from the Imp.
+
+
+
+
+
+
+
+
+<span class="grey">                                                                [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc64">RFC 64</a>                   Getting Rid of Marking</span>
+
+
+Thus, the next bit of the message which is the first bit of text will be
+entered as the first bit of the next word (see figure 2.2).
+
+Message in receiving IMP memory  Contents of receiving Host memory (35
+bits)
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/0%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%20%2015"></a><a class="selflink" href="#section-0" id="section-0">0</a>                        15  </span>    0                                   35
+------------------------------   --------------------------------------
+|                            |   |                                    |
+|       leader               |   |     leader                  | 0000 |
+------------------------------   --------------------------------------
+|                            |   |                                    |
+| message                    |   | message                            |
+|                            |   |                                    |
+|                            |   |                                    |
+
+                               figure 2.2
+
+Though the accumulated cost of useless marking bits sent over the
+network plus computation to reshape received texts makes this
+modification probably whorkwhile being considered, this decision is not
+of our competence and we merely wanted to suggest a better solution then
+marking.
+
+
+            Pages 5 and 6 contain a wire Diagram of a
+
+                    "IMP to Host"
+
+                "Host's special Interface"
+
+
+       [ This RFC was put into machine readable form for entry ]
+[ into the online RFC archives by Gottfried Janik 2/98 ]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                [Page 4]
+</pre>
+</body></html>

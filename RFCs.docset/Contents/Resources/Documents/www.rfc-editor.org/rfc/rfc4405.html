@@ -1,0 +1,782 @@
+<html><head></head><body><pre>Network Working Group                                          E. Allman
+Request for Comments: 4405                                Sendmail, Inc.
+Category: Experimental                                           H. Katz
+                                                         Microsoft Corp.
+                                                              April 2006
+
+
+                       <span class="h1">SMTP Service Extension for</span>
+       <span class="h1">Indicating the Responsible Submitter of an E-Mail Message</span>
+
+Status of This Memo
+
+   This memo defines an Experimental Protocol for the Internet
+   community.  It does not specify an Internet standard of any kind.
+   Discussion and suggestions for improvement are requested.
+   Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2006).
+
+IESG Note
+
+   The following documents  (<a href="./rfc4405">RFC 4405</a>, <a href="./rfc4406">RFC 4406</a>, <a href="./rfc4407">RFC 4407</a>, and <a href="./rfc4408">RFC 4408</a>)
+   are published simultaneously as Experimental RFCs, although there is
+   no general technical consensus and efforts to reconcile the two
+   approaches have failed.  As such, these documents have not received
+   full IETF review and are published "AS-IS" to document the different
+   approaches as they were considered in the MARID working group.
+
+   The IESG takes no position about which approach is to be preferred
+   and cautions the reader that there are serious open issues for each
+   approach and concerns about using them in tandem.  The IESG believes
+   that documenting the different approaches does less harm than not
+   documenting them.
+
+   Note that the Sender ID experiment may use DNS records that may have
+   been created for the current SPF experiment or earlier versions in
+   this set of experiments.  Depending on the content of the record,
+   this may mean that Sender-ID heuristics would be applied incorrectly
+   to a message.  Depending on the actions associated by the recipient
+   with those heuristics, the message may not be delivered or may be
+   discarded on receipt.
+
+   Participants relying on Sender ID experiment DNS records are warned
+   that they may lose valid messages in this set of circumstances.
+   Participants publishing SPF experiment DNS records should consider
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   the advice given in <a href="./rfc4406#section-3.4">section 3.4 of RFC 4406</a> and may wish to publish
+   both v=spf1 and spf2.0 records to avoid the conflict.
+
+   Participants in the Sender-ID experiment need to be aware that the
+   way Resent-* header fields are used will result in failure to receive
+   legitimate email when interacting with standards-compliant systems
+   (specifically automatic forwarders which comply with the standards by
+   not adding Resent-* headers, and systems which comply with <a href="./rfc822">RFC 822</a>
+   but have not yet implemented <a href="./rfc2822">RFC 2822</a> Resent-* semantics).  It would
+   be inappropriate to advance Sender-ID on the standards track without
+   resolving this interoperability problem.
+
+   The community is invited to observe the success or failure of the two
+   approaches during the two years following publication, in order that
+   a community consensus can be reached in the future.
+
+Abstract
+
+   This memo defines an extension to the Simple Mail Transfer Protocol
+   (SMTP) service that allows an SMTP client to specify the responsible
+   submitter of an e-mail message.  The responsible submitter is the
+   e-mail address of the entity most recently responsible for
+   introducing a message into the transport stream.  This extension
+   helps receiving e-mail servers efficiently determine whether the SMTP
+   client is authorized to transmit mail on behalf of the responsible
+   submitter's domain.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-3">3</a>
+      <a href="#section-1.1">1.1</a>. Conventions Used in This Document ..........................<a href="#page-4">4</a>
+   <a href="#section-2">2</a>. The SUBMITTER Service Extension .................................<a href="#page-4">4</a>
+   <a href="#section-3">3</a>. The SUBMITTER Keyword of the EHLO Command .......................<a href="#page-5">5</a>
+   <a href="#section-4">4</a>. The SUBMITTER Parameter of the MAIL Command .....................<a href="#page-5">5</a>
+      <a href="#section-4.1">4.1</a>. Setting the SUBMITTER Parameter Value ......................<a href="#page-5">5</a>
+      <a href="#section-4.2">4.2</a>. Processing the SUBMITTER Parameter .........................<a href="#page-5">5</a>
+      <a href="#section-4.3">4.3</a>. Transmitting to a Non-SUBMITTER-Aware SMTP Server ..........<a href="#page-6">6</a>
+   <a href="#section-5">5</a>. Examples ........................................................<a href="#page-6">6</a>
+      <a href="#section-5.1">5.1</a>. Mail Submission ............................................<a href="#page-7">7</a>
+      <a href="#section-5.2">5.2</a>. Mail Forwarding ............................................<a href="#page-7">7</a>
+      <a href="#section-5.3">5.3</a>. Mobile User ................................................<a href="#page-8">8</a>
+      <a href="#section-5.4">5.4</a>. Guest E-Mail Service .......................................<a href="#page-9">9</a>
+      <a href="#section-5.5">5.5</a>. SUBMITTER Used on a Non-Delivery Report ...................<a href="#page-11">11</a>
+   <a href="#section-6">6</a>. Security Considerations ........................................<a href="#page-11">11</a>
+   <a href="#section-7">7</a>. Acknowledgements ...............................................<a href="#page-12">12</a>
+   <a href="#section-8">8</a>. IANA Considerations ............................................<a href="#page-12">12</a>
+   <a href="#section-9">9</a>. References .....................................................<a href="#page-12">12</a>
+      <a href="#section-9.1">9.1</a>. Normative References ......................................<a href="#page-12">12</a>
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   The practice of falsifying the identity of the sender of an e-mail
+   message, commonly called "spoofing", is a prevalent tactic used by
+   senders of unsolicited commercial e-mail, or "spam".  This form of
+   abuse has highlighted the need to improve identification of the
+   "responsible submitter" of an e-mail message.
+
+   In this specification, the responsible submitter is the entity most
+   recently responsible for injecting a message into the e-mail
+   transport stream.  The e-mail address of the responsible submitter
+   will be referred to as the Purported Responsible Address (PRA) of the
+   message.  The Purported Responsible Domain (PRD) is the domain
+   portion of that address.
+
+   This specification codifies rules for encoding the purported
+   responsible address into the SMTP transport protocol.  This will
+   permit receiving SMTP servers to efficiently validate whether or not
+   the SMTP client is authorized to transmit mail on behalf of the
+   responsible submitter's domain.
+
+   Broadly speaking, there are two possible approaches for determining
+   the purported responsible address: either from <a href="./rfc2821">RFC 2821</a> [<a href="#ref-SMTP" title='"Simple Mail Transfer Protocol"'>SMTP</a>]
+   protocol data or from <a href="./rfc2822">RFC 2822</a> [<a href="#ref-MSG-FORMAT" title='"Internet Message Format"'>MSG-FORMAT</a>] message headers.  Each
+   approach has certain advantages and disadvantages.
+
+   Deriving the purported responsible domain from <a href="./rfc2821">RFC 2821</a> data has the
+   advantage that validation can be performed before the SMTP client has
+   transmitted the message body.  If spoofing is detected, then the SMTP
+   server has the opportunity, depending upon local policy, to reject
+   the message before it is ever transmitted.  The disadvantage of this
+   approach is the risk of false positives, that is, incorrectly
+   concluding that the sender's e-mail address has been spoofed.  There
+   are today legitimate reasons why the Internet domain names used in
+   <a href="./rfc2821">RFC 2821</a> commands may be different from those of the sender of an e-
+   mail message.
+
+   Deriving the purported responsible domain from <a href="./rfc2822">RFC 2822</a> headers has
+   the advantage that validation can usually be based on an identity
+   that is displayed to recipients by existing Mail User Agents (MUAs)
+   as the sender's identity.  This aids in detection of a particularly
+   noxious form of spoofing known as "phishing" in which a malicious
+   sender attempts to fool a recipient into believing that a message
+   originates from an entity well known to the recipient.  This approach
+   carries a lower risk of false positives since there are fewer
+   legitimate reasons for <a href="./rfc2822">RFC 2822</a> headers to differ from the true
+   sender of the message.  The disadvantage of this approach is that it
+   does require parsing and analysis of message headers.  In practice,
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   much if not all the message body is also transmitted since the SMTP
+   protocol described in <a href="./rfc2821">RFC 2821</a> provides no mechanism to interrupt
+   message transmission after the DATA command has been issued.
+
+   It is desirable to unify these two approaches in a way that combines
+   the benefits of both while minimizing their respective disadvantages.
+
+   This specification describes just such a unified approach.  It uses
+   the mechanism described in [<a href="#ref-SMTP" title='"Simple Mail Transfer Protocol"'>SMTP</a>] to describe an extension to the
+   SMTP protocol.  Using this extension, an SMTP client can specify the
+   e-mail address of the entity most recently responsible for submitting
+   the message to the SMTP client in a new SUBMITTER parameter of the
+   SMTP MAIL command.  SMTP servers can use this information to validate
+   that the SMTP client is authorized to transmit e-mail on behalf of
+   the Internet domain contained in the SUBMITTER parameter.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Conventions%20Used%20in%20This%20Document"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Conventions Used in This Document</span>
+
+   In examples, "C:" and "S:" indicate lines sent by the client and
+   server, respectively.
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="#ref-KEYWORDS" title='"Key words for use in RFCs to Indicate Requirement Levels"'>KEYWORDS</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20The%20SUBMITTER%20Service%20Extension"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  The SUBMITTER Service Extension</span>
+
+   The following SMTP service extension is hereby defined:
+
+   (1)  The name of this SMTP service extension is "Responsible
+        Submitter";
+
+   (2)  The EHLO keyword value associated with this extension is
+        "SUBMITTER";
+
+   (3)  The SUBMITTER keyword has no parameters;
+
+   (4)  No additional SMTP verbs are defined by this extension;
+
+   (5)  An optional parameter is added to the MAIL command using the
+        esmtp-keyword "SUBMITTER", and is used to specify the e-mail
+        address of the entity responsible for submitting the message for
+        delivery;
+
+   (6)  This extension is appropriate for the submission protocol
+        [<a href="#ref-SUBMIT" title='"Message Submission for Mail"'>SUBMIT</a>].
+
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20The%20SUBMITTER%20Keyword%20of%20the%20EHLO%20Command"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  The SUBMITTER Keyword of the EHLO Command</span>
+
+   An SMTP server includes the SUBMITTER keyword in its EHLO response to
+   tell the SMTP client that the SUBMITTER service extension is
+   supported.
+
+   The SUBMITTER keyword has no parameters.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20The%20SUBMITTER%20Parameter%20of%20the%20MAIL%20Command"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  The SUBMITTER Parameter of the MAIL Command</span>
+
+   The syntax of the SUBMITTER parameter is
+
+      "SUBMITTER=" Mailbox
+
+   where Mailbox is the Augmented Backus-Naur Form (ABNF) [<a href="#ref-ABNF" title='"Augmented BNF for Syntax Specifications: ABNF"'>ABNF</a>]
+   production defined in Section 4.1.2 of [<a href="#ref-SMTP" title='"Simple Mail Transfer Protocol"'>SMTP</a>].  Characters such as
+   SP, "+", and "=" that may occur in Mailbox but are not permitted in
+   ESMTP parameter values MUST be encoded as "xtext" as described in
+   Section 4 of [<a href="#ref-DSN" title='"Simple Mail Transfer Protocol (SMTP) Service Extension for Delivery Status Notifications (DSNs)"'>DSN</a>].
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Setting%20the%20SUBMITTER%20Parameter%20Value"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Setting the SUBMITTER Parameter Value</span>
+
+   The purpose of the SUBMITTER parameter is to allow the SMTP client to
+   indicate to the server the purported responsible address of the
+   message directly in the <a href="./rfc2821">RFC 2821</a> protocol.
+
+   Therefore, SMTP clients that support the Responsible Submitter
+   extension MUST include the SUBMITTER parameter on all messages.  This
+   includes messages containing a null reverse-path in the MAIL command.
+
+   SMTP clients MUST set the SUBMITTER parameter value to the purported
+   responsible address of the message as defined in [<a href="#ref-PRA" title='"Purported Responsible Address in E-Mail Messages"'>PRA</a>].  This also
+   applies to messages containing a null reverse-path.
+
+   In some circumstances, described in Section 7 of [<a href="#ref-SENDER-ID" title='"Sender ID: Authenticating E- Mail"'>SENDER-ID</a>], SMTP
+   clients may need to add <a href="./rfc2822">RFC 2822</a> headers to the message in order to
+   ensure that the correct SUBMITTER parameter value can be set.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Processing%20the%20SUBMITTER%20Parameter"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Processing the SUBMITTER Parameter</span>
+
+   Receivers of e-mail messages sent with the SUBMITTER parameter SHOULD
+   select the domain part of the SUBMITTER address value as the
+   purported responsible domain of the message, and SHOULD perform such
+   tests, including those defined in [<a href="#ref-SENDER-ID" title='"Sender ID: Authenticating E- Mail"'>SENDER-ID</a>], as are deemed
+   necessary to determine whether the connecting SMTP client is
+   authorized to transmit e-mail messages on behalf of that domain.
+
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   If these tests indicate that the connecting SMTP client is not
+   authorized to transmit e-mail messages on behalf of the SUBMITTER
+   domain, the receiving SMTP server SHOULD reject the message and when
+   rejecting MUST use "550 5.7.1 Submitter not allowed."
+
+   If the receiving SMTP server allows the connecting SMTP client to
+   transmit message data, then the server SHOULD determine the purported
+   responsible address of the message by examining the <a href="./rfc2822">RFC 2822</a> message
+   headers as described in [<a href="#ref-PRA" title='"Purported Responsible Address in E-Mail Messages"'>PRA</a>].  If this purported responsible address
+   does not match the address appearing in the SUBMITTER parameter, the
+   receiving SMTP server MUST reject the message and when rejecting MUST
+   use "550 5.7.1 Submitter does not match header."
+
+   If no purported responsible address is found according to the
+   procedure defined in [<a href="#ref-PRA" title='"Purported Responsible Address in E-Mail Messages"'>PRA</a>], the SMTP server SHOULD reject the message
+   and when rejecting MUST use "554 5.7.7 Cannot verify submitter
+   address."
+
+   Verifying Mail Transfer Agents (MTAs) are strongly urged to validate
+   the SUBMITTER parameter against the <a href="./rfc2822">RFC 2822</a> headers; otherwise, an
+   attacker can trivially defeat the algorithm.
+
+   Note that the presence of the SUBMITTER parameter on the MAIL command
+   MUST NOT change the effective reverse-path of a message.  Any
+   delivery status notifications must be sent to the reverse-path, if
+   one exists, as per Section 3.7 of [<a href="#ref-SMTP" title='"Simple Mail Transfer Protocol"'>SMTP</a>] regardless of the presence
+   of a SUBMITTER parameter.  If the reverse-path is null, delivery
+   status notifications MUST NOT be sent to the SUBMITTER address.
+
+   Likewise, the SUBMITTER parameter MUST NOT change the effective reply
+   address of a message.  Replies MUST be sent to the From address or
+   the Reply-To address, if present, as described in Section 3.6.2 of
+   [<a href="#ref-MSG-FORMAT" title='"Internet Message Format"'>MSG-FORMAT</a>] regardless of the presence of a SUBMITTER parameter.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3.%20%20Transmitting%20to%20a%20Non-SUBMITTER-Aware%20SMTP%20Server"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a>.  Transmitting to a Non-SUBMITTER-Aware SMTP Server</span>
+
+   Notwithstanding the provisions of <a href="#section-4.1">Section 4.1</a> above, when an MTA
+   transmits a message to another MTA that does not support the
+   SUBMITTER extension, the forwarding MTA MUST transmit the message
+   without the SUBMITTER parameter.  This should involve no information
+   loss, since the SUBMITTER parameter is required to contain
+   information derived from the message headers.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Examples"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Examples</span>
+
+   This section provides examples of how the SUBMITTER parameter would
+   be used.  The following dramatis personae appear in the examples:
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   alice@example.com: the original sender of each e-mail message.
+
+   bob@company.com.example: the final recipient of each e-mail.
+
+   bob@almamater.edu.example: an e-mail address used by Bob that he has
+   configured to forward mail to his office account at
+   bob@company.com.example.
+
+   alice@mobile.net.example: an e-mail account provided to Alice by her
+   mobile e-mail network carrier.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Mail%20Submission"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Mail Submission</span>
+
+   Under normal circumstances, Alice would configure her MUA to submit
+   her message to the mail system using the SUBMIT protocol [<a href="#ref-SUBMIT" title='"Message Submission for Mail"'>SUBMIT</a>].
+   The MUA would transmit the message without the SUBMITTER parameter.
+   The SUBMIT server would validate that the MUA is allowed to submit a
+   message through some external scheme, perhaps SMTP Authentication
+   [<a href="#ref-SMTPAUTH" title='"SMTP Service Extension for Authentication"'>SMTPAUTH</a>].  Under most circumstances, this would look like a normal,
+   authenticated SMTP transaction.  The SUBMIT server would extract her
+   name from the <a href="./rfc2822">RFC 2822</a> headers for use in the SUBMITTER parameters of
+   subsequent transmissions of the message.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Mail%20Forwarding"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Mail Forwarding</span>
+
+   When Alice sends a message to Bob at his almamater.edu.example
+   account, the SMTP session from her SUBMIT server might look something
+   like this:
+
+      S: 220 almamater.edu.example ESMTP server ready
+      C: EHLO example.com
+      S: 250-almamater.edu.example
+      S: 250-DSN
+      S: 250-AUTH
+      S: 250-SUBMITTER
+      S: 250 SIZE
+      C: MAIL FROM:&lt;alice@example.com&gt; SUBMITTER=alice@example.com
+      S: 250 &lt;alice@example.com&gt; sender ok
+      C: RCPT TO:&lt;bob@almamater.edu.example&gt;
+      S: 250 &lt;bob@almamater.edu.example&gt; recipient ok
+      C: DATA
+      S: 354 okay, send message
+      C: (message body goes here)
+      C: .
+      S: 250 message accepted
+      C: QUIT
+      S: 221 goodbye
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   The almamater.edu.example MTA must now forward this message to
+   bob@company.com.example.  Although the original sender of the message
+   is alice@example.com, Alice is not responsible for this most recent
+   retransmission of the message.  That role is filled by
+   bob@almamater.edu.example, who established the forwarding of mail to
+   bob@company.com.example.  Therefore, the almamater.edu.example MTA
+   determines a new purported responsible address for the message,
+   namely, bob@almamater.edu.example, and sets the SUBMITTER parameter
+   accordingly.  The forwarding MTA also inserts a Resent-From header in
+   the message body to ensure the purported responsible address derived
+   from the <a href="./rfc2822">RFC 2822</a> headers matches the SUBMITTER address.
+
+      S: 220 company.com.example ESMTP server ready
+      C: EHLO almamater.edu.example
+      S: 250-company.com.example
+      S: 250-DSN
+      S: 250-AUTH
+      S: 250-SUBMITTER
+      S: 250 SIZE
+      C: MAIL FROM:&lt;alice@example.com&gt;
+              SUBMITTER=bob@almamater.edu.example
+      S: 250 &lt;alice@example.com&gt; sender ok
+      C: RCPT TO:&lt;bob@company.com.example&gt;
+      S: 250 &lt;bob@company.com.example&gt; recipient ok
+      C: DATA
+      S: 354 okay, send message
+      C: Resent-From: bob@almamater.edu.example
+      C: Received By: ...
+      C: (message body goes here)
+      C: .
+      S: 250 message accepted
+      C: QUIT
+      S: 221 goodbye
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.%20%20Mobile%20User"></a><a class="selflink" href="#section-5.3" id="section-5.3">5.3</a>.  Mobile User</span>
+
+   Alice is at the airport and uses her mobile e-mail device to send a
+   message to Bob.  The message travels through the carrier network
+   provided by mobile.net.example, but Alice uses her example.com
+   address on the From line of all her messages so that replies go to
+   her office mailbox.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   Here is an example of the SMTP session between the MTAs at
+   mobile.net.example and almamater.edu.example.
+
+      S: 220 almamater.edu.example ESMTP server ready
+      C: EHLO mobile.net.example
+      S: 250-almamater.edu.example
+      S: 250-DSN
+      S: 250-AUTH
+      S: 250-SUBMITTER
+      S: 250 SIZE
+      C: MAIL FROM:&lt;alice@example.com&gt;
+              SUBMITTER=alice@mobile.net.example
+      S: 250 &lt;alice@example.com&gt; sender ok
+      C: RCPT TO:&lt;bob@almamater.edu.example&gt;
+      S: 250 &lt;bob@almamater.edu.example&gt; recipient ok
+      C: DATA
+      S: 354 okay, send message
+      C: Sender: alice@mobile.net.example
+      C: Received By: ...
+      C: (message body goes here)
+      C: .
+      S: 250 message accepted
+      C: QUIT
+      S: 221 goodbye
+
+   Note that mobile.net.example uses the SUBMITTER parameter to
+   designate alice@mobile.net.example as the responsible submitter for
+   this message.  Further, this MTA also inserts a Sender header to
+   ensure the purported responsible address derived from the <a href="./rfc2822">RFC 2822</a>
+   headers matches the SUBMITTER address.
+
+   Likewise, conventional ISPs may also choose to use the SUBMITTER
+   parameter to designate as the responsible submitter the user's
+   address on the ISP's network if that address is different from the
+   MAIL FROM address.  This may be especially useful for ISPs that host
+   multiple domains or otherwise share MTAs among multiple domains.
+
+   When the message is subsequently forwarded by the
+   almamater.edu.example MTA, that MTA will replace the SUBMITTER
+   parameter with bob@almamater.edu.example as in <a href="#section-5.2">Section 5.2</a> and add
+   its own Resent-From header.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.4.%20%20Guest%20E-Mail%20Service"></a><a class="selflink" href="#section-5.4" id="section-5.4">5.4</a>.  Guest E-Mail Service</span>
+
+   While on a business trip, Alice uses the broadband access facilities
+   provided by the Exemplar Hotel to connect to the Internet and send
+   e-mail.  The hotel routes all outbound e-mail through its own SMTP
+   server, email.hotel.com.example.
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                      [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   The SMTP session for Alice's message to Bob from the Exemplar Hotel
+   would look like this:
+
+      S: 220 almamater.edu.example ESMTP server ready
+      C: EHLO email.hotel.com.example
+      S: 250-almamater.edu.example
+      S: 250-DSN
+      S: 250-AUTH
+      S: 250-SUBMITTER
+      S: 250 SIZE
+      C: MAIL FROM:&lt;alice@example.com&gt;
+              SUBMITTER=guest.services@email.hotel.com.example
+      S: 250 &lt;alice@example.com&gt; sender ok
+      C: RCPT TO:&lt;bob@almamater.edu.example&gt;
+      S: 250 &lt;bob@almamater.edu.example&gt; recipient ok
+      C: DATA
+      S: 354 okay, send message
+      C: Resent-From: guest.services@email.hotel.com.example
+      C: Received By: ...
+      C: (message body goes here)
+      C: .
+      S: 250 message accepted
+      C: QUIT
+      S: 221 goodbye
+
+   Note that email.hotel.com.example uses the SUBMITTER parameter to
+   designate a generic account guest.services@email.hotel.com.example as
+   the responsible submitter address for this message.  A generic
+   account is used since Alice herself does not have an account at that
+   domain.  Furthermore, this client also inserts a Resent-From header
+   to ensure the purported responsible address derived from the <a href="./rfc2822">RFC 2822</a>
+   headers with the SUBMITTER address.
+
+   As before, when the message is subsequently forwarded by the
+   almamater.edu.example MTA, that MTA will replace the SUBMITTER
+   parameter with bob@almamater.edu.example as in <a href="#section-5.2">Section 5.2</a> and add
+   its own Resent-From header.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                     [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.5.%20%20SUBMITTER%20Used%20on%20a%20Non-Delivery%20Report"></a><a class="selflink" href="#section-5.5" id="section-5.5">5.5</a>.  SUBMITTER Used on a Non-Delivery Report</span>
+
+   Alice sends an incorrectly addressed e-mail message and receives a
+   non-delivery report from a SUBMITTER-compliant server.
+
+      S: 220 example.com ESMTP server ready
+      C: EHLO almamater.edu.example
+      S: 250-example.com
+      S: 250-DSN
+      S: 250-AUTH
+      S: 250-SUBMITTER
+      S: 250 SIZE
+      C: MAIL FROM:&lt;&gt; SUBMITTER=mailer-daemon@almamater.edu.example
+      S: 250 OK
+      C: RCPT TO:&lt;alice@example.com&gt;
+      S: 250 OK
+      C: DATA
+      S: 354 OK, send message
+      C: (message body goes here)
+      C: .
+      S: 250 message accepted
+      C: QUIT
+      S: 221 goodbye
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Security%20Considerations"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Security Considerations</span>
+
+   This extension provides an optimization to allow an SMTP client to
+   identify the responsible submitter of an e-mail message in the SMTP
+   protocol, and to enable SMTP servers to perform efficient validation
+   of that identity before the message contents are transmitted.
+
+   It is, however, quite possible for an attacker to forge the value of
+   the SUBMITTER parameter.  Furthermore, it is possible for an attacker
+   to transmit an e-mail message whose SUBMITTER parameter does not
+   match the purported responsible address of the message as derived
+   from the <a href="./rfc2822">RFC 2822</a> headers.  Therefore, the presence of the SUBMITTER
+   parameter provides, by itself, no assurance of the authenticity of
+   the message or the responsible submitter.  Rather, the SUBMITTER
+   parameter is intended to provide additional information to receiving
+   e-mail systems to enable them to efficiently determine the validity
+   of the responsible submitter, and specifically, whether the SMTP
+   client is authorized to transmit e-mail on behalf of the purported
+   responsible submitter's domain.  <a href="#section-4.2">Section 4.2</a> describes how receiving
+   e-mail systems should process the SUBMITTER parameter.
+
+
+
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                     [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Acknowledgements"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Acknowledgements</span>
+
+   The idea of an ESMTP extension to convey the identity of the
+   responsible sender of an e-mail message has many progenitors.  Nick
+   Shelness suggested the idea in a private conversation with one of the
+   authors.  Pete Resnick suggested a variant on the MARID mailing list.
+   The idea was also discussed on the Anti-Spam Research Group (ASRG)
+   mailing list.
+
+   The authors would also like to thank the participants of the MARID
+   working group and the following individuals for their comments and
+   suggestions, which greatly improved this document:
+
+      Robert Atkinson, Simon Attwell, Roy Badami, Greg Connor, Dave
+      Crocker, Matthew Elvey, Tony Finch, Ned Freed, Mark Lentczner, Jim
+      Lyon, Bruce McMillan, Sam Neely, Daryl Odnert, Margaret Olson,
+      Pete Resnick, Hector Santos, Nick Shelness, Rand Wacker, and Meng
+      Weng Wong.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  IANA Considerations</span>
+
+      The IANA has registered the SUBMITTER SMTP service extension.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20References"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Normative%20References"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Normative References</span>
+
+   [<a id="ref-ABNF">ABNF</a>]       Crocker, D. and P. Overell, "Augmented BNF for Syntax
+                Specifications: ABNF", <a href="./rfc4234">RFC 4234</a>, October 2005.
+
+   [<a id="ref-DSN">DSN</a>]        Moore, K., "Simple Mail Transfer Protocol (SMTP) Service
+                Extension for Delivery Status Notifications (DSNs)", <a href="./rfc3461">RFC</a>
+                <a href="./rfc3461">3461</a>, January 2003.
+
+   [<a id="ref-KEYWORDS">KEYWORDS</a>]   Bradner, S., "Key words for use in RFCs to Indicate
+                Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-MSG-FORMAT">MSG-FORMAT</a>] Resnick, P., "Internet Message Format", <a href="./rfc2822">RFC 2822</a>, April
+                2001.
+
+   [<a id="ref-PRA">PRA</a>]        Lyon, J., "Purported Responsible Address in E-Mail
+                Messages", <a href="./rfc4407">RFC 4407</a>, April 2006.
+
+   [<a id="ref-SENDER-ID">SENDER-ID</a>]  Lyon, J. and M. Wong, "Sender ID: Authenticating E-
+                Mail", <a href="./rfc4406">RFC 4406</a>, April 2006.
+
+   [<a id="ref-SUBMIT">SUBMIT</a>]     Gellens, R. and J. Klensin, "Message Submission for
+                Mail", <a href="./rfc4409">RFC 4409</a>, April 2006.
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                     [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+   [<a id="ref-SMTP">SMTP</a>]       Klensin, J., "Simple Mail Transfer Protocol", <a href="./rfc2821">RFC 2821</a>,
+                April 2001.
+
+   [<a id="ref-SMTPAUTH">SMTPAUTH</a>]   Myers, J., "SMTP Service Extension for Authentication",
+                <a href="./rfc2554">RFC 2554</a>, March 1999.
+
+Authors' Addresses
+
+   Eric Allman
+   Sendmail, Inc.
+   6425 Christie Ave, Suite 400
+   Emeryville, CA 94608
+   USA
+
+   EMail: eric@sendmail.com
+
+
+   Harry Katz
+   Microsoft Corp.
+   1 Microsoft Way
+   Redmond, WA 98052
+   USA
+
+   EMail: hkatz@microsoft.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Allman &amp; Katz                 Experimental                     [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc4405">RFC 4405</a>          SMTP Responsible Submitter Extension        April 2006</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The Internet Society (2006).
+
+   This document is subject to the rights, licenses and restrictions
+   contained in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a>, and except as set forth therein, the authors
+   retain all their rights.
+
+   This document and the information contained herein are provided on an
+   "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+   OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY AND THE INTERNET
+   ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE
+   INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+   WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Intellectual Property
+
+   The IETF takes no position regarding the validity or scope of any
+   Intellectual Property Rights or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this document or the extent to which any license under such rights
+   might or might not be available; nor does it represent that it has
+   made any independent effort to identify any such rights.  Information
+   on the procedures with respect to rights in RFC documents can be
+   found in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and <a href="https://www.rfc-editor.org/bcp/bcp79">BCP 79</a>.
+
+   Copies of IPR disclosures made to the IETF Secretariat and any
+   assurances of licenses to be made available, or the result of an
+   attempt made to obtain a general license or permission for the use of
+   such proprietary rights by implementers or users of this
+   specification can be obtained from the IETF on-line IPR repository at
+   <a href="http://www.ietf.org/ipr">http://www.ietf.org/ipr</a>.
+
+   The IETF invites any interested party to bring to its attention any
+   copyrights, patents or patent applications, or other proprietary
+   rights that may cover technology that may be required to implement
+   this standard.  Please address the information to the IETF at
+   ietf-ipr@ietf.org.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is provided by the IETF
+   Administrative Support Activity (IASA).
+
+
+
+
+
+
+
+Allman &amp; Katz                 Experimental                     [Page 14]
+</pre>
+</body></html>

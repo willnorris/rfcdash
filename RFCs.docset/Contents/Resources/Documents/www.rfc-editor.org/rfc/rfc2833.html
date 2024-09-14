@@ -1,0 +1,1678 @@
+<html><head></head><body><pre>Network Working Group                                      H. Schulzrinne
+Request for Comments: 2833                            Columbia University
+Category: Standards Track                                      S. Petrack
+                                                                  MetaTel
+                                                                 May 2000
+
+
+   <span class="h1">RTP Payload for DTMF Digits, Telephony Tones and Telephony Signals</span>
+
+Status of this Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2000).  All Rights Reserved.
+
+Abstract
+
+   This memo describes how to carry dual-tone multifrequency (DTMF)
+   signaling, other tone signals and telephony events in RTP packets.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a> Introduction</span>
+
+   This memo defines two payload formats, one for carrying dual-tone
+   multifrequency (DTMF) digits, other line and trunk signals (<a href="#section-3">Section</a>
+   <a href="#section-3">3</a>), and a second one for general multi-frequency tones in RTP [<a href="#ref-1" title='"RTP: A Transport Protocol for Real-Time Applications"'>1</a>]
+   packets (<a href="#section-4">Section 4</a>). Separate RTP payload formats are desirable since
+   low-rate voice codecs cannot be guaranteed to reproduce these tone
+   signals accurately enough for automatic recognition. Defining
+   separate payload formats also permits higher redundancy while
+   maintaining a low bit rate.
+
+   The payload formats described here may be useful in at least three
+   applications: DTMF handling for gateways and end systems, as well as
+   "RTP trunks". In the first application, the Internet telephony
+   gateway detects DTMF on the incoming circuits and sends the RTP
+   payload described here instead of regular audio packets. The gateway
+   likely has the necessary digital signal processors and algorithms, as
+   it often needs to detect DTMF, e.g., for two-stage dialing. Having
+   the gateway detect tones relieves the receiving Internet end system
+   from having to do this work and also avoids that low bit-rate codecs
+   like G.723.1 render DTMF tones unintelligible. Secondly, an Internet
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   end system such as an "Internet phone" can emulate DTMF functionality
+   without concerning itself with generating precise tone pairs and
+   without imposing the burden of tone recognition on the receiver.
+
+   In the "RTP trunk" application, RTP is used to replace a normal
+   circuit-switched trunk between two nodes. This is particularly of
+   interest in a telephone network that is still mostly circuit-
+   switched.  In this case, each end of the RTP trunk encodes audio
+   channels into the appropriate encoding, such as G.723.1 or G.729.
+   However, this encoding process destroys in-band signaling information
+   which is carried using the least-significant bit ("robbed bit
+   signaling") and may also interfere with in-band signaling tones, such
+   as the MF digit tones. In addition, tone properties such as the phase
+   reversals in the ANSam tone, will not survive speech coding. Thus,
+   the gateway needs to remove the in-band signaling information from
+   the bit stream. It can now either carry it out-of-band in a signaling
+   transport mechanism yet to be defined, or it can use the mechanism
+   described in this memorandum. (If the two trunk end points are within
+   reach of the same media gateway controller, the media gateway
+   controller can also handle the signaling.)  Carrying it in-band may
+   simplify the time synchronization between audio packets and the tone
+   or signal information. This is particularly relevant where duration
+   and timing matter, as in the carriage of DTMF signals.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1%20Terminology"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a> Terminology</span>
+
+   In this document, the key words "MUST", "MUST NOT", "REQUIRED",
+   "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY",
+   and "OPTIONAL" are to be interpreted as described in <a href="./rfc2119">RFC 2119</a> [<a href="#ref-2" title='"Key words for use in RFCs to Indicate Requirement Levels"'>2</a>] and
+   indicate requirement levels for compliant implementations.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2%20Events%20vs.%20Tones"></a><a class="selflink" href="#section-2" id="section-2">2</a> Events vs. Tones</span>
+
+   A gateway has two options for handling DTMF digits and events. First,
+   it can simply measure the frequency components of the voice band
+   signals and transmit this information to the RTP receiver (<a href="#section-4">Section</a>
+   <a href="#section-4">4</a>). In this mode, the gateway makes no attempt to discern the meaning
+   of the tones, but simply distinguishes tones from speech signals.
+
+   All tone signals in use in the PSTN and meant for human consumption
+   are sequences of simple combinations of sine waves, either added or
+   modulated. (There is at least one tone, the ANSam tone [<a href="#ref-3" title='"Procedures for starting sessions of data transmission over the public switched telephone network,"'>3</a>] used for
+   indicating data transmission over voice lines, that makes use of
+   periodic phase reversals.)
+
+   As a second option, a gateway can recognize the tones and translate
+   them into a name, such as ringing or busy tone. The receiver then
+   produces a tone signal or other indication appropriate to the signal.
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   Generally, since the recognition of signals often depends on their
+   on/off pattern or the sequence of several tones, this recognition can
+   take several seconds. On the other hand, the gateway may have access
+   to the actual signaling information that generates the tones and thus
+   can generate the RTP packet immediately, without the detour through
+   acoustic signals.
+
+   In the phone network, tones are generated at different places,
+   depending on the switching technology and the nature of the tone.
+   This determines, for example, whether a person making a call to a
+   foreign country hears her local tones she is familiar with or the
+   tones as used in the country called.
+
+   For analog lines, dial tone is always generated by the local switch.
+   ISDN terminals may generate dial tone locally and then send a Q.931
+   SETUP message containing the dialed digits. If the terminal just
+   sends a SETUP message without any Called Party digits, then the
+   switch does digit collection, provided by the terminal as KEYPAD
+   messages, and provides dial tone over the B-channel. The terminal can
+   either use the audio signal on the B-channel or can use the Q.931
+   messages to trigger locally generated dial tone.
+
+   Ringing tone (also called ringback tone) is generated by the local
+   switch at the callee, with a one-way voice path opened up as soon as
+   the callee's phone rings. (This reduces the chance of clipping the
+   called party's response just after answer. It also permits pre-answer
+   announcements or in-band call-progress indications to reach the
+   caller before or in lieu of a ringing tone.) Congestion tone and
+   special information tones can be generated by any of the switches
+   along the way, and may be generated by the caller's switch based on
+   ISUP messages received. Busy tone is generated by the caller's
+   switch, triggered by the appropriate ISUP message, for analog
+   instruments, or the ISDN terminal.
+
+   Gateways which send signaling events via RTP MAY send both named
+   signals (<a href="#section-3">Section 3</a>) and the tone representation (<a href="#section-4">Section 4</a>) as a
+   single RTP session, using the redundancy mechanism defined in <a href="#section-3.7">Section</a>
+   <a href="#section-3.7">3.7</a> to interleave the two representations. It is generally a good
+   idea to send both, since it allows the receiver to choose the
+   appropriate rendering.
+
+   If a gateway cannot present a tone representation, it SHOULD send the
+   audio tones as regular RTP audio packets (e.g., as payload format
+   PCMU), in addition to the named signals.
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3%20RTP%20Payload%20Format%20for%20Named%20Telephone%20Events"></a><a class="selflink" href="#section-3" id="section-3">3</a> RTP Payload Format for Named Telephone Events</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1%20Introduction"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a> Introduction</span>
+
+   The payload format for named telephone events described below is
+   suitable for both gateway and end-to-end scenarios. In the gateway
+   scenario, an Internet telephony gateway connecting a packet voice
+   network to the PSTN recreates the DTMF tones or other telephony
+   events and injects them into the PSTN. Since, for example, DTMF digit
+   recognition takes several tens of milliseconds, the first few
+   milliseconds of a digit will arrive as regular audio packets. Thus,
+   careful time and power (volume) alignment between the audio samples
+   and the events is needed to avoid generating spurious digits at the
+   receiver.
+
+   DTMF digits and named telephone events are carried as part of the
+   audio stream, and MUST use the same sequence number and time-stamp
+   base as the regular audio channel to simplify the generation of audio
+   waveforms at a gateway. The default clock frequency is 8,000 Hz, but
+   the clock frequency can be redefined when assigning the dynamic
+   payload type.
+
+   The payload format described here achieves a higher redundancy even
+   in the case of sustained packet loss than the method proposed for the
+   Voice over Frame Relay Implementation Agreement [<a href="#ref-4" title='"Voice over frame relay implementation agreement"'>4</a>].
+
+   If an end system is directly connected to the Internet and does not
+   need to generate tone signals again, time alignment and power levels
+   are not relevant. These systems rely on PSTN gateways or Internet end
+   systems to generate DTMF events and do not perform their own audio
+   waveform analysis. An example of such a system is an Internet
+   interactive voice-response (IVR) system.
+
+   In circumstances where exact timing alignment between the audio
+   stream and the DTMF digits or other events is not important and data
+   is sent unicast, such as the IVR example mentioned earlier, it may be
+   preferable to use a reliable control protocol rather than RTP
+   packets. In those circumstances, this payload format would not be
+   used.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.2%20Simultaneous%20Generation%20of%20Audio%20and%20Events"></a><a class="selflink" href="#section-3.2" id="section-3.2">3.2</a> Simultaneous Generation of Audio and Events</span>
+
+   A source MAY send events and coded audio packets for the same time
+   instants, using events as the redundant encoding for the audio
+   stream, or it MAY block outgoing audio while event tones are active
+   and only send named events as both the primary and redundant
+   encodings.
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   Note that a period covered by an encoded tone may overlap in time
+   with a period of audio encoded by other means. This is likely to
+   occur at the onset of a tone and is necessary to avoid possible
+   errors in the interpretation of the reproduced tone at the remote
+   end.  Implementations supporting this payload format must be prepared
+   to handle the overlap. It is RECOMMENDED that gateways only render
+   the encoded tone since the audio may contain spurious tones
+   introduced by the audio compression algorithm. However, it is
+   anticipated that these extra tones in general should not interfere
+   with recognition at the far end.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.3%20Event%20Types"></a><a class="selflink" href="#section-3.3" id="section-3.3">3.3</a> Event Types</span>
+
+   This payload format is used for five different types of signals:
+
+      o  DTMF tones (<a href="#section-3.10">Section 3.10</a>);
+
+      o  fax-related tones (<a href="#section-3.11">Section 3.11</a>);
+
+      o  standard subscriber line tones (<a href="#section-3.12">Section 3.12</a>);
+
+      o  country-specific subscriber line tones (<a href="#section-3.13">Section 3.13</a>) and;
+
+      o  trunk events (<a href="#section-3.14">Section 3.14</a>).
+
+   A compliant implementation MUST support the events listed in Table 1
+   with the exception of "flash". If it uses some other, out-of-band
+   mechanism for signaling line conditions, it does not have to
+   implement the other events.
+
+   In some cases, an implementation may simply ignore certain events,
+   such as fax tones, that do not make sense in a particular
+   environment.  <a href="#section-3.9">Section 3.9</a> specifies how an implementation can use the
+   SDP "fmtp" parameter within an SDP description to indicate its
+   inability to understand a particular event or range of events.
+
+   Depending on the available user interfaces, an implementation MAY
+   render all tones in Table 5 the same or, preferably, use the tones
+   conveyed by the concurrent "tone" payload or other RTP audio payload.
+   Alternatively, it could provide a textual representation.
+
+   Note that end systems that emulate telephones only need to support
+   the events described in Sections <a href="#section-3.10">3.10</a> and <a href="#section-3.12">3.12</a>, while systems that
+   receive trunk signaling need to implement those in Sections <a href="#section-3.10">3.10</a>,
+   3.11, 3.12 and 3.14, since MF trunks also carry most of the "line"
+   signals. Systems that do not support fax or modem functionality do
+   not need to render fax-related events described in <a href="#section-3.11">Section 3.11</a>.
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   The RTP payload format is designated as "telephone-event", the MIME
+   type as "audio/telephone-event". The default timestamp rate is 8000
+   Hz, but other rates may be defined. In accordance with current
+   practice, this payload format does not have a static payload type
+   number, but uses a RTP payload type number established dynamically
+   and out-of-band.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.4%20Use%20of%20RTP%20Header%20Fields"></a><a class="selflink" href="#section-3.4" id="section-3.4">3.4</a> Use of RTP Header Fields</span>
+
+      Timestamp: The RTP timestamp reflects the measurement point for
+           the current packet. The event duration described in <a href="#section-3.5">Section</a>
+           <a href="#section-3.5">3.5</a> extends forwards from that time. The receiver calculates
+           jitter for RTCP receiver reports based on all packets with a
+           given timestamp. Note: The jitter value should primarily be
+           used as a means for comparing the reception quality between
+           two users or two time-periods, not as an absolute measure.
+
+      Marker bit: The RTP marker bit indicates the beginning of a new
+           event.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.5%20Payload%20Format"></a><a class="selflink" href="#section-3.5" id="section-3.5">3.5</a> Payload Format</span>
+
+   The payload format is shown in Fig. 1.
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     event     |E|R| volume    |          duration             |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+               Figure 1: Payload Format for Named Events
+
+      events: The events are encoded as shown in Sections <a href="#section-3.10">3.10</a> through
+           3.14.
+
+      volume: For DTMF digits and other events representable as tones,
+           this field describes the power level of the tone, expressed
+           in dBm0 after dropping the sign. Power levels range from 0 to
+           -63 dBm0. The range of valid DTMF is from 0 to -36 dBm0 (must
+           accept); lower than -55 dBm0 must be rejected (TR-TSY-000181,
+           ITU-T Q.24A). Thus, larger values denote lower volume. This
+           value is defined only for DTMF digits. For other events, it
+           is set to zero by the sender and is ignored by the receiver.
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      duration: Duration of this digit, in timestamp units. Thus, the
+           event began at the instant identified by the RTP timestamp
+           and has so far lasted as long as indicated by this parameter.
+           The event may or may not have ended.
+
+           For a sampling rate of 8000 Hz, this field is sufficient to
+           express event durations of up to approximately 8 seconds.
+
+      E: If set to a value of one, the "end" bit indicates that this
+           packet contains the end of the event. Thus, the duration
+           parameter above measures the complete duration of the event.
+
+           A sender MAY delay setting the end bit until retransmitting
+           the last packet for a tone, rather than on its first
+           transmission. This avoids having to wait to detect whether
+           the tone has indeed ended.
+
+           Receiver implementations MAY use different algorithms to
+           create tones, including the two described here. In the first,
+           the receiver simply places a tone of the given duration in
+           the audio playout buffer at the location indicated by the
+           timestamp. As additional packets are received that extend the
+           same tone, the waveform in the playout buffer is extended
+           accordingly. (Care has to be taken if audio is mixed, i.e.,
+           summed, in the playout buffer rather than simply copied.)
+           Thus, if a packet in a tone lasting longer than the packet
+           interarrival time gets lost and the playout delay is short, a
+           gap in the tone may occur.  Alternatively, the receiver can
+           start a tone and play it until it receives a packet with the
+           "E" bit set, the next tone, distinguished by a different
+           timestamp value or a given time period elapses. This is more
+           robust against packet loss, but may extend the tone if all
+           retransmissions of the last packet in an event are lost.
+           Limiting the time period of extending the tone is necessary
+           to avoid that a tone "gets stuck". Regardless of the
+           algorithm used, the tone SHOULD NOT be extended by more than
+           three packet interarrival times. A slight extension of tone
+           durations and shortening of pauses is generally harmless.
+
+      R: This field is reserved for future use. The sender MUST set it
+           to zero, the receiver MUST ignore it.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.6%20Sending%20Event%20Packets"></a><a class="selflink" href="#section-3.6" id="section-3.6">3.6</a> Sending Event Packets</span>
+
+   An audio source SHOULD start transmitting event packets as soon as it
+   recognizes an event and every 50 ms thereafter or the packet interval
+   for the audio codec used for this session, if known. (The sender does
+   not need to maintain precise time intervals between event packets in
+   order to maintain precise inter-event times, since the timing
+   information is contained in the timestamp.)
+
+      Q.24 [<a href="#ref-5" title='"Multifrequency push- button signal reception,"'>5</a>], Table A-1, indicates that all administrations surveyed
+      use a minimum signal duration of 40 ms, with signaling velocity
+      (tone and pause) of no less than 93 ms.
+
+   If an event continues for more than one period, the source generating
+   the events should send a new event packet with the RTP timestamp
+   value corresponding to the beginning of the event and the duration of
+   the event increased correspondingly. (The RTP sequence number is
+   incremented by one for each packet.) If there has been no new event
+   in the last interval, the event SHOULD be retransmitted three times
+   or until the next event is recognized. This ensures that the duration
+   of the event can be recognized correctly even if the last packet for
+   an event is lost.
+
+      DTMF digits and events are sent incrementally to avoid having the
+      receiver wait for the completion of the event.  Since some tones
+      are two seconds long, this would incur a substantial delay. The
+      transmitter does not know if event length is important and thus
+      needs to transmit immediately and incrementally. If the receiver
+      application does not care about event length, the incremental
+      transmission mechanism avoids delay. Some applications, such as
+      gateways into the PSTN, care about both delays and event duration.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.7%20Reliability"></a><a class="selflink" href="#section-3.7" id="section-3.7">3.7</a> Reliability</span>
+
+   During an event, the RTP event payload format provides incremental
+   updates on the event. The error resiliency depends on the playout
+   delay at the receiver. For example, for a playout delay of 120 ms and
+   a packet gap of 50 ms, two packets in a row can get lost without
+   causing a gap in the tones generated at the receiver.
+
+   The audio redundancy mechanism described in <a href="./rfc2198">RFC 2198</a> [<a href="#ref-6" title='"RTP Payload for Redundant Audio Data"'>6</a>] MAY be used
+   to recover from packet loss across events. The effective data rate is
+   r times 64 bits (32 bits for the redundancy header and 32 bits for
+   the telephone-event payload) every 50 ms or r times 1280 bits/second,
+   where r is the number of redundant events carried in each packet. The
+   value of r is an implementation trade-off, with a value of 5
+   suggested.
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      The timestamp offset in this redundancy scheme has 14 bits, so
+      that it allows a single packet to "cover" 2.048 seconds of
+      telephone events at a sampling rate of 8000 Hz.  Including the
+      starting time of previous events allows precise reconstruction of
+      the tone sequence at a gateway.  The scheme is resilient to
+      consecutive packet losses spanning this interval of 2.048 seconds
+      or r digits, whichever is less. Note that for previous digits,
+      only an average loudness can be represented.
+
+   An encoder MAY treat the event payload as a highly-compressed version
+   of the current audio frame. In that mode, each RTP packet during an
+   event would contain the current audio codec rendition (say, G.723.1
+   or G.729) of this digit as well as the representation described in
+   <a href="#section-3.5">Section 3.5</a>, plus any previous events seen earlier.
+
+      This approach allows dumb gateways that do not understand this
+      format to function. See also the discussion in <a href="#section-1">Section 1</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.8%20Example"></a><a class="selflink" href="#section-3.8" id="section-3.8">3.8</a> Example</span>
+
+   A typical RTP packet, where the user is just dialing the last digit
+   of the DTMF sequence "911". The first digit was 200 ms long (1600
+   timestamp units) and started at time 0, the second digit lasted 250
+   ms (2000 timestamp units) and started at time 800 ms (6400 timestamp
+   units), the third digit was pressed at time 1.4 s (11,200 timestamp
+   units) and the packet shown was sent at 1.45 s (11,600 timestamp
+   units).  The frame duration is 50 ms. To make the parts recognizable,
+   the figure below ignores byte alignment. Timestamp and sequence
+   number are assumed to have been zero at the beginning of the first
+   digit. In this example, the dynamic payload types 96 and 97 have been
+   assigned for the redundancy mechanism and the telephone event
+   payload, respectively.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.9%20Indication%20of%20Receiver%20Capabilities%20using%20SDP"></a><a class="selflink" href="#section-3.9" id="section-3.9">3.9</a> Indication of Receiver Capabilities using SDP</span>
+
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |V=2|P|X|  CC   |M|     PT      |       sequence number         |
+   | 2 |0|0|   0   |0|     96      |              28               |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                           timestamp                           |
+   |                             11200                             |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |           synchronization source (SSRC) identifier            |
+   |                            0x5234a8                           |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |F|   block PT  |     timestamp offset      |   block length    |
+   |1|     97      |            11200          |         4         |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |F|   block PT  |     timestamp offset      |   block length    |
+   |1|     97      |   11200 - 6400 = 4800     |         4         |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |F|   Block PT  |
+   |0|     97      |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     digit     |E R| volume    |          duration             |
+   |       9       |1 0|     7     |             1600              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     digit     |E R| volume    |          duration             |
+   |       1       |1 0|    10     |             2000              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |     digit     |E R| volume    |          duration             |
+   |       1       |0 0|    20     |              400              |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+          Figure 2: Example RTP packet after dialing "911"
+
+   Receivers MAY indicate which named events they can handle, for
+   example, by using the Session Description Protocol (<a href="./rfc2327">RFC 2327</a> [<a href="#ref-7" title='"SDP: Session Description Protocol"'>7</a>]).
+   The payload formats use the following fmtp format to list the event
+   values that they can receive:
+
+   a=fmtp:&lt;format&gt; &lt;list of values&gt;
+
+   The list of values consists of comma-separated elements, which can be
+   either a single decimal number or two decimal numbers separated by a
+   hyphen (dash), where the second number is larger than the first. No
+   whitespace is allowed between numbers or hyphens. The list does not
+   have to be sorted.
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   For example, if the payload format uses the payload type number 100,
+   and the implementation can handle the DTMF tones (events 0 through
+   15) and the dial and ringing tones, it would include the following
+   description in its SDP message:
+
+   a=fmtp:100 0-15,66,70
+
+   Since all implementations MUST be able to receive events 0 through
+   15, listing these events in the a=fmtp line is OPTIONAL.
+
+   The corresponding MIME parameter is "events", so that the following
+   sample media type definition corresponds to the SDP example above:
+
+   audio/telephone-event;events="0-11,66,67";rate="8000"
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.10%20DTMF%20Events"></a><a class="selflink" href="#section-3.10" id="section-3.10">3.10</a> DTMF Events</span>
+
+   Table 1 summarizes the DTMF-related named events within the
+   telephone-event payload format.
+
+                     Event  encoding (decimal)
+                     _________________________
+                     0--9                0--9
+                     *                     10
+                     #                     11
+                     A--D              12--15
+                     Flash                 16
+
+                     Table 1: DTMF named events
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.11%20Data%20Modem%20and%20Fax%20Events"></a><a class="selflink" href="#section-3.11" id="section-3.11">3.11</a> Data Modem and Fax Events</span>
+
+   Table 3.11 summarizes the events and tones that can appear on a
+   subscriber line serving a fax machine or modem. The tones are
+   described below, with additional detail in Table 7.
+
+      ANS: This 2100 +/- 15 Hz tone is used to disable echo
+           suppression for data transmission [<a href="#ref-8" title='"Automatic answering equipment and general procedures for automatic calling equipment on the general switched telephone network including procedures for disabling of echo control devices for both manually and automatically established calls,"'>8</a>,<a href="#ref-9" title='"Procedures for document facsimile transmission in the general switched telephone network,"'>9</a>]. For fax machines,
+           Recommendation T.30 [<a href="#ref-9" title='"Procedures for document facsimile transmission in the general switched telephone network,"'>9</a>] refers to this tone as called
+           terminal identification (CED) answer tone.
+
+      /ANS: This is the same signal as ANS, except that it reverses
+           phase at an interval of 450 +/- 25 ms. It disables both
+           echo cancellers and echo suppressors. (In the ITU
+           Recommendation V.25 [<a href="#ref-8" title='"Automatic answering equipment and general procedures for automatic calling equipment on the general switched telephone network including procedures for disabling of echo control devices for both manually and automatically established calls,"'>8</a>], this signal is rendered as ANS
+           with a bar on top.)
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      ANSam: The modified answer tone (ANSam) [<a href="#ref-3" title='"Procedures for starting sessions of data transmission over the public switched telephone network,"'>3</a>] is a sinewave signal
+           at 2100 +/- 1 Hz without phase reversals, amplitude-modulated
+           by a sinewave at 15 +/- 0.1 Hz. This tone is sent by modems
+           if network echo canceller disabling is not required.
+
+      /ANSam: The modified answer tone with phase reversals (ANSam) [<a href="#ref-3" title='"Procedures for starting sessions of data transmission over the public switched telephone network,"'>3</a>]
+           is a sinewave signal at 2100 +/- 1 Hz with phase reversals at
+           intervals of 450 +/- 25 ms, amplitude-modulated by a sinewave
+           at 15 +/- 0.1 Hz. This tone [<a href="#ref-10" title='"Echo cancellers,"'>10</a>,<a href="#ref-8" title='"Automatic answering equipment and general procedures for automatic calling equipment on the general switched telephone network including procedures for disabling of echo control devices for both manually and automatically established calls,"'>8</a>] is sent by modems [<a href="#ref-11" title='"A modem operating at data signaling rates of up to 33 600 bit/s for use on the general switched telephone network and on leased point-to-point 2-wire telephone-type circuits,"'>11</a>] and
+           faxes to disable echo suppressors.
+
+      CNG: After dialing the called fax machine's telephone number (and
+           before it answers), the calling Group III fax machine
+           (optionally) begins sending a CalliNG tone (CNG) consisting
+           of an interrupted tone of 1100 Hz. [<a href="#ref-9" title='"Procedures for document facsimile transmission in the general switched telephone network,"'>9</a>]
+
+      CRdi: Capabilities Request (CRd), initiating side, [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>] is a
+           dual-tone signal with tones at 1375 Hz and 2002 Hz for 400
+           ms, followed by a single tone at 1900 Hz for 100 ms. "This
+           signal requests the remote station transition from telephony
+           mode to an information transfer mode and requests the
+           transmission of a capabilities list message by the remote
+           station. In particular, CRdi is sent by the initiating
+           station during the course of a call, or by the calling
+           station at call establishment in response to a CRe or MRe."
+
+      CRdr: CRdr is the response tone to CRdi (see above). It consists
+           of a dual-tone signal with tones at 1529 Hz and 2225 Hz for
+           400 ms, followed by a single tone at 1900 Hz for 100 ms.
+
+      CRe: Capabilities Request (CRe) [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>] is a dual-tone signal with
+           tones at tones at 1375 Hz and 2002 Hz for 400 ms, followed by
+           a single tone at 400 Hz for 100 ms. "This signal requests the
+           remote station transition from telephony mode to an
+           information transfer mode and requests the transmission of a
+           capabilities list message by the remote station. In
+           particular, CRe is sent by an automatic answering station at
+           call establishment."
+
+      CT: "The calling tone [<a href="#ref-8" title='"Automatic answering equipment and general procedures for automatic calling equipment on the general switched telephone network including procedures for disabling of echo control devices for both manually and automatically established calls,"'>8</a>] consists of a series of interrupted
+           bursts of binary 1 signal or 1300 Hz, on for a duration of
+           not less than 0.5 s and not more than 0.7 s and off for a
+           duration of not less than 1.5 s and not more than 2.0 s."
+           Modems not starting with the V.8 call initiation tone often
+           use this tone.
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      ESi: Escape Signal (ESi) [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>] is a dual-tone signal with tones at
+           1375 Hz and 2002 Hz for 400 ms, followed by a single tone at
+           980 Hz for 100 ms. "This signal requests the remote station
+           transition from telephony mode to an information transfer
+           mode. signal ESi is sent by the initiating station."
+
+      ESr: Escape Signal (ESr) [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>] is a dual-tone signal with tones at
+           1529 Hz and 2225 Hz for 400 ms, followed by a single tone at
+           1650 Hz for 100 ms. Same as ESi, but sent by the responding
+           station.
+
+      MRdi: Mode Request (MRd), initiating side, [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>] is a dual-tone
+           signal with tones at 1375 Hz and 2002 Hz for 400 ms followed
+           by a single tone at 1150 Hz for 100 ms. "This signal requests
+           the remote station transition from telephony mode to an
+           information transfer mode and requests the transmission of a
+           mode select message by the remote station. In particular,
+           signal MRd is sent by the initiating station during the
+           course of a call, or by the calling station at call
+           establishment in response to an MRe." [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>]
+
+      MRdr: MRdr is the response tone to MRdi (see above). It consists
+           of a dual-tone signal with tones at 1529 Hz and 2225 Hz for
+           400 ms, followed by a single tone at 1150 Hz for 100 ms.
+
+      MRe: Mode Request (MRe) [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>] is a dual-tone signal with tones at
+           1375 Hz and 2002 Hz for 400 ms, followed by a single tone at
+           650 Hz for 100 ms. "This signal requests the remote station
+           transition from telephony mode to an information transfer
+           mode and requests the transmission of a mode select message
+           by the remote station. In particular, signal MRe is sent by
+           an automatic answering station at call establishment." [<a href="#ref-12" title='"Procedures for the identification and selection of common modes of operation between data circuit-terminating equipments (DCEs) and between data terminal equipments (DTEs) over the public switched telephone network and on leased point-to-point telephone-type circuits,"'>12</a>]
+
+      V.21: V.21 describes a 300 b/s full-duplex modem that employs
+           frequency shift keying (FSK). It is used by Group 3 fax
+           machines to exchange T.30 information. The calling transmits
+           on channel 1 and receives on channel 2; the answering modem
+           transmits on channel 2 and receives on channel 1. Each bit
+           value has a distinct tone, so that V.21 signaling comprises a
+           total of four distinct tones.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   In summary, procedures in Table 2 are used.
+
+           Procedure                      indications
+           ___________________________________________________
+           V.25 and V.8                   ANS
+           V.25, echo canceller disabled  ANS, /ANS, ANS, /ANS
+           V.8                            ANSam
+           V.8, echo canceller disabled   /ANSam
+
+      Table 2: Use of ANS, ANSam and /ANSam in V.x recommendations
+
+
+           Event                    encoding (decimal)
+           ___________________________________________________
+           Answer tone (ANS)                        32
+           /ANS                                     33
+           ANSam                                    34
+           /ANSam                                   35
+           Calling tone (CNG)                       36
+           V.21 channel 1, "0" bit                  37
+           V.21 channel 1, "1" bit                  38
+           V.21 channel 2, "0" bit                  39
+           V.21 channel 2, "1" bit                  40
+           CRdi                                     41
+           CRdr                                     42
+           CRe                                      43
+           ESi                                      44
+           ESr                                      45
+           MRdi                                     46
+           MRdr                                     47
+           MRe                                      48
+           CT                                       49
+
+                Table 3: Data and fax named events
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.12%20Line%20Events"></a><a class="selflink" href="#section-3.12" id="section-3.12">3.12</a> Line Events</span>
+
+   Table 4 summarizes the events and tones that can appear on a
+   subscriber line.
+
+   ITU Recommendation E.182 [<a href="#ref-13" title='"Application of tones and recorded announcements in telephone services,"'>13</a>] defines when certain tones should be
+   used. It defines the following standard tones that are heard by the
+   caller:
+
+      Dial tone: The exchange is ready to receive address information.
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      PABX internal dial tone: The PABX is ready to receive address
+           information.
+
+      Special dial tone: Same as dial tone, but the caller's line is
+           subject to a specific condition, such as call diversion or a
+           voice mail is available (e.g., "stutter dial tone").
+
+      Second dial tone: The network has accepted the address
+           information, but additional information is required.
+
+      Ring: This named signal event causes the recipient to generate an
+           alerting signal ("ring"). The actual tone or other indication
+           used to render this named event is left up to the receiver.
+           (This differs from the ringing tone, below, heard by the
+           caller
+
+      Ringing tone: The call has been placed to the callee and a calling
+           signal (ringing) is being transmitted to the callee. This
+           tone is also called "ringback".
+
+      Special ringing tone: A special service, such as call forwarding
+           or call waiting, is active at the called number.
+
+      Busy tone: The called telephone number is busy.
+
+      Congestion tone: Facilities necessary for the call are temporarily
+           unavailable.
+
+      Calling card service tone: The calling card service tone consists
+           of 60 ms of the sum of 941 Hz and 1477 Hz tones (DTMF '#'),
+           followed by 940 ms of 350 Hz and 440 Hz (U.S.  dial tone),
+           decaying exponentially with a time constant of 200 ms.
+
+      Special information tone: The callee cannot be reached, but the
+           reason is neither "busy" nor "congestion". This tone should
+           be used before all call failure announcements, for the
+           benefit of automatic equipment.
+
+      Comfort tone: The call is being processed. This tone may be used
+           during long post-dial delays, e.g., in international
+           connections.
+
+      Hold tone: The caller has been placed on hold.
+
+      Record tone: The caller has been connected to an automatic
+           answering device and is requested to begin speaking.
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      Caller waiting tone: The called station is busy, but has call
+           waiting service.
+
+      Pay tone: The caller, at a payphone, is reminded to deposit
+           additional coins.
+
+      Positive indication tone: The supplementary service has been
+           activated.
+
+      Negative indication tone: The supplementary service could not be
+           activated.
+
+      Off-hook warning tone: The caller has left the instrument off-hook
+           for an extended period of time.
+
+   The following tones can be heard by either calling or called party
+   during a conversation:
+
+      Call waiting tone: Another party wants to reach the subscriber.
+
+      Warning tone: The call is being recorded. This tone is not
+           required in all jurisdictions.
+
+      Intrusion tone: The call is being monitored, e.g., by an operator.
+
+      CPE alerting signal: A tone used to alert a device to an arriving
+           in-band FSK data transmission. A CPE alerting signal is a
+           combined 2130 and 2750 Hz tone, both with tolerances of 0.5%
+           and a duration of 80 to.  80 ms. The CPE alerting signal is
+           used with ADSI services and Call Waiting ID services [<a href="#ref-14" title='"Functional criteria for digital loop carrier systems,"'>14</a>].
+
+   The following tones are heard by operators:
+
+      Payphone recognition tone: The person making the call or being
+           called is using a payphone (and thus it is ill-advised to
+           allow collect calls to such a person).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+          Event                      encoding (decimal)
+          _____________________________________________
+          Off Hook                                  64
+          On Hook                                   65
+          Dial tone                                 66
+          PABX internal dial tone                   67
+          Special dial tone                         68
+          Second dial tone                          69
+          Ringing tone                              70
+          Special ringing tone                      71
+          Busy tone                                 72
+          Congestion tone                           73
+          Special information tone                  74
+          Comfort tone                              75
+          Hold tone                                 76
+          Record tone                               77
+          Caller waiting tone                       78
+          Call waiting tone                         79
+          Pay tone                                  80
+          Positive indication tone                  81
+          Negative indication tone                  82
+          Warning tone                              83
+          Intrusion tone                            84
+          Calling card service tone                 85
+          Payphone recognition tone                 86
+          CPE alerting signal (CAS)                 87
+          Off-hook warning tone                     88
+          Ring                                      89
+
+                   Table 4: E.182 line events
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.13%20Extended%20Line%20Events"></a><a class="selflink" href="#section-3.13" id="section-3.13">3.13</a> Extended Line Events</span>
+
+   Table 5 summarizes country-specific events and tones that can appear
+   on a subscriber line.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.14%20Trunk%20Events"></a><a class="selflink" href="#section-3.14" id="section-3.14">3.14</a> Trunk Events</span>
+
+   Table 6 summarizes the events and tones that can appear on a trunk.
+   Note that trunk can also carry line events (<a href="#section-3.12">Section 3.12</a>), as MF
+   signaling does not include backward signals [<a href="#ref-15" title="New York">15</a>].
+
+      ABCD transitional: 4-bit signaling used by digital trunks. For N-
+           state signaling, the first N values are used.
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+       Event                            encoding (decimal)
+       ___________________________________________________
+       Acceptance tone                                  96
+       Confirmation tone                                97
+       Dial tone, recall                                98
+       End of three party service tone                  99
+       Facilities tone                                 100
+       Line lockout tone                               101
+       Number unobtainable tone                        102
+       Offering tone                                   103
+       Permanent signal tone                           104
+       Preemption tone                                 105
+       Queue tone                                      106
+       Refusal tone                                    107
+       Route tone                                      108
+       Valid tone                                      109
+       Waiting tone                                    110
+       Warning tone (end of period)                    111
+       Warning Tone (PIP tone)                         112
+
+            Table 5: Country-specific Line events
+
+           The T1 ESF (extended super frame format) allows 2, 4, and 16
+           state signaling bit options. These signaling bits are named
+           A, B, C, and D.  Signaling information is sent as robbed bits
+           in frames 6, 12, 18, and 24 when using ESF T1 framing. A D4
+           superframe only transmits 4-state signaling with A and B
+           bits. On the CEPT E1 frame, all signaling is carried in
+           timeslot 16, and two channels of 16-state (ABCD) signaling
+           are sent per frame.
+
+           Since this information is a state rather than a changing
+           signal, implementations SHOULD use the following triple-
+           redundancy mechanism, similar to the one specified in ITU-T
+           Rec. I.366.2 [<a href="#ref-16" title='"AAL type 2 service specific convergence sublayer for trunking,"'>16</a>], Annex L. At the time of a transition, the
+           same ABCD information is sent 3 times at an interval of 5 ms.
+           If another transition occurs during this time, then this
+           continues. After a period of no change, the ABCD information
+           is sent every 5 seconds.
+
+      Wink: A brief transition, typically 120-290 ms, from on-hook
+           (unseized) to off-hook (seized) and back to onhook, used by
+           the incoming exchange to signal that the call address
+           signaling can proceed.
+
+      Incoming seizure: Incoming indication of call attempt (off-hook).
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+       Event                           encoding (decimal)
+       __________________________________________________
+       MF 0... 9                                128...<a href="#page-137">137</a>
+       MF K0 or KP (start-of-pulsing)                 138
+       MF K1                                          139
+       MF K2                                          140
+       MF S0 to ST (end-of-pulsing)                   141
+       MF S1... S3                              142...<a href="#page-143">143</a>
+       ABCD signaling (see below)               144...<a href="#page-159">159</a>
+       Wink                                           160
+       Wink off                                       161
+       Incoming seizure                               162
+       Seizure                                        163
+       Unseize circuit                                164
+       Continuity test                                165
+       Default continuity tone                        166
+       Continuity tone (single tone)                  167
+       Continuity test send                           168
+       Continuity verified                            170
+       Loopback                                       171
+       Old milliwatt tone (1000 Hz)                   172
+       New milliwatt tone (1004 Hz)                   173
+
+                     Table 6: Trunk events
+
+      Seizure: Seizure by answering exchange, in response to outgoing
+           seizure.
+
+      Unseize circuit: Transition of circuit from off-hook to on-hook at
+           the end of a call.
+
+      Wink off: A brief transition, typically 100-350 ms, from off-hook
+           (seized) to on-hook (unseized) and back to off-hook (seized).
+           Used in operator services trunks.
+
+      Continuity tone send: A tone of 2010 Hz.
+
+      Continuity tone detect: A tone of 2010 Hz.
+
+      Continuity test send: A tone of 1780 Hz is sent by the calling
+           exchange. If received by the called exchange, it returns a
+           "continuity verified" tone.
+
+      Continuity verified: A tone of 2010 Hz. This is a response tone,
+           used in dual-tone procedures.
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4%20RTP%20Payload%20Format%20for%20Telephony%20Tones"></a><a class="selflink" href="#section-4" id="section-4">4</a> RTP Payload Format for Telephony Tones</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1%20Introduction"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a> Introduction</span>
+
+   As an alternative to describing tones and events by name, as
+   described in <a href="#section-3">Section 3</a>, it is sometimes preferable to describe them
+   by their waveform properties. In particular, recognition is faster
+   than for naming signals since it does not depend on recognizing
+   durations or pauses.
+
+   There is no single international standard for telephone tones such as
+   dial tone, ringing (ringback), busy, congestion ("fast-busy"),
+   special announcement tones or some of the other special tones, such
+   as payphone recognition, call waiting or record tone. However, across
+   all countries, these tones share a number of characteristics [<a href="#ref-17" title='"Various tones used in national networks,"'>17</a>]:
+
+      o  Telephony tones consist of either a single tone, the addition
+         of two or three tones or the modulation of two tones. (Almost
+         all tones use two frequencies; only the Hungarian "special dial
+         tone" has three.) Tones that are mixed have the same amplitude
+         and do not decay.
+
+      o  Tones for telephony events are in the range of 25 (ringing tone
+         in Angola) to 1800 Hz. CED is the highest used tone at 2100 Hz.
+         The telephone frequency range is limited to 3,400 Hz.  (The
+         piano has a range from 27.5 to 4186 Hz.)
+
+      o  Modulation frequencies range between 15 (ANSam tone) to 480 Hz
+         (Jamaica). Non-integer frequencies are used only for
+         frequencies of 16 2/3 and 33 1/3 Hz. (These fractional
+         frequencies appear to be derived from older AC power grid
+         frequencies.)
+
+      o  Tones that are not continuous have durations of less than four
+         seconds.
+
+      o  ITU Recommendation E.180 [<a href="#ref-18" title='"Technical characteristics of tones for telephone service,"'>18</a>] notes that different telephone
+         companies require a tone accuracy of between 0.5 and 1.5%.  The
+         Recommendation suggests a frequency tolerance of 1%.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2%20Examples%20of%20Common%20Telephone%20Tone%20Signals"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a> Examples of Common Telephone Tone Signals</span>
+
+   As an aid to the implementor, Table 7 summarizes some common tones.
+   The rows labeled "ITU ..." refer to the general recommendation of
+   Recommendation E.180 [<a href="#ref-18" title='"Technical characteristics of tones for telephone service,"'>18</a>]. Note that there are no specific guidelines
+   for these tones. In the table, the symbol "+" indicates addition of
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   the tones, without modulation, while "*" indicates amplitude
+   modulation. The meaning of some of the tones is described in <a href="#section-3.12">Section</a>
+   <a href="#section-3.12">3.12</a> or <a href="#section-3.11">Section 3.11</a> (for V.21).
+
+     Tone name             frequency  on period  off period
+     ______________________________________________________
+     CNG                        1100        0.5         3.0
+     V.25 CT                    1300        0.5         2.0
+     CED                        2100        3.3          --
+     ANS                        2100        3.3          --
+     ANSam                   2100*15        3.3          --
+     V.21 "0" bit, ch. 1        1180    0.00333
+     V.21 "1" bit, ch. 1         980    0.00333
+     V.21 "0" bit, ch. 2        1850    0.00333
+     V.21 "1" bit, ch. 2        1650    0.00333
+     ITU dial tone               425         --          --
+     U.S. dial tone          350+440         --          --
+     ______________________________________________________
+     ITU ringing tone            425  0.67--1.5        3--5
+     U.S. ringing tone       440+480        2.0         4.0
+     ITU busy tone               425
+     U.S. busy tone          480+620        0.5         0.5
+     ______________________________________________________
+     ITU congestion tone         425
+     U.S. congestion tone    480+620       0.25        0.25
+
+             Table 7: Examples of telephony tones
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.3%20Use%20of%20RTP%20Header%20Fields"></a><a class="selflink" href="#section-4.3" id="section-4.3">4.3</a> Use of RTP Header Fields</span>
+
+      Timestamp: The RTP timestamp reflects the measurement point for
+           the current packet. The event duration described in <a href="#section-3.5">Section</a>
+           <a href="#section-3.5">3.5</a> extends forwards from that time.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.4%20Payload%20Format"></a><a class="selflink" href="#section-4.4" id="section-4.4">4.4</a> Payload Format</span>
+
+   Based on the characteristics described above, this document defines
+   an RTP payload format called "tone" that can represent tones
+   consisting of one or more frequencies. (The corresponding MIME type
+   is "audio/tone".) The default timestamp rate is 8,000 Hz, but other
+   rates may be defined. Note that the timestamp rate does not affect
+   the interpretation of the frequency, just the durations.
+
+   In accordance with current practice, this payload format does not
+   have a static payload type number, but uses a RTP payload type number
+   established dynamically and out-of-band.
+
+   It is shown in Fig. 3.
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+     0                   1                   2                   3
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |    modulation   |T|  volume   |          duration             |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |R R R R|       frequency       |R R R R|       frequency       |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |R R R R|       frequency       |R R R R|       frequency       |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    ......
+
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |R R R R|       frequency       |R R R R|      frequency        |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+                 Figure 3: Payload format for tones
+
+   The payload contains the following fields:
+
+      modulation: The modulation frequency, in Hz. The field is a 9-bit
+           unsigned integer, allowing modulation frequencies up to 511
+           Hz. If there is no modulation, this field has a value of
+           zero.
+
+      T: If the "T" bit is set (one), the modulation frequency is to be
+           divided by three. Otherwise, the modulation frequency is
+           taken as is.
+
+           This bit allows frequencies accurate to 1/3 Hz, since
+           modulation frequencies such as 16 2/3 Hz are in practical
+           use.
+
+      volume: The power level of the tone, expressed in dBm0 after
+           dropping the sign, with range from 0 to -63 dBm0. (Note: A
+           preferred level range for digital tone generators is -8 dBm0
+           to -3 dBm0.)
+
+      duration: The duration of the tone, measured in timestamp units.
+           The tone begins at the instant identified by the RTP
+           timestamp and lasts for the duration value.
+
+           The definition of duration corresponds to that for sample-
+           based codecs, where the timestamp represents the sampling
+           point for the first sample.
+
+      frequency: The frequencies of the tones to be added, measured in
+           Hz and represented as a 12-bit unsigned integer. The field
+           size is sufficient to represent frequencies up to 4095 Hz,
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+           which exceeds the range of telephone systems. A value of zero
+           indicates silence. A single tone can contain any number of
+           frequencies.
+
+      R: This field is reserved for future use. The sender MUST set it
+           to zero, the receiver MUST ignore it.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.5%20Reliability"></a><a class="selflink" href="#section-4.5" id="section-4.5">4.5</a> Reliability</span>
+
+   This payload format uses the reliability mechanism described in
+   <a href="#section-3.7">Section 3.7</a>.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5%20Combining%20Tones%20and%20Named%20Events"></a><a class="selflink" href="#section-5" id="section-5">5</a> Combining Tones and Named Events</span>
+
+   The payload formats in Sections <a href="#section-3">3</a> and <a href="#section-4">4</a> can be combined into a single
+   payload using the method specified in <a href="./rfc2198">RFC 2198</a>. Fig. 4 shows an
+   example. In that example, the RTP packet combines two "tone" and one
+   "telephone-event" payloads.  The payload types are chosen arbitrarily
+   as 97 and 98, respectively, with a sample rate of 8000 Hz. Here, the
+   redundancy format has the dynamic payload type 96.
+
+   The packet represents a snapshot of U.S. ringing tone, 1.5 seconds
+   (12,000 timestamp units) into the second "on" part of the 2.0/4.0
+   second cadence, i.e., a total of 7.5 seconds (60,000 timestamp units)
+   into the ring cycle. The 440 + 480 Hz tone of this second cadence
+   started at RTP timestamp 48,000. Four seconds of silence preceded it,
+   but since <a href="./rfc2198">RFC 2198</a> only has a fourteen-bit offset, only 2.05 seconds
+   (16383 timestamp units) can be represented. Even though the tone
+   sequence is not complete, the sender was able to determine that this
+   is indeed ringback, and thus includes the corresponding named event.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6%20MIME%20Registration"></a><a class="selflink" href="#section-6" id="section-6">6</a> MIME Registration</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1%20audio%2Ftelephone-event"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a> audio/telephone-event</span>
+
+      MIME media type name: audio
+
+      MIME subtype name: telephone-event
+
+      Required parameters: none.
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 23]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-24"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+     0                   1                   2                   3
+     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    | V |P|X|  CC   |M|     PT      |       sequence number         |
+    | 2 |0|0|   0   |0|     96      |              31               |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |                           timestamp                           |
+    |                             48000                             |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |           synchronization source (SSRC) identifier            |
+    |                            0x5234a8                           |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |F|   block PT  |     timestamp offset      |   block length    |
+    |1|     98      |            16383          |         4         |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |F|   block PT  |     timestamp offset      |   block length    |
+    |1|     97      |            16383          |         8         |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |F|   Block PT  |
+    |0|     97      |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |  event=ring   |0|0| volume=0  |     duration=28383            |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    | modulation=0    |0| volume=63 |     duration=16383            |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |0 0 0 0|     frequency=0       |0 0 0 0|    frequency=0        |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    | modulation=0    |0| volume=5  |     duration=12000            |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    |0 0 0 0|     frequency=440     |0 0 0 0|    frequency=480      |
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+       Figure 4: Combining tones and events in a single RTP packet
+
+      Optional parameters: The "events" parameter lists the events
+           supported by the implementation. Events are listed as one or
+           more comma-separated elements. Each element can either be a
+           single integer or two integers separated by a hyphen.  No
+           white space is allowed in the argument. The integers
+           designate the event numbers supported by the implementation.
+           All implementations MUST support events 0 through 15, so that
+           the parameter can be omitted if the implementation only
+           supports these events.
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 24]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-25"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+           The "rate" parameter describes the sampling rate, in Hertz.
+           The number is written as a floating point number or as an
+           integer. If omitted, the default value is 8000 Hz.
+
+      Encoding considerations: This type is only defined for transfer
+           via RTP [<a href="#ref-1" title='"RTP: A Transport Protocol for Real-Time Applications"'>1</a>].
+
+      Security considerations: See the "Security Considerations"
+           (<a href="#section-7">Section 7</a>) section in this document.
+
+      Interoperability considerations: none
+
+      Published specification: This document.
+
+      Applications which use this media: The telephone-event audio
+           subtype supports the transport of events occurring in
+           telephone systems over the Internet.
+
+      Additional information:
+
+           1. Magic number(s): N/A
+
+           2. File extension(s): N/A
+
+           3. Macintosh file type code: N/A
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2%20audio%2Ftone"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a> audio/tone</span>
+
+      MIME media type name: audio
+
+      MIME subtype name: tone
+
+      Required parameters: none
+
+      Optional parameters: The "rate" parameter describes the sampling
+           rate, in Hertz. The number is written as a floating point
+           number or as an integer. If omitted, the default value is
+           8000 Hz.
+
+      Encoding considerations: This type is only defined for transfer
+           via RTP [<a href="#ref-1" title='"RTP: A Transport Protocol for Real-Time Applications"'>1</a>].
+
+      Security considerations: See the "Security Considerations"
+           (<a href="#section-7">Section 7</a>) section in this document.
+
+      Interoperability considerations: none
+
+      Published specification: This document.
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 25]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-26"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+      Applications which use this media: The tone audio subtype supports
+           the transport of pure composite tones, for example those
+           commonly used in the current telephone system to signal call
+           progress.
+
+      Additional information:
+
+           1. Magic number(s): N/A
+
+           2. File extension(s): N/A
+
+           3. Macintosh file type code: N/A
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a> Security Considerations</span>
+
+   RTP packets using the payload format defined in this specification
+   are subject to the security considerations discussed in the RTP
+   specification (<a href="./rfc1889">RFC 1889</a> [<a href="#ref-1" title='"RTP: A Transport Protocol for Real-Time Applications"'>1</a>]), and any appropriate RTP profile (for
+   example <a href="./rfc1890">RFC 1890</a> [<a href="#ref-19" title='"RTP Profile for Audio and Video Conferences with Minimal Control"'>19</a>]).This implies that confidentiality of the media
+   streams is achieved by encryption. Because the data compression used
+   with this payload format is applied end-to-end, encryption may be
+   performed after compression so there is no conflict between the two
+   operations.
+
+   This payload type does not exhibit any significant non-uniformity in
+   the receiver side computational complexity for packet processing to
+   cause a potential denial-of-service threat.
+
+   In older networks employing in-band signaling and lacking appropriate
+   tone filters, the tones in <a href="#section-3.14">Section 3.14</a> may be used to commit toll
+   fraud.
+
+   Additional security considerations are described in <a href="./rfc2198">RFC 2198</a> [<a href="#ref-6" title='"RTP Payload for Redundant Audio Data"'>6</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a> IANA Considerations</span>
+
+   This document defines two new RTP payload formats, named telephone-
+   event and tone, and associated Internet media (MIME) types,
+   audio/telephone-event and audio/tone.
+
+   Within the audio/telephone-event type, additional events MUST be
+   registered with IANA. Registrations are subject to approval by the
+   current chair of the IETF audio/video transport working group, or by
+   an expert designated by the transport area director if the AVT group
+   has closed.
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 26]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-27"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   The meaning of new events MUST be documented either as an RFC or an
+   equivalent standards document produced by another standardization
+   body, such as ITU-T.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9%20Acknowledgements"></a><a class="selflink" href="#section-9" id="section-9">9</a> Acknowledgements</span>
+
+   The suggestions of the Megaco working group are gratefully
+   acknowledged.  Detailed advice and comments were provided by Fred
+   Burg, Steve Casner, Fatih Erdin, Bill Foster, Mike Fox, Gunnar
+   Hellstrom, Terry Lyons, Steve Magnell, Vern Paxson and Colin Perkins.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10%20Authors%27%20Addresses"></a><a class="selflink" href="#section-10" id="section-10">10</a> Authors' Addresses</span>
+
+   Henning Schulzrinne
+   Dept. of Computer Science
+   Columbia University
+   1214 Amsterdam Avenue
+   New York, NY 10027
+   USA
+
+   EMail:  schulzrinne@cs.columbia.edu
+
+
+   Scott Petrack
+   MetaTel
+   45 Rumford Avenue
+   Waltham, MA 02453
+   USA
+
+   EMail:  scott.petrack@metatel.com
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11%20Bibliography"></a><a class="selflink" href="#section-11" id="section-11">11</a> Bibliography</span>
+
+   [<a id="ref-1">1</a>]  Schulzrinne, H., Casner, S., Frederick, R. and V. Jacobson,
+        "RTP:  A Transport Protocol for Real-Time Applications", <a href="./rfc1889">RFC</a>
+        <a href="./rfc1889">1889</a>, January 1996.
+
+   [<a id="ref-2">2</a>]  Bradner, S., "Key words for use in RFCs to Indicate Requirement
+        Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-3">3</a>]  International Telecommunication Union, "Procedures for starting
+        sessions of data transmission over the public switched telephone
+        network," Recommendation V.8, Telecommunication Standardization
+        Sector of ITU, Geneva, Switzerland, Feb. 1998.
+
+   [<a id="ref-4">4</a>]  R. Kocen and T. Hatala, "Voice over frame relay implementation
+        agreement", Implementation Agreement FRF.11, Frame Relay Forum,
+        Foster City, California, Jan. 1997.
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 27]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-28"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   [<a id="ref-5">5</a>]  International Telecommunication Union, "Multifrequency push-
+        button signal reception," Recommendation Q.24, Telecommunication
+        Standardization Sector of ITU, Geneva, Switzerland, 1988.
+
+   [<a id="ref-6">6</a>]  Perkins, C., Kouvelas, I., Hodson, O., Hardman, V., Handley, M.,
+        Bolot, J., Vega-Garcia, A. and S. Fosse-Parisis, "RTP Payload
+        for Redundant Audio Data", <a href="./rfc2198">RFC 2198</a>, September 1997.
+
+   [<a id="ref-7">7</a>]  Handley M. and V. Jacobson, "SDP: Session Description Protocol",
+        <a href="./rfc2327">RFC 2327</a>, April 1998.
+
+   [<a id="ref-8">8</a>]  International Telecommunication Union, "Automatic answering
+        equipment and general procedures for automatic calling equipment
+        on the general switched telephone network including procedures
+        for disabling of echo control devices for both manually and
+        automatically established calls," Recommendation V.25,
+        Telecommunication Standardization Sector of ITU, Geneva,
+        Switzerland, Oct. 1996.
+
+   [<a id="ref-9">9</a>]  International Telecommunication Union, "Procedures for document
+        facsimile transmission in the general switched telephone
+        network," Recommendation T.30, Telecommunication Standardization
+        Sector of ITU, Geneva, Switzerland, July 1996.
+
+   [<a id="ref-10">10</a>] International Telecommunication Union, "Echo cancellers,"
+        Recommendation G.165, Telecommunication Standardization Sector
+        of ITU, Geneva, Switzerland, Mar. 1993.
+
+   [<a id="ref-11">11</a>] International Telecommunication Union, "A modem operating at
+        data signaling rates of up to 33 600 bit/s for use on the
+        general switched telephone network and on leased point-to-point
+        2-wire telephone-type circuits," Recommendation V.34,
+        Telecommunication Standardization Sector of ITU, Geneva,
+        Switzerland, Feb. 1998.
+
+   [<a id="ref-12">12</a>] International Telecommunication Union, "Procedures for the
+        identification and selection of common modes of operation
+        between data circuit-terminating equipments (DCEs) and between
+        data terminal equipments (DTEs) over the public switched
+        telephone network and on leased point-to-point telephone-type
+        circuits," Recommendation V.8bis, Telecommunication
+        Standardization Sector of ITU, Geneva, Switzerland, Sept. 1998.
+
+   [<a id="ref-13">13</a>] International Telecommunication Union, "Application of tones and
+        recorded announcements in telephone services," Recommendation
+        E.182, Telecommunication Standardization Sector of ITU, Geneva,
+        Switzerland, Mar. 1998.
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 28]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-29"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+   [<a id="ref-14">14</a>] Bellcore, "Functional criteria for digital loop carrier
+        systems," Technical Requirement TR-NWT-000057, Telcordia
+        (formerly Bellcore), Morristown, New Jersey, Jan. 1993.
+
+   [<a id="ref-15">15</a>] J. G. van Bosse, Signaling in Telecommunications Networks
+        Telecommunications and Signal Processing, New York, New York:
+        Wiley, 1998.
+
+   [<a id="ref-16">16</a>] International Telecommunication Union, "AAL type 2 service
+        specific convergence sublayer for trunking," Recommendation
+        I.366.2, Telecommunication Standardization Sector of ITU,
+        Geneva, Switzerland, Feb. 1999.
+
+   [<a id="ref-17">17</a>] International Telecommunication Union, "Various tones used in
+        national networks," Recommendation Supplement 2 to
+        Recommendation E.180, Telecommunication Standardization Sector
+        of ITU, Geneva, Switzerland, Jan. 1994.
+
+   [<a id="ref-18">18</a>] International Telecommunication Union, "Technical
+        characteristics of tones for telephone service," Recommendation
+        Supplement 2 to Recommendation E.180, Telecommunication
+        Standardization Sector of ITU, Geneva, Switzerland, Jan. 1994.
+
+   [<a id="ref-19">19</a>] Schulzrinne, H., "RTP Profile for Audio and Video Conferences
+        with Minimal Control", <a href="./rfc1890">RFC 1890</a>, January 1996.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Schulzrinne &amp; Petrack       Standards Track                    [Page 29]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-30"></span>
+<span class="grey"><a href="./rfc2833">RFC 2833</a>                         Tones                          May 2000</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/12%20Full%20Copyright%20Statement"></a><a class="selflink" href="#section-12" id="section-12">12</a> Full Copyright Statement</span>
+
+   Copyright (C) The Internet Society (2000).  All Rights Reserved.
+
+   This document and translations of it may be copied and furnished to
+   others, and derivative works that comment on or otherwise explain it
+   or assist in its implementation may be prepared, copied, published
+   and distributed, in whole or in part, without restriction of any
+   kind, provided that the above copyright notice and this paragraph are
+   included on all such copies and derivative works.  However, this
+   document itself may not be modified in any way, such as by removing
+   the copyright notice or references to the Internet Society or other
+   Internet organizations, except as needed for the purpose of
+   developing Internet standards in which case the procedures for
+   copyrights defined in the Internet Standards process must be
+   followed, or as required to translate it into languages other than
+   English.
+
+   The limited permissions granted above are perpetual and will not be
+   revoked by the Internet Society or its successors or assigns.
+
+   This document and the information contained herein is provided on an
+   "AS IS" basis and THE INTERNET SOCIETY AND THE INTERNET ENGINEERING
+   TASK FORCE DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+   BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE INFORMATION
+   HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED WARRANTIES OF
+   MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is currently provided by the
+   Internet Society.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Schulzrinne &amp; Petrack       Standards Track                    [Page 30]
+</pre>
+</body></html>

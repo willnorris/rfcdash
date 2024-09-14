@@ -1,0 +1,670 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                        N. Khademi
+Request for Comments: 8511                                      M. Welzl
+Category: Experimental                                University of Oslo
+ISSN: 2070-1721                                              G. Armitage
+                                                                 Netflix
+                                                            G. Fairhurst
+                                                  University of Aberdeen
+                                                           December 2018
+
+
+                 <span class="h1">TCP Alternative Backoff with ECN (ABE)</span>
+
+Abstract
+
+   Active Queue Management (AQM) mechanisms allow for burst tolerance
+   while enforcing short queues to minimise the time that packets spend
+   enqueued at a bottleneck.  This can cause noticeable performance
+   degradation for TCP connections traversing such a bottleneck,
+   especially if there are only a few flows or their bandwidth-delay
+   product (BDP) is large.  The reception of a Congestion Experienced
+   (CE) Explicit Congestion Notification (ECN) mark indicates that an
+   AQM mechanism is used at the bottleneck, and the bottleneck network
+   queue is therefore likely to be short.  Feedback of this signal
+   allows the TCP sender-side ECN reaction in congestion avoidance to
+   reduce the Congestion Window (cwnd) by a smaller amount than the
+   congestion control algorithm's reaction to inferred packet loss.
+   Therefore, this specification defines an experimental change to the
+   TCP reaction specified in <a href="./rfc3168">RFC 3168</a>, as permitted by <a href="./rfc8311">RFC 8311</a>.
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for examination, experimental implementation, and
+   evaluation.
+
+   This document defines an Experimental Protocol for the Internet
+   community.  This document is a product of the Internet Engineering
+   Task Force (IETF).  It represents the consensus of the IETF
+   community.  It has received public review and has been approved for
+   publication by the Internet Engineering Steering Group (IESG).  Not
+   all documents approved by the IESG are candidates for any level of
+   Internet Standard; see <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8511">https://www.rfc-editor.org/info/rfc8511</a>.
+
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+   <a href="#section-2">2</a>.  Definitions . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-3">3</a>.  Specification . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-3.1">3.1</a>.  Choice of ABE Multiplier  . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+   <a href="#section-4">4</a>.  Discussion  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-6">6</a>
+     <a href="#section-4.1">4.1</a>.  Rationale for Using ECN to Vary the Degree of Backoff . .   <a href="#page-6">6</a>
+     <a href="#section-4.2">4.2</a>.  An RTT-Based Response to Indicated Congestion . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  ABE Deployment Requirements . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-6">6</a>.  ABE Experiment Goals  . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-7">7</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-8">8</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#section-9">9</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+     <a href="#section-9.1">9.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+     <a href="#section-9.2">9.2</a>.  Informative References  . . . . . . . . . . . . . . . . .   <a href="#page-9">9</a>
+   Acknowledgements  . . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-12">12</a>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   Explicit Congestion Notification (ECN) [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>] makes it possible
+   for an Active Queue Management (AQM) mechanism to signal the presence
+   of incipient congestion without necessarily incurring packet loss.
+   This lets the network deliver some packets to an application that
+   would have been dropped if the application or transport did not
+   support ECN.  This packet loss reduction is the most obvious benefit
+   of ECN, but it is often relatively modest.  Other benefits of
+   deploying ECN have been documented in [<a href="./rfc8087" title='"The Benefits of Using Explicit Congestion Notification (ECN)"'>RFC8087</a>].
+
+   The rules for ECN were originally written to be very conservative,
+   and they required the congestion control algorithms of ECN-Capable
+   Transport (ECT) protocols to treat indications of congestion
+   signalled by ECN exactly the same as they would treat an inferred
+   packet loss [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>].  Research has demonstrated the benefits of
+   reducing network delays that are caused by interaction of loss-based
+   TCP congestion control and excessive buffering [<a href="#ref-BUFFERBLOAT">BUFFERBLOAT</a>].  This
+   has led to the creation of AQM mechanisms like Proportional Integral
+   Controller Enhanced (PIE) [<a href="./rfc8033" title='"Proportional Integral Controller Enhanced (PIE): A Lightweight Control Scheme to Address the Bufferbloat Problem"'>RFC8033</a>] and Controlling Queue Delay
+   (CoDel) [<a href="./rfc8289" title='"Controlled Delay Active Queue Management"'>RFC8289</a>], which prevent bloated queues that are common with
+   unmanaged and excessively large buffers deployed across the Internet
+   [<a href="#ref-BUFFERBLOAT">BUFFERBLOAT</a>].
+
+   The AQM mechanisms mentioned above aim to keep a sustained queue
+   short while tolerating transient (short-term) packet bursts.
+   However, currently used loss-based congestion control mechanisms are
+   not always able to effectively utilise a bottleneck link where there
+   are short queues.  For example, a TCP sender using the Reno
+   congestion control needs to be able to store at least an end-to-end
+   bandwidth-delay product (BDP) worth of data at the bottleneck buffer
+   if it is to maintain full path utilisation in the face of loss-
+   induced reduction of the congestion window (cwnd) [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>].  This
+   amount of buffering effectively doubles the amount of data that can
+   be in flight and the maximum round-trip time (RTT) experienced by the
+   TCP sender.
+
+   Modern AQM mechanisms can use ECN to signal the early signs of
+   impending queue buildup long before a tail-drop queue would be forced
+   to resort to dropping packets.  It is therefore appropriate for the
+   transport protocol congestion control algorithm to have a more
+   measured response when it receives an indication with an early
+   warning of congestion after the remote endpoint receives an ECN
+   CE-marked packet.  Recognizing these changes in modern AQM practices,
+   the strict requirement that ECN CE signals be treated identically to
+   inferred packet loss has been relaxed [<a href="./rfc8311" title='"Relaxing Restrictions on Explicit Congestion Notification (ECN) Experimentation"'>RFC8311</a>].  This document
+   therefore defines a new sender-side-only congestion control response
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   called "ABE" (Alternative Backoff with ECN).  ABE improves TCP's
+   average throughput when routers use AQM-controlled buffers that allow
+   only for short queues.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Definitions"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Definitions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Specification"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Specification</span>
+
+   This specification changes the congestion control algorithm of an
+   ECN-Capable TCP transport protocol by changing the TCP-sender
+   response to feedback from the TCP receiver that indicates the
+   reception of a CE-marked packet, i.e., receipt of a packet with the
+   ECN-Echo flag (defined in [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>]) set, following the process
+   defined in [<a href="./rfc8311" title='"Relaxing Restrictions on Explicit Congestion Notification (ECN) Experimentation"'>RFC8311</a>].
+
+   The TCP-sender response is currently specified in <a href="#section-6.1.2">Section 6.1.2</a> of
+   the ECN specification [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>] and has been slightly updated by
+   <a href="./rfc8311#section-4.1">Section 4.1 of [RFC8311]</a> to read as:
+
+      The indication of congestion should be treated just as a
+      congestion loss in non-ECN-Capable TCP.  That is, the TCP source
+      halves the congestion window "cwnd" and reduces the slow start
+      threshold "ssthresh", unless otherwise specified by an
+      Experimental RFC in the IETF document stream.
+
+   As permitted by <a href="./rfc8311">RFC 8311</a>, this document specifies a sender-side
+   change to TCP where receipt of a packet with the ECN-Echo flag SHOULD
+   trigger the TCP source to set the slow start threshold (ssthresh) to
+   0.8 times the FlightSize, with a lower bound of 2 * SMSS applied to
+   the result (where SMSS stands for Sender Maximum Segment Size)).  As
+   in [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>], the TCP sender also reduces the cwnd value to no more
+   than the new ssthresh value.  <a href="./rfc3168#section-6.1.2">Section 6.1.2 of RFC 3168</a> provides
+   guidance on setting a cwnd less than 2 * SMSS.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.1.%20%20Choice%20of%20ABE%20Multiplier"></a><a class="selflink" href="#section-3.1" id="section-3.1">3.1</a>.  Choice of ABE Multiplier</span>
+
+   ABE decouples the reaction of a TCP sender to inferred packet loss
+   from the indication of ECN-signalled congestion in the congestion
+   avoidance phase.  To achieve this, ABE uses a different scaling
+   factor for Equation 4 in <a href="./rfc5681#section-3.1">Section 3.1 of [RFC5681]</a>.  The description
+   respectively uses beta_{loss} and beta_{ecn} to refer to the
+   multiplicative decrease factors applied in response to inferred
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   packet loss, and in response to a receiver indicating ECN-signalled
+   congestion.  For non-ECN-enabled TCP connections, only beta_{loss}
+   applies.
+
+   In other words, in response to inferred packet loss:
+
+      ssthresh = max (FlightSize * beta_{loss}, 2 * SMSS)
+
+   and in response to an indication of an ECN-signalled congestion:
+
+      ssthresh = max (FlightSize * beta_{ecn}, 2 * SMSS)
+
+      and
+
+      cwnd = ssthresh
+
+      (If ssthresh == 2 * SMSS, <a href="./rfc3168#section-6.1.2">Section 6.1.2 of RFC 3168</a> provides
+      guidance on setting a cwnd lower than 2 * SMSS.)
+
+   where FlightSize is the amount of outstanding data in the network,
+   upper-bounded by the smaller of the sender's cwnd and the receiver's
+   advertised window (rwnd) [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>].  The higher the values of
+   beta_{loss} and beta_{ecn}, the less aggressive the response of any
+   individual backoff event.
+
+   The appropriate choice for beta_{loss} and beta_{ecn} values is a
+   balancing act between path utilisation and draining the bottleneck
+   queue.  More aggressive backoff (smaller beta_*) risks the
+   underutilisation of the path, while less-aggressive backoff (larger
+   beta_*) can result in slower draining of the bottleneck queue.
+
+   The Internet has already been running with at least two different
+   beta_{loss} values for several years: the standard value is 0.5
+   [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>], and the Linux implementation of CUBIC [<a href="./rfc8312" title='"CUBIC for Fast Long-Distance Networks"'>RFC8312</a>] has used a
+   multiplier of 0.7 since kernel version 2.6.25 released in 2008.  ABE
+   does not change the value of beta_{loss} used by current TCP
+   implementations.
+
+   The recommendation in this document specifies a value of
+   beta_{ecn}=0.8.  This recommended beta_{ecn} value is only applicable
+   for the standard TCP congestion control [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>].  The selection of
+   beta_{ecn} enables tuning the response of a TCP connection to shallow
+   AQM-marking thresholds.  beta_{loss} characterizes the response of a
+   congestion control algorithm to packet loss, i.e., exhaustion of
+   buffers (of unknown depth).  Different values for beta_{loss} have
+   been suggested for TCP congestion control algorithms.  Consequently,
+   beta_{ecn} is likely to be an algorithm-specific parameter rather
+   than a constant multiple of the algorithm's existing beta_{loss}.
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   A range of tests (Section IV of [<a href="#ref-ABE2017" title='"Alternative backoff: Achieving low latency and high throughput with ECN and AQM"'>ABE2017</a>]) with NewReno and CUBIC
+   over CoDel and PIE in lightly multiplexed scenarios have explored
+   this choice of parameter.  The results of these tests indicate that
+   CUBIC connections benefit from beta_{ecn} of 0.85 (cf.  beta_{loss} =
+   0.7), and NewReno connections see improvements with beta_{ecn} in the
+   range 0.7 to 0.85 (cf. beta_{loss} = 0.5).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Discussion"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Discussion</span>
+
+   Much of the technical background for ABE can be found in [<a href="#ref-ABE2017" title='"Alternative backoff: Achieving low latency and high throughput with ECN and AQM"'>ABE2017</a>],
+   which uses a mix of experiments, theory, and simulations with NewReno
+   [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>] and CUBIC [<a href="./rfc8312" title='"CUBIC for Fast Long-Distance Networks"'>RFC8312</a>] to evaluate its performance.  ABE was
+   shown to present significant performance gains in lightly-multiplexed
+   (few concurrent flows) scenarios, without losing the delay-reduction
+   benefits of deploying CoDel or PIE.  The performance improvement is
+   achieved when reacting to ECN-Echo in congestion avoidance (when
+   ssthresh &gt; cwnd) by multiplying cwnd and ssthresh with a value in the
+   range [0.7,0.85].  Applying ABE when cwnd is smaller than or equal to
+   ssthresh is not currently recommended, but its use in that scenario
+   may benefit from additional attention, experimentation, and
+   specification.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Rationale%20for%20Using%20ECN%20to%20Vary%20the%20Degree%20of%20Backoff"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Rationale for Using ECN to Vary the Degree of Backoff</span>
+
+   AQM mechanisms such as CoDel [<a href="./rfc8289" title='"Controlled Delay Active Queue Management"'>RFC8289</a>] and PIE [<a href="./rfc8033" title='"Proportional Integral Controller Enhanced (PIE): A Lightweight Control Scheme to Address the Bufferbloat Problem"'>RFC8033</a>] set a delay
+   target in routers and use congestion notifications to constrain the
+   queuing delays experienced by packets rather than in response to
+   impending or actual bottleneck buffer exhaustion.  With current
+   default delay targets, CoDel and PIE both effectively emulate a
+   bottleneck with a short queue (Section II of [<a href="#ref-ABE2017" title='"Alternative backoff: Achieving low latency and high throughput with ECN and AQM"'>ABE2017</a>]) while also
+   allowing short traffic bursts into the queue.  This provides
+   acceptable performance for TCP connections over a path with a low
+   BDP, or in highly multiplexed scenarios (many concurrent transport
+   flows).  However, in a lightly multiplexed case over a path with a
+   large BDP, conventional TCP backoff leads to gaps in packet
+   transmission and underutilisation of the path.
+
+   Instead of discarding packets, an AQM mechanism is allowed to mark
+   ECN-Capable packets with an ECN CE mark.  The reception of CE-mark
+   feedback not only indicates congestion on the network path, it also
+   indicates that an AQM mechanism exists at the bottleneck along the
+   path.  Therefore, the CE mark likely came from a bottleneck with a
+   controlled short queue.  Reacting differently to an ECN-signalled
+   congestion than to an inferred packet loss can then yield the benefit
+   of a reduced backoff when queues are short.  Using ECN can also be
+   advantageous for several other reasons [<a href="./rfc8087" title='"The Benefits of Using Explicit Congestion Notification (ECN)"'>RFC8087</a>].
+
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   The idea of reacting differently to inferred packet loss and
+   detection of an ECN-signalled congestion predates this specification,
+   e.g., previous research proposed using ECN CE-marked feedback to
+   modify TCP congestion control behaviour via a larger multiplicative
+   decrease factor in conjunction with a smaller additive increase
+   factor [<a href="#ref-ICC2002" title='"TCP increase/decrease behavior with explicit congestion notification (ECN)"'>ICC2002</a>].  The goal of this former work was to operate across
+   AQM bottlenecks (using Random Early Detection (RED)) that were not
+   necessarily configured to emulate a short queue.  (The current usage
+   of RED as an Internet AQM method is limited [<a href="./rfc7567" title='"IETF Recommendations Regarding Active Queue Management"'>RFC7567</a>].)
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20An%20RTT-Based%20Response%20to%20Indicated%20Congestion"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  An RTT-Based Response to Indicated Congestion</span>
+
+   This specification applies to the use of ECN feedback as defined in
+   [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>], which specifies a response to indicated congestion that is
+   no more frequent than once per path round-trip time.  Since ABE
+   responds to indicated congestion once per RTT, it does not respond to
+   any further loss within the same RTT because an ABE sender has
+   already reduced the congestion window.  If congestion persists after
+   such reduction, ABE continues to reduce the congestion window in each
+   consecutive RTT.  This consecutive reduction can protect the network
+   against long-standing unfairness in the case of AQM algorithms that
+   do not keep a small average queue length.  The mechanism does not
+   rely on Accurate ECN [<a href="#ref-ACC-ECN-FEEDBACK">ACC-ECN-FEEDBACK</a>].
+
+   In contrast, transport protocol mechanisms can also be designed to
+   utilise more frequent and detailed ECN feedback (e.g., Accurate ECN
+   [<a href="#ref-ACC-ECN-FEEDBACK">ACC-ECN-FEEDBACK</a>]), which then permit a congestion control response
+   that adjusts the sending rate more frequently.  Data Center TCP
+   (DCTCP) [<a href="./rfc8257" title='"Data Center TCP (DCTCP): TCP Congestion Control for Data Centers"'>RFC8257</a>] is an example of this approach.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20ABE%20Deployment%20Requirements"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  ABE Deployment Requirements</span>
+
+   This update is a sender-side-only change.  Like other changes to
+   congestion control algorithms, it does not require any change to the
+   TCP receiver or to network devices.  It does not require any ABE-
+   specific changes in routers or the use of Accurate ECN feedback
+   [<a href="#ref-ACC-ECN-FEEDBACK">ACC-ECN-FEEDBACK</a>] by a receiver.
+
+   If the method is only deployed by some senders, and not by others,
+   the senders using it can gain some advantage, possibly at the expense
+   of other flows that do not use this updated method.  Because this
+   advantage applies only to ECN-marked packets and not to packet-loss
+   indications, an ECN-Capable bottleneck will still fall back to
+   dropping packets if a TCP sender using ABE is too aggressive.  The
+   result is no different than if the TCP sender were using traditional
+   loss-based congestion control.
+
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   When used with bottlenecks that do not support ECN marking, the
+   specification does not modify the transport protocol.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20ABE%20Experiment%20Goals"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  ABE Experiment Goals</span>
+
+   [<a id="ref-RFC3168">RFC3168</a>] states that the congestion control response following an
+   indication of ECN-signalled congestion is the same as the response to
+   a dropped packet.  [<a href="./rfc8311" title='"Relaxing Restrictions on Explicit Congestion Notification (ECN) Experimentation"'>RFC8311</a>] updates this specification to allow
+   systems to provide a different behaviour when they experience ECN-
+   signalled congestion rather than packet loss.  The present
+   specification defines such an experiment and is an Experimental RFC.
+   We expect to propose it as a Standards-Track document in the future.
+
+   The purpose of the Internet experiment is to collect experience with
+   the deployment of ABE and confirm acceptable safety in deployed
+   networks that use this update to TCP congestion control.  To evaluate
+   ABE, this experiment requires support in AQM routers for the ECN-
+   marking of packets carrying the ECN-Capable Transport codepoint
+   ECT(0) [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>].
+
+   The result of this Internet experiment ought to include an
+   investigation of the implications of experiencing an ECN-CE mark
+   followed by loss within the same RTT.  At the end of the experiment,
+   this will be reported to the TCPM Working Group or the IESG.
+
+   ABE is implemented as a patch for Linux and FreeBSD.  This is meant
+   for research and experimentation and is available for download at
+   &lt;<a href="https://heim.ifi.uio.no/michawe/research/abe/">https://heim.ifi.uio.no/michawe/research/abe/</a>&gt;.  This code was used
+   to produce the test results that are reported in [<a href="#ref-ABE2017" title='"Alternative backoff: Achieving low latency and high throughput with ECN and AQM"'>ABE2017</a>].  The
+   FreeBSD code was committed to the mainline kernel on March 19, 2018
+   [<a href="#ref-ABE-REVISION">ABE-REVISION</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  IANA Considerations</span>
+
+   This document has no IANA actions.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Security%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Security Considerations</span>
+
+   The described method is a sender-side-only transport change, and it
+   does not change the protocol messages exchanged.  Therefore, the
+   security considerations for ECN [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>] still apply.
+
+   This is a change to TCP congestion control with ECN that will
+   typically lead to a change in the capacity achieved when flows share
+   a network bottleneck.  This could result in some flows receiving more
+   than their fair share of capacity.  Similar unfairness in the way
+   that capacity is shared is also exhibited by other congestion control
+   mechanisms that have been in use in the Internet for many years
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   (e.g., CUBIC [<a href="./rfc8312" title='"CUBIC for Fast Long-Distance Networks"'>RFC8312</a>]).  Unfairness may also be a result of other
+   factors, including the round-trip time experienced by a flow.  ABE
+   applies only when ECN-marked packets are received, not when packets
+   are lost.  Therefore, use of ABE cannot lead to congestion collapse.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20References"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.1.%20%20Normative%20References"></a><a class="selflink" href="#section-9.1" id="section-9.1">9.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC3168">RFC3168</a>]  Ramakrishnan, K., Floyd, S., and D. Black, "The Addition
+              of Explicit Congestion Notification (ECN) to IP",
+              <a href="./rfc3168">RFC 3168</a>, DOI 10.17487/RFC3168, September 2001,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc3168">https://www.rfc-editor.org/info/rfc3168</a>&gt;.
+
+   [<a id="ref-RFC5681">RFC5681</a>]  Allman, M., Paxson, V., and E. Blanton, "TCP Congestion
+              Control", <a href="./rfc5681">RFC 5681</a>, DOI 10.17487/RFC5681, September 2009,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5681">https://www.rfc-editor.org/info/rfc5681</a>&gt;.
+
+   [<a id="ref-RFC7567">RFC7567</a>]  Baker, F., Ed. and G. Fairhurst, Ed., "IETF
+              Recommendations Regarding Active Queue Management",
+              <a href="https://www.rfc-editor.org/bcp/bcp197">BCP 197</a>, <a href="./rfc7567">RFC 7567</a>, DOI 10.17487/RFC7567, July 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7567">https://www.rfc-editor.org/info/rfc7567</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+   [<a id="ref-RFC8257">RFC8257</a>]  Bensley, S., Thaler, D., Balasubramanian, P., Eggert, L.,
+              and G. Judd, "Data Center TCP (DCTCP): TCP Congestion
+              Control for Data Centers", <a href="./rfc8257">RFC 8257</a>, DOI 10.17487/RFC8257,
+              October 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8257">https://www.rfc-editor.org/info/rfc8257</a>&gt;.
+
+   [<a id="ref-RFC8311">RFC8311</a>]  Black, D., "Relaxing Restrictions on Explicit Congestion
+              Notification (ECN) Experimentation", <a href="./rfc8311">RFC 8311</a>,
+              DOI 10.17487/RFC8311, January 2018,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8311">https://www.rfc-editor.org/info/rfc8311</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.2.%20%20Informative%20References"></a><a class="selflink" href="#section-9.2" id="section-9.2">9.2</a>.  Informative References</span>
+
+   [<a id="ref-ABE-REVISION">ABE-REVISION</a>]
+              Stewart, L., "ABE patch review in FreeBSD",
+              Revision 331214, March 2018, &lt;<a href="https://svnweb.freebsd.org/base?view=revision&amp;revision=331214">https://svnweb.freebsd.org/</a>
+              <a href="https://svnweb.freebsd.org/base?view=revision&amp;revision=331214">base?view=revision&amp;revision=331214</a>&gt;.
+
+
+
+<span class="grey">Khademi, et al.               Experimental                      [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+   [<a id="ref-ABE2017">ABE2017</a>]  Khademi, N., Armitage, G., Welzl, M., Zander, S.,
+              Fairhurst, G., and D. Ros, "Alternative backoff: Achieving
+              low latency and high throughput with ECN and AQM", IFIP
+              Networking Conference and Workshops Stockholm, Sweden,
+              DOI 10.23919/IFIPNetworking.2017.8264863, June 2017.
+
+   [<a id="ref-ACC-ECN-FEEDBACK">ACC-ECN-FEEDBACK</a>]
+              Briscoe, B., Kuehlewind, M., and R. Scheffenegger, "More
+              Accurate ECN Feedback in TCP", Work in Progress,
+              <a href="./draft-ietf-tcpm-accurate-ecn-07">draft-ietf-tcpm-accurate-ecn-07</a>, July 2018.
+
+   [<a id="ref-BUFFERBLOAT">BUFFERBLOAT</a>]
+              Gettys, J. and K. Nichols, "Bufferbloat: Dark Buffers in
+              the Internet", ACM Queue, Volume 9, Issue 11,
+              DOI 10.1145/2063166.2071893, November 2011,
+              &lt;<a href="https://queue.acm.org/detail.cfm?id=2071893">https://queue.acm.org/detail.cfm?id=2071893</a>&gt;.
+
+   [<a id="ref-ICC2002">ICC2002</a>]  Kwon, M. and S. Fahmy, "TCP increase/decrease behavior
+              with explicit congestion notification (ECN)", 2002 IEEE
+              International Conference on Communications Conference
+              Proceedings, ICC 2002, Cat. No.02CH37333,
+              DOI 10.1109/ICC.2002.997262, May 2002,
+              &lt;<a href="http://dx.doi.org/10.1109/ICC.2002.997262">http://dx.doi.org/10.1109/ICC.2002.997262</a>&gt;.
+
+   [<a id="ref-RFC8033">RFC8033</a>]  Pan, R., Natarajan, P., Baker, F., and G. White,
+              "Proportional Integral Controller Enhanced (PIE): A
+              Lightweight Control Scheme to Address the Bufferbloat
+              Problem", <a href="./rfc8033">RFC 8033</a>, DOI 10.17487/RFC8033, February 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8033">https://www.rfc-editor.org/info/rfc8033</a>&gt;.
+
+   [<a id="ref-RFC8087">RFC8087</a>]  Fairhurst, G. and M. Welzl, "The Benefits of Using
+              Explicit Congestion Notification (ECN)", <a href="./rfc8087">RFC 8087</a>,
+              DOI 10.17487/RFC8087, March 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8087">https://www.rfc-editor.org/info/rfc8087</a>&gt;.
+
+   [<a id="ref-RFC8289">RFC8289</a>]  Nichols, K., Jacobson, V., McGregor, A., Ed., and J.
+              Iyengar, Ed., "Controlled Delay Active Queue Management",
+              <a href="./rfc8289">RFC 8289</a>, DOI 10.17487/RFC8289, January 2018,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8289">https://www.rfc-editor.org/info/rfc8289</a>&gt;.
+
+   [<a id="ref-RFC8312">RFC8312</a>]  Rhee, I., Xu, L., Ha, S., Zimmermann, A., Eggert, L., and
+              R. Scheffenegger, "CUBIC for Fast Long-Distance Networks",
+              <a href="./rfc8312">RFC 8312</a>, DOI 10.17487/RFC8312, February 2018,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8312">https://www.rfc-editor.org/info/rfc8312</a>&gt;.
+
+
+
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                     [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+Acknowledgements
+
+   Authors N. Khademi, M. Welzl, and G. Fairhurst were partly funded by
+   the European Community under its Seventh Framework Programme through
+   the Reducing Internet Transport Latency (RITE) project (ICT-317700).
+   The views expressed are solely those of the authors.
+
+   Author G. Armitage performed most of his work on this document while
+   employed by Swinburne University of Technology, Melbourne, Australia.
+
+   The authors would like to thank Stuart Cheshire for many suggestions
+   when revising this document.  They would also like to thank the
+   following people for their contributions to [<a href="#ref-ABE2017" title='"Alternative backoff: Achieving low latency and high throughput with ECN and AQM"'>ABE2017</a>]: Chamil
+   Kulatunga, David Ros, Stein Gjessing, and Sebastian Zander.  Thanks
+   also to (in alphabetical order) David Black, Roland Bless, Bob
+   Briscoe, Markku Kojo, John Leslie, Lawrence Stewart, and the TCPM
+   Working Group for providing valuable feedback on this document.
+
+   Finally, the authors would like to thank everyone who provided
+   feedback on the congestion control behaviour specified in this
+   document that was received from the IRTF Internet Congestion Control
+   Research Group (ICCRG).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Khademi, et al.               Experimental                     [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc8511">RFC 8511</a>                           ABE                     December 2018</span>
+
+
+Authors' Addresses
+
+   Naeem Khademi
+   University of Oslo
+   PO Box 1080 Blindern
+   Oslo  N-0316
+   Norway
+
+   Email: naeemk@ifi.uio.no
+
+
+   Michael Welzl
+   University of Oslo
+   PO Box 1080 Blindern
+   Oslo  N-0316
+   Norway
+
+   Email: michawe@ifi.uio.no
+
+
+   Grenville Armitage
+   Netflix Inc.
+
+   Email: garmitage@netflix.com
+
+
+   Godred Fairhurst
+   University of Aberdeen
+   School of Engineering, Fraser Noble Building
+   Aberdeen  AB24 3UE
+   United Kingdom
+
+   Email: gorry@erg.abdn.ac.uk
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Khademi, et al.               Experimental                     [Page 12]
+</pre>
+</body></html>

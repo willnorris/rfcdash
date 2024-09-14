@@ -1,0 +1,1286 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                     A. Zimmermann
+Request for Comments: 6069                                  A. Hannemann
+Category: Experimental                            RWTH Aachen University
+ISSN: 2070-1721                                            December 2010
+
+
+   <span class="h1">Making TCP More Robust to Long Connectivity Disruptions (TCP-LCD)</span>
+
+Abstract
+
+   Disruptions in end-to-end path connectivity, which last longer than
+   one retransmission timeout, cause suboptimal TCP performance.  The
+   reason for this performance degradation is that TCP interprets
+   segment loss induced by long connectivity disruptions as a sign of
+   congestion, resulting in repeated retransmission timer backoffs.
+   This, in turn, leads to a delayed detection of the re-establishment
+   of the connection since TCP waits for the next retransmission timeout
+   before it attempts a retransmission.
+
+   This document proposes an algorithm to make TCP more robust to long
+   connectivity disruptions (TCP-LCD).  It describes how standard ICMP
+   messages can be exploited during timeout-based loss recovery to
+   disambiguate true congestion loss from non-congestion loss caused by
+   connectivity disruptions.  Moreover, a reversion strategy of the
+   retransmission timer is specified that enables a more prompt
+   detection of whether or not the connectivity to a previously
+   disconnected peer node has been restored.  TCP-LCD is a TCP sender-
+   only modification that effectively improves TCP performance in the
+   case of connectivity disruptions.
+
+Status of This Memo
+
+   This document is not an Internet Standards Track specification; it is
+   published for examination, experimental implementation, and
+   evaluation.
+
+   This document defines an Experimental Protocol for the Internet
+   community.  This document is a product of the Internet Engineering
+   Task Force (IETF).  It represents the consensus of the IETF
+   community.  It has received public review and has been approved for
+   publication by the Internet Engineering Steering Group (IESG).  Not
+   all documents approved by the IESG are a candidate for any level of
+   Internet Standard; see <a href="./rfc5741#section-2">Section 2 of RFC 5741</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="http://www.rfc-editor.org/info/rfc6069">http://www.rfc-editor.org/info/rfc6069</a>.
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+Copyright Notice
+
+   Copyright (c) 2010 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="http://trustee.ietf.org/license-info">http://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-3">3</a>
+   <a href="#section-2">2</a>. Terminology .....................................................<a href="#page-4">4</a>
+   <a href="#section-3">3</a>. Connectivity Disruption Indication ..............................<a href="#page-5">5</a>
+   <a href="#section-4">4</a>. Connectivity Disruption Reaction ................................<a href="#page-7">7</a>
+      <a href="#section-4.1">4.1</a>. Basic Idea .................................................<a href="#page-7">7</a>
+      <a href="#section-4.2">4.2</a>. Algorithm Details ..........................................<a href="#page-8">8</a>
+   <a href="#section-5">5</a>. Discussion of TCP-LCD ..........................................<a href="#page-11">11</a>
+      <a href="#section-5.1">5.1</a>. Retransmission Ambiguity ..................................<a href="#page-12">12</a>
+      <a href="#section-5.2">5.2</a>. Wrapped Sequence Numbers ..................................<a href="#page-12">12</a>
+      <a href="#section-5.3">5.3</a>. Packet Duplication ........................................<a href="#page-13">13</a>
+      <a href="#section-5.4">5.4</a>. Probing Frequency .........................................<a href="#page-14">14</a>
+      <a href="#section-5.5">5.5</a>. Reaction during Connection Establishment ..................<a href="#page-14">14</a>
+      <a href="#section-5.6">5.6</a>. Reaction in Steady-State ..................................<a href="#page-14">14</a>
+   <a href="#section-6">6</a>. Dissolving Ambiguity Issues Using the TCP Timestamps Option ....<a href="#page-15">15</a>
+   <a href="#section-7">7</a>. Interoperability Issues ........................................<a href="#page-17">17</a>
+      <a href="#section-7.1">7.1</a>. Detection of TCP Connection Failures ......................<a href="#page-17">17</a>
+      <a href="#section-7.2">7.2</a>. Explicit Congestion Notification (ECN) ....................<a href="#page-17">17</a>
+      <a href="#section-7.3">7.3</a>. TCP-LCD and IP Tunnels ....................................<a href="#page-17">17</a>
+   <a href="#section-8">8</a>. Related Work ...................................................<a href="#page-18">18</a>
+   <a href="#section-9">9</a>. Security Considerations ........................................<a href="#page-19">19</a>
+   <a href="#section-10">10</a>. Acknowledgments ...............................................<a href="#page-20">20</a>
+   <a href="#section-11">11</a>. References ....................................................<a href="#page-20">20</a>
+      <a href="#section-11.1">11.1</a>. Normative References .....................................<a href="#page-20">20</a>
+      <a href="#section-11.2">11.2</a>. Informative References ...................................<a href="#page-21">21</a>
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   Connectivity disruptions can occur in many different situations.  The
+   frequency of connectivity disruptions depends on the properties of
+   the end-to-end path between the communicating hosts.  While
+   connectivity disruptions can occur in traditional wired networks,
+   e.g., disruption caused by an unplugged network cable, the likelihood
+   of their occurrence is significantly higher in wireless (multi-hop)
+   networks.  Especially, end-host mobility, network topology changes,
+   and wireless interferences are crucial factors.  In the case of the
+   Transmission Control Protocol (TCP) [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], the performance of the
+   connection can experience a significant reduction compared to a
+   permanently connected path [<a href="#ref-SESB05" title='"Protocol enhancements for intermittently connected hosts"'>SESB05</a>].  This is because TCP, which was
+   originally designed to operate in fixed and wired networks, generally
+   assumes that the end-to-end path connectivity is relatively stable
+   over the connection's lifetime.
+
+   Depending on their duration, connectivity disruptions can be
+   classified into two groups [<a href="#ref-TCP-RLCI">TCP-RLCI</a>]: "short" and "long".  A
+   connectivity disruption is "short" if connectivity returns before the
+   retransmission timer fires for the first time.  In this case, TCP
+   recovers lost data segments through Fast Retransmit and lost
+   acknowledgments (ACKs) through successfully delivered later ACKs.
+   Connectivity disruptions are declared as "long" for a given TCP
+   connection if the retransmission timer fires at least once before
+   connectivity is resumed.  Whether or not path characteristics, like
+   the round-trip time (RTT) or the available bandwidth, have changed
+   when connectivity resumes after a disruption is another important
+   aspect for TCP's retransmission scheme [<a href="#ref-TCP-RLCI">TCP-RLCI</a>].
+
+   The algorithm specified in this document improves TCP's behavior in
+   the case of "long connectivity disruptions".  In particular, it
+   focuses on the period prior to the re-establishment of the
+   connectivity to a previously disconnected peer node.  The document
+   does not describe any modifications to TCP's behavior and its
+   congestion control mechanisms [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>] after connectivity has been
+   restored.
+
+   When a long connectivity disruption occurs on a TCP connection, the
+   TCP sender eventually does not receive any more acknowledgments.
+   After the retransmission timer expires, the TCP sender enters the
+   timeout-based loss recovery and declares the oldest outstanding
+   segment (SND.UNA) as lost.  Since TCP tightly couples reliability and
+   congestion control, the retransmission of SND.UNA is triggered
+   together with the reduction of the transmission rate.  This is based
+   on the assumption that segment loss is an indication of congestion
+   [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>].  As long as the connectivity disruption persists, TCP will
+   repeat this procedure until the oldest outstanding segment has
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   successfully been acknowledged or until the connection has timed out.
+   TCP implementations that follow the recommended retransmission
+   timeout (RTO) management of <a href="./rfc2988">RFC 2988</a> [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>] double the RTO after
+   each retransmission attempt.  However, the RTO growth may be bounded
+   by an upper limit, the maximum RTO, which is at least 60 s, but may
+   be longer: Linux, for example, uses 120 s.  If connectivity is
+   restored between two retransmission attempts, TCP still has to wait
+   until the retransmission timer expires before resuming transmission,
+   since it simply does not have any means to know if the connectivity
+   has been re-established.  Therefore, depending on when connectivity
+   becomes available again, this can waste up to a maximum RTO of
+   possible transmission time.
+
+   This retransmission behavior is not efficient, especially in
+   scenarios with long connectivity disruptions.  In the ideal case, TCP
+   would attempt a retransmission as soon as connectivity to its peer
+   has been re-established.  In this document, we specify a TCP sender-
+   only modification to provide robustness to long connectivity
+   disruptions (TCP-LCD).  The memo describes how the standard Internet
+   Control Message Protocol (ICMP) can be exploited during timeout-based
+   loss recovery to identify non-congestion loss caused by long
+   connectivity disruptions.  TCP-LCD's reversion strategy of the
+   retransmission timer enables higher-frequency retransmissions and
+   thereby a prompt detection when connectivity to a previously
+   disconnected peer node has been restored.  If no congestion is
+   present, TCP-LCD approaches the ideal behavior.
+
+   Experimental results of a Linux implementation of TCP-LCD have been
+   presented in [<a href="#ref-ZimHan09">ZimHan09</a>].  The implementation has been incorporated
+   into mainline Linux, and is already used within the Internet.  Thus
+   far, no negative experiences have been reported that could be
+   attributed to the algorithm.  However, we consider TCP-LCD as
+   experimental until more real-life results have been obtained.
+   Nevertheless, we encourage implementation of TCP-LCD under other
+   operating systems to provide for broader testing and experimentation
+   opportunities.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Terminology"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Terminology</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>].
+
+   The reader should be familiar with the algorithm and terminology from
+   [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>], which defines the standard algorithm that Transmission
+   Control Protocol (TCP) senders are required to use to compute and
+   manage their retransmission timer.  In this document, the terms
+   "retransmission timer" and "retransmission timeout" are used as
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   defined in [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>].  The retransmission timer ensures data delivery
+   in the absence of any feedback from the receiver.  The duration of
+   this timer is referred to as retransmission timeout (RTO).
+
+   As defined in [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], the term "acceptable acknowledgment (ACK)"
+   refers to a TCP segment that acknowledges previously unacknowledged
+   data.  The TCP sender state variable "SND.UNA" and the current
+   segment variable "SEG.SEQ" are used as defined in [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>].  SND.UNA
+   holds the segment sequence number of the earliest segment that has
+   not been acknowledged by the TCP receiver (the oldest outstanding
+   segment).  SEG.SEQ is the segment sequence number of a given segment.
+
+   For the purposes of this specification, we define the term "timeout-
+   based loss recovery", which refers to the state that a TCP sender
+   enters upon the first timeout of the oldest outstanding segment
+   (SND.UNA) and leaves upon the arrival of the *first* acceptable ACK.
+   It is important to note that other documents use a different
+   interpretation of the term "timeout-based loss recovery".  For
+   example, the NewReno modification to TCP's Fast Recovery algorithm
+   [<a href="./rfc3782" title="&quot;The NewReno Modification to TCP's Fast Recovery Algorithm&quot;">RFC3782</a>] extends the period that a TCP sender remains in timeout-
+   based loss recovery compared to the one defined in this document.
+   This is because [<a href="./rfc3782" title="&quot;The NewReno Modification to TCP's Fast Recovery Algorithm&quot;">RFC3782</a>] attempts to avoid unnecessary multiple Fast
+   Retransmits that can occur after an RTO.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Connectivity%20Disruption%20Indication"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Connectivity Disruption Indication</span>
+
+   If the queue of an intermediate router that is experiencing a link
+   outage can buffer all incoming packets, a connectivity disruption
+   will only cause a variation in delay, which is handled well by TCP
+   implementations using either Eifel [<a href="./rfc3522" title='"The Eifel Detection Algorithm for TCP"'>RFC3522</a>], [<a href="./rfc4015" title='"The Eifel Response Algorithm for TCP"'>RFC4015</a>] or Forward
+   RTO-Recovery (F-RTO) [<a href="./rfc5682" title='"Forward RTO-Recovery (F-RTO): An Algorithm for Detecting Spurious Retransmission Timeouts with TCP"'>RFC5682</a>].  However, if the link outage lasts
+   for too long, the router experiencing the link outage is forced to
+   drop packets, and finally may remove the corresponding next hop from
+   its routing table.  Means to detect such link outages include
+   reacting to failed address resolution protocol (ARP) [<a href="./rfc0826" title='"Ethernet Address Resolution Protocol: Or converting network protocol addresses to 48.bit Ethernet address for transmission on Ethernet hardware"'>RFC0826</a>]
+   queries, sensing unsuccessful links, and the like.  However, this is
+   solely the responsibility of the respective router.
+
+      Note: The focus of this memo is on introducing a method of how
+      ICMP messages may be exploited to improve TCP's performance; how
+      different physical and link-layer mechanisms below the network
+      layer may trigger ICMP destination unreachable messages are out of
+      scope of this memo.
+
+   Provided that no other route to the specific destination exists, an
+   Internet Protocol version 4 (IPv4) [<a href="./rfc0791" title='"Internet Protocol"'>RFC0791</a>] router will notify the
+   corresponding sending host about the dropped packets via ICMP
+   destination unreachable messages of code 0 (net unreachable) or
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   code 1 (host unreachable) [<a href="./rfc1812" title='"Requirements for IP Version 4 Routers"'>RFC1812</a>].  Therefore, the sending host can
+   use the ICMP destination unreachable messages of these codes as an
+   indication of a connectivity disruption, since the reception of these
+   messages provides evidence that packets were dropped due to a link
+   outage.
+
+   For Internet Protocol version 6 (IPv6) [<a href="./rfc2460" title='"Internet Protocol, Version 6 (IPv6) Specification"'>RFC2460</a>], the counterpart of
+   the ICMP destination unreachable message of code 0 (net unreachable)
+   and of code 1 (host unreachable) is the ICMPv6 destination
+   unreachable message of code 0 (no route to destination) [<a href="./rfc4443" title='"Internet Control Message Protocol (ICMPv6) for the Internet Protocol Version 6 (IPv6) Specification"'>RFC4443</a>].
+   As with IPv4, a router should generate an ICMPv6 destination
+   unreachable message of code 0 in response to a packet that cannot be
+   delivered to its destination address because it lacks a matching
+   entry in its routing table.
+
+   Note that there are also other ICMP and ICMPv6 destination
+   unreachable messages with different codes.  Some of them are
+   candidates for connectivity disruption indications, too, but need
+   further investigation (for example, ICMP destination unreachable
+   messages with code 5 (source route failed), code 11 (net unreachable
+   for TOS (Type of Service)), or code 12 (host unreachable for TOS)
+   [<a href="./rfc1812" title='"Requirements for IP Version 4 Routers"'>RFC1812</a>]).  On the other hand, codes that flag hard errors are of no
+   use for this scheme, since TCP should abort the connection when those
+   are received [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>].
+
+   For the sake of simplicity, we will use, unless explicitly qualified
+   with ICMPv4 or ICMPv6, the term "ICMP unreachable message" as a
+   synonym for ICMP destination unreachable messages of code 0 or code 1
+   and ICMPv6 destination unreachable messages of code 0.  This implies
+   that all keywords from [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] that deal with the handling of
+   received ICMP messages apply in the same way to ICMPv6 messages.
+
+   The accurate interpretation of ICMP unreachable messages as a
+   connectivity disruption indication is complicated by the following
+   two peculiarities of ICMP messages.  First, they do not necessarily
+   operate on the same timescale as the packets, i.e., TCP segments that
+   elicited them.  When a router drops a packet due to a missing route,
+   it will not necessarily send an ICMP unreachable message immediately,
+   but will rather queue it for later delivery.  Second, ICMP messages
+   are subject to rate-limiting, e.g., when a router drops a whole
+   window of data due to a link outage, it is unlikely to send as many
+   ICMP unreachable messages as dropped TCP segments.  Depending on the
+   load of the router, it may not even send any ICMP unreachable
+   messages at all.  Both peculiarities originate from [<a href="./rfc1812" title='"Requirements for IP Version 4 Routers"'>RFC1812</a>] for
+   ICMPv4 and [<a href="./rfc4443" title='"Internet Control Message Protocol (ICMPv6) for the Internet Protocol Version 6 (IPv6) Specification"'>RFC4443</a>] for ICMPv6.
+
+
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   Fortunately, according to [<a href="./rfc0792" title='"Internet Control Message Protocol"'>RFC0792</a>], ICMPv4 unreachable messages have
+   to contain, in their body, the entire IPv4 header [<a href="./rfc0791" title='"Internet Protocol"'>RFC0791</a>] of the
+   datagram eliciting the ICMPv4 unreachable message, plus the first
+   64 bits of the payload of that datagram.  This allows the sending
+   host to match the ICMPv4 error message to the transport connection
+   that elicited it.  <a href="./rfc1812">RFC 1812</a> [<a href="./rfc1812" title='"Requirements for IP Version 4 Routers"'>RFC1812</a>] augments these requirements and
+   states that ICMPv4 messages should contain as much of the original
+   datagram as possible without the length of the ICMPv4 datagram
+   exceeding 576 bytes.  Therefore, in the case of TCP, at least the
+   source port number, the destination port number, and the 32-bit TCP
+   sequence number are included.  This allows the originating TCP to
+   demultiplex the received ICMPv4 message and to identify the affected
+   connection.  Moreover, it can identify which segment of the
+   respective connection triggered the ICMPv4 unreachable message,
+   unless there are several segments in flight with the same sequence
+   number (see <a href="#section-5.1">Section 5.1</a>).
+
+   For IPv6 [<a href="./rfc2460" title='"Internet Protocol, Version 6 (IPv6) Specification"'>RFC2460</a>], the payload of an ICMPv6 error message has to
+   include as many bytes as possible from the IPv6 datagram that
+   elicited the ICMPv6 error message, without making the error message
+   exceed the minimum IPv6 MTU (1280 bytes) [<a href="./rfc4443" title='"Internet Control Message Protocol (ICMPv6) for the Internet Protocol Version 6 (IPv6) Specification"'>RFC4443</a>].  Thus, enough
+   information is available to identify both the affected connection and
+   the corresponding segment that triggered the ICMPv6 error message.
+
+   A connectivity disruption indication in the form of an ICMP
+   unreachable message associated with a presumably lost TCP segment
+   provides strong evidence that the segment was not dropped due to
+   congestion, but was successfully delivered as far as the reporting
+   router.  It therefore did not witness any congestion at least on that
+   part of the path that was traversed by both the TCP segment eliciting
+   the ICMP unreachable message and the ICMP unreachable message itself.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Connectivity%20Disruption%20Reaction"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Connectivity Disruption Reaction</span>
+
+   <a href="#section-4.1">Section 4.1</a> introduces the basic idea of TCP-LCD.  The complete
+   algorithm is specified in <a href="#section-4.2">Section 4.2</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Basic%20Idea"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Basic Idea</span>
+
+   The goal of the algorithm is to promptly detect when connectivity to
+   a previously disconnected peer node has been restored after a long
+   connectivity disruption, while retaining appropriate behavior in case
+   of congestion.  TCP-LCD exploits standard ICMP unreachable messages
+   during timeout-based loss recovery.  This increases TCP's
+   retransmission frequency by undoing one retransmission timer backoff
+   whenever an ICMP unreachable message is received that contains a
+   segment with a sequence number of a presumably lost retransmission.
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   This approach has the advantage of appropriately reducing the probing
+   rate in case of congestion.  If either the retransmission itself or
+   the corresponding ICMP message is dropped, the previously performed
+   retransmission timer backoff is not undone, which effectively halves
+   the probing rate.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Algorithm%20Details"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Algorithm Details</span>
+
+   A TCP sender that uses <a href="./rfc2988">RFC 2988</a> [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>] to compute TCP's
+   retransmission timer MAY employ the following scheme to avoid over-
+   conservative retransmission timer backoffs in case of long
+   connectivity disruptions.  If a TCP sender does implement the
+   following steps, the algorithm MUST be initiated upon the first
+   timeout of the oldest outstanding segment (SND.UNA) and MUST be
+   stopped upon the arrival of the first acceptable ACK.  The algorithm
+   MUST NOT be re-initiated upon subsequent timeouts for the same
+   segment.  The scheme SHOULD NOT be used in SYN-SENT or SYN-RECEIVED
+   states [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>] (see <a href="#section-5.5">Section 5.5</a>).
+
+   A TCP sender that does not employ <a href="./rfc2988">RFC 2988</a> [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>] to compute TCP's
+   retransmission timer MUST NOT use TCP-LCD.  We envision that the
+   scheme could be easily adapted to algorithms other than <a href="./rfc2988">RFC 2988</a>.
+   However, we leave this as future work.
+
+   <a href="./rfc2988">RFC 2988</a> [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>] provides in rule (2.5) the option to place a
+   maximum value on the RTO.  When a TCP implements this rule to provide
+   an upper bound for the RTO, it MUST also be used in the following
+   algorithm.  In particular, if the RTO is bounded by an upper limit
+   (maximum RTO), the "MAX_RTO" variable used in this scheme MUST be
+   initialized with this upper limit.  Otherwise, if the RTO is
+   unbounded, the "MAX_RTO" variable MUST be set to infinity.
+
+   The scheme specified in this document uses the "BACKOFF_CNT"
+   variable, whose initial value is zero.  The variable is used to count
+   the number of performed retransmission timer backoffs during one
+   timeout-based loss recovery.  Moreover, the "RTO_BASE" variable is
+   used to recover the previous RTO if the retransmission timer backoff
+   was unnecessary.  The variable is initialized with the RTO upon
+   initiation of timeout-based loss recovery.
+
+   (1)  Before TCP updates the variable "RTO" when it initiates timeout-
+        based loss recovery, set the variables "BACKOFF_CNT" and
+        "RTO_BASE" as follows:
+
+           BACKOFF_CNT := 0;
+           RTO_BASE := RTO.
+
+        Proceed to step (R).
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   (R)  This is a placeholder for standard TCP's behavior in case the
+        retransmission timer has expired.  In particular, if <a href="./rfc2988">RFC 2988</a>
+        [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>] is used, steps (5.4) to (5.6) of that algorithm go
+        here.  Proceed to step (2).
+
+   (2)  To account for the expiration of the retransmission timer in the
+        previous step (R), increment the "BACKOFF_CNT" variable by one:
+
+           BACKOFF_CNT := BACKOFF_CNT + 1.
+
+   (3)  Wait either
+
+        a)  for the expiration of the retransmission timer.  When the
+            retransmission timer expires, proceed to step (R); or
+
+        b)  for the arrival of an acceptable ACK.  When an acceptable
+            ACK arrives, proceed to step (A); or
+
+        c)  for the arrival of an ICMP unreachable message.  When the
+            ICMP unreachable message "ICMP_DU" arrives, proceed to
+            step (4).
+
+   (4)  If "BACKOFF_CNT &gt; 0", i.e., if at least one retransmission timer
+        backoff can be undone, then
+
+           proceed to step (5);
+
+        else
+
+           proceed to step (3).
+
+   (5)  Extract the TCP segment header included in the ICMP unreachable
+        message "ICMP_DU":
+
+           SEG := Extract(ICMP_DU).
+
+   (6)  If "SEG.SEQ == SND.UNA", i.e., if the TCP segment "SEG"
+        eliciting the ICMP unreachable message "ICMP_DU" contains the
+        sequence number of a retransmission, then
+
+           proceed to step (7);
+
+        else
+
+           proceed to step (3).
+
+
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                      [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   (7)  Undo the last retransmission timer backoff:
+
+           BACKOFF_CNT := BACKOFF_CNT - 1;
+           RTO := min(RTO_BASE * 2^(BACKOFF_CNT), MAX_RTO).
+
+   (8)  If the retransmission timer expires due to the undoing in the
+        previous step (7), then
+
+           proceed to step (R);
+
+        else
+
+           proceed to step (3).
+
+   (A)  This is a placeholder for standard TCP's behavior in case an
+        acceptable ACK has arrived.  No further processing.
+
+   When a TCP in steady-state detects a segment loss using the
+   retransmission timer, it enters the timeout-based loss recovery and
+   initiates the algorithm (step (1)).  It adjusts the slow-start
+   threshold (ssthresh), sets the congestion window (cwnd) to one
+   segment, backs off the retransmission timer, and retransmits the
+   first unacknowledged segment (step (R)) [<a href="./rfc5681" title='"TCP Congestion Control"'>RFC5681</a>], [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>].  To
+   account for the expiration of the retransmission timer, the TCP
+   sender increments the "BACKOFF_CNT" variable by one (step (2)).
+
+   In case the retransmission timer expires again (step (3a)), a TCP
+   will repeat the retransmission of the first unacknowledged segment
+   and back off the retransmission timer once more (step (R)) [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>],
+   as well as increment the "BACKOFF_CNT" variable by one (step (2)).
+   Note that a TCP may implement <a href="./rfc2988">RFC 2988</a>'s [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>] option to place a
+   maximum value on the RTO that may result in not performing the
+   retransmission timer backoff.  However, step (2) MUST always and
+   unconditionally be applied, no matter whether or not the
+   retransmission timer is actually backed off.  In other words, each
+   time the retransmission timer expires, the "BACKOFF_CNT" variable
+   MUST be incremented by one.
+
+   If the first received packet after the retransmission(s) is an
+   acceptable ACK (step (3b)), a TCP will proceed as normal, i.e., slow-
+   start the connection and terminate the algorithm (step (A)).  Later
+   ICMP unreachable messages from the just terminated timeout-based loss
+   recovery are ignored, since the ACK clock is already restarting due
+   to the successful retransmission.
+
+   On the other hand, if the first received packet after the
+   retransmission(s) is an ICMP unreachable message (step (3c)), and if
+   step (4) permits it, TCP SHOULD undo one backoff for each ICMP
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   unreachable message reporting an error on a retransmission.  To
+   decide if an ICMP unreachable message was elicited by a
+   retransmission, the sequence number it contains is inspected
+   (step (5), step (6)).  The undo is performed by recalculating the RTO
+   with the decremented "BACKOFF_CNT" variable (step (7)).  This
+   calculation explicitly matches the (bounded) exponential backoff
+   specified in rule (5.5) of [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>].
+
+   Upon receipt of an ICMP unreachable message that legitimately undoes
+   one backoff, there is the possibility that the shortened
+   retransmission timer has already expired (step (8)).  Then, TCP
+   SHOULD retransmit immediately.  In case the shortened retransmission
+   timer has not yet expired, TCP MUST wait accordingly.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Discussion%20of%20TCP-LCD"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Discussion of TCP-LCD</span>
+
+   TCP-LCD takes caution to only react to connectivity disruption
+   indications in the form of ICMP unreachable messages during timeout-
+   based loss recovery.  Therefore, TCP's behavior is not altered when
+   either no ICMP unreachable messages are received or the
+   retransmission timer of the TCP sender did not expire since the last
+   received acceptable ACK.  Thus, by definition, the algorithm triggers
+   only in the case of long connectivity disruptions.
+
+   Only such ICMP unreachable messages that contain a TCP segment with
+   the sequence number of a retransmission, i.e., that contain SND.UNA,
+   are evaluated by TCP-LCD.  All other ICMP unreachable messages are
+   ignored.  The arrival of those ICMP unreachable messages provides
+   strong evidence that the retransmissions were not dropped due to
+   congestion, but were successfully delivered to the reporting router.
+   In other words, there is no evidence for any congestion at least on
+   that very part of the path that was traversed by both the TCP segment
+   eliciting the ICMP unreachable message and the ICMP unreachable
+   message itself.
+
+   However, there are some situations where TCP-LCD makes a false
+   decision and incorrectly undoes a retransmission timer backoff.  This
+   can happen, even when the received ICMP unreachable message contains
+   the segment number of a retransmission (SND.UNA), because the TCP
+   segment that elicited the ICMP unreachable message may either not be
+   a retransmission (<a href="#section-5.1">Section 5.1</a>) or does not belong to the current
+   timeout-based loss recovery (<a href="#section-5.2">Section 5.2</a>).  Finally, packet
+   duplication (<a href="#section-5.3">Section 5.3</a>) can also spuriously trigger the algorithm.
+
+   <a href="#section-5.4">Section 5.4</a> discusses possible probing frequencies, while <a href="#section-5.6">Section 5.6</a>
+   describes the motivation for not reacting to ICMP unreachable
+   messages while TCP is in steady-state.
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Retransmission%20Ambiguity"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Retransmission Ambiguity</span>
+
+   Historically, the retransmission ambiguity problem [<a href="#ref-Zh86" title="&quot;Why TCP Timers Don't Work Well&quot;">Zh86</a>], [<a href="#ref-KP87" title='"Improving Round-Trip Time Estimates in Reliable Transport Protocols"'>KP87</a>] is
+   the TCP sender's inability to distinguish whether the first
+   acceptable ACK after a retransmission refers to the original
+   transmission or to the retransmission.  This problem occurs after
+   both a Fast Retransmit and a timeout-based retransmit.  However,
+   modern TCP implementations can eliminate the retransmission ambiguity
+   with either the help of Eifel [<a href="./rfc3522" title='"The Eifel Detection Algorithm for TCP"'>RFC3522</a>], [<a href="./rfc4015" title='"The Eifel Response Algorithm for TCP"'>RFC4015</a>] or Forward RTO-
+   Recovery (F-RTO) [<a href="./rfc5682" title='"Forward RTO-Recovery (F-RTO): An Algorithm for Detecting Spurious Retransmission Timeouts with TCP"'>RFC5682</a>].
+
+   The reversion strategy of the given algorithm suffers from a form of
+   retransmission ambiguity, too.  In contrast to the above case, TCP
+   suffers from ambiguity regarding ICMP unreachable messages received
+   during timeout-based loss recovery.  With the TCP segment number
+   included in the ICMP unreachable message, a TCP sender is not able to
+   determine if the ICMP unreachable message refers to the original
+   transmission or to any of the timeout-based retransmissions.  That
+   is, there is an ambiguity with regard to which TCP segment an ICMP
+   unreachable message reports on.
+
+   However, this ambiguity is not considered to be a problem for the
+   algorithm.  The assumption that a received ICMP unreachable message
+   provides evidence that a non-congestion loss caused by the
+   connectivity disruption was wrongly considered a congestion loss
+   still holds, regardless of to which TCP segment (transmission or
+   retransmission) the message refers.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Wrapped%20Sequence%20Numbers"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Wrapped Sequence Numbers</span>
+
+   Besides the ambiguity whether a received ICMP unreachable message
+   refers to the original transmission or to any of the retransmissions,
+   there is another source of ambiguity related to the TCP sequence
+   numbers contained in ICMP unreachable messages.  For high-bandwidth
+   paths, the sequence space may wrap quickly.  This might cause delayed
+   ICMP unreachable messages to coincidentally fit as valid input in the
+   proposed scheme.  As a result, the scheme may incorrectly undo
+   retransmission timer backoffs.  The chances of this happening are
+   minuscule, since a particular ICMP unreachable message would need to
+   contain the exact sequence number of the current oldest outstanding
+   segment (SND.UNA), while at the same time TCP is in timeout-based
+   loss recovery.  However, two "worst case" scenarios for the algorithm
+   are possible.
+
+   For instance, consider a steady-state TCP connection, which will be
+   disrupted at an intermediate router due to a link outage.  Upon the
+   expiration of the RTO, the TCP sender enters the timeout-based loss
+   recovery and starts to retransmit the earliest segment that has not
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   been acknowledged (SND.UNA).  For some reason, the router delays all
+   corresponding ICMP unreachable messages so that the TCP sender backs
+   the retransmission timer off normally without any undoing.  At the
+   end of the connectivity disruption, the TCP sender eventually detects
+   the re-establishment, and it leaves the scheme and finally the
+   timeout-based loss recovery, too.  A sequence number wrap-around
+   later, the connectivity between the two peers is disrupted again, but
+   this time due to congestion and exactly at the time at which the
+   current SND.UNA matches the SND.UNA from the previous cycle.  If the
+   router emits the delayed ICMP unreachable messages now, the TCP
+   sender would incorrectly undo retransmission timer backoffs.  As the
+   TCP sequence number contains 32 bits, the probability of this
+   scenario is at most 1/2^32.  Given sufficiently many retransmissions
+   in the first timeout-based loss recovery, the corresponding ICMP
+   unreachable messages could reduce the RTO in the second recovery at
+   most to "RTO_BASE".  However, once the ICMP unreachable messages are
+   depleted, the standard exponential backoff will be performed.  Thus,
+   the congestion response will only be delayed by some false
+   retransmissions.
+
+   Similar to the above, consider the case where a steady-state TCP
+   connection with n segments in flight will be disrupted at some point
+   due to a link outage at an intermediate router.  For each segment in
+   flight, the router may generate an ICMP unreachable message.
+   However, for some reason, it delays them.  Once the link outage is
+   over and the connection has been re-established, the TCP sender
+   leaves the scheme and slow-starts the connection.  Following a
+   sequence number wrap-around, a retransmission timeout occurs, just at
+   the moment the TCP sender's current window of data reaches the
+   previous range of the sequence number space again.  In case the
+   router emits the delayed ICMP unreachable messages now, spurious
+   undoing of the retransmission timer backoff is possible once, if the
+   TCP segment number contained in the ICMP unreachable messages matches
+   the current SND.UNA, and the timeout was a result of congestion.  In
+   the case of another connectivity disruption, the additional undoing
+   of the retransmission timer backoff has no impact.  The probability
+   of this scenario is at most n/2^32.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.3.%20%20Packet%20Duplication"></a><a class="selflink" href="#section-5.3" id="section-5.3">5.3</a>.  Packet Duplication</span>
+
+   In case an intermediate router duplicates packets, a TCP sender may
+   receive more ICMP unreachable messages during timeout-based loss
+   recovery than sent timeout-based retransmissions.  However, since
+   TCP-LCD keeps track of the number of performed retransmission timer
+   backoffs in the "BACKOFF_CNT" variable, it will not undo more
+   retransmission timer backoffs than were actually performed.
+   Nevertheless, if packet duplication and congestion coincide on the
+   path between the two communicating hosts, duplicated ICMP unreachable
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   messages could hide the congestion loss of some retransmissions or
+   ICMP unreachable messages, and the algorithm may incorrectly undo
+   retransmission timer backoffs.  Considering the overall impact of a
+   router that duplicates packets, the additional load induced by some
+   spurious timeout-based retransmits can probably be neglected.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.4.%20%20Probing%20Frequency"></a><a class="selflink" href="#section-5.4" id="section-5.4">5.4</a>.  Probing Frequency</span>
+
+   One might argue that if an ICMP unreachable message arrives for a
+   timeout-based retransmission, the RTO shall be reset or recalculated,
+   similar to what is done when an ACK arrives during timeout-based loss
+   recovery (see Karn's algorithm [<a href="#ref-KP87" title='"Improving Round-Trip Time Estimates in Reliable Transport Protocols"'>KP87</a>], [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>]), and a new
+   retransmission should be sent immediately.  Generally, this would
+   result in a much higher probing frequency based on the round-trip
+   time to the router where connectivity has been disrupted.  However,
+   we believe the current scheme provides a good trade-off between
+   conservative behavior and fast detection of connectivity
+   re-establishment.  TCP-LCD focuses on long-connectivity disruptions,
+   i.e., on disruptions that last for several RTOs.  Thus, a much higher
+   probing frequency (less than once per RTO) would not significantly
+   increase the available transmission time compared to the duration of
+   the connectivity disruption.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.5.%20%20Reaction%20during%20Connection%20Establishment"></a><a class="selflink" href="#section-5.5" id="section-5.5">5.5</a>.  Reaction during Connection Establishment</span>
+
+   It is possible that a TCP sender enters timeout-based loss recovery
+   while the connection is in SYN-SENT or SYN-RECEIVED states [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>].
+   The algorithm described in this document could also be used for
+   faster connection establishment in networks with connectivity
+   disruptions.  However, because existing TCP implementations [<a href="./rfc5461" title="&quot;TCP's Reaction to Soft Errors&quot;">RFC5461</a>]
+   already interpret ICMP unreachable messages during connection
+   establishment and abort the corresponding connection, we refrain from
+   suggesting this.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.6.%20%20Reaction%20in%20Steady-State"></a><a class="selflink" href="#section-5.6" id="section-5.6">5.6</a>.  Reaction in Steady-State</span>
+
+   Another exploitation of ICMP unreachable messages in the context of
+   TCP congestion control might seem appropriate, while TCP is in
+   steady-state.  As the RTT up to the router that generated the ICMP
+   unreachable message is likely to be substantially shorter than the
+   overall RTT to the destination, the ICMP unreachable message may very
+   well reach the originating TCP while it is transmitting the current
+   window of data.  In case the remaining window is large, it might seem
+   appropriate to refrain from transmitting the remaining window as
+   there is timely evidence that it will only trigger further ICMP
+   unreachable messages at that very router.  Although this promises
+   improvement from a wastage perspective, it may be counterproductive
+   from a security perspective.  An attacker could forge such ICMP
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   messages, thereby forcing the originating TCP to stop sending data,
+   very similar to the blind throughput-reduction attack mentioned in
+   [<a href="./rfc5927" title='"ICMP Attacks against TCP"'>RFC5927</a>].
+
+   An additional consideration is the following: in the presence of
+   multi-path routing, even the receipt of a legitimate ICMP unreachable
+   message cannot be exploited accurately, because there is the
+   possibility that only one of the multiple paths to the destination is
+   suffering from a connectivity disruption, which causes ICMP
+   unreachable messages to be sent.  Then, however, there is the
+   possibility that the path along which the connectivity disruption
+   occurred contributed considerably to the overall bandwidth, such that
+   a congestion response is very well reasonable.  However, this is not
+   necessarily the case.  Therefore, a TCP has no means except for its
+   inherent congestion control to decide on this matter.  All in all, it
+   seems that for a connection in steady-state, i.e., not in timeout-
+   based loss recovery, reacting to ICMP unreachable messages in regard
+   to congestion control is not appropriate.  For the case of timeout-
+   based retransmissions, however, there is a reasonable congestion
+   response, which is skipping further retransmission timer backoffs
+   because there is no congestion indication -- as described above.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Dissolving%20Ambiguity%20Issues%20Using%20the%20TCP%20Timestamps%20Option"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Dissolving Ambiguity Issues Using the TCP Timestamps Option</span>
+
+   If the TCP Timestamps option [<a href="./rfc1323" title='"TCP Extensions for High Performance"'>RFC1323</a>] is enabled for a connection, a
+   TCP sender SHOULD use the following algorithm to dissolve the
+   ambiguity issues mentioned in Sections <a href="#section-5.1">5.1</a>, <a href="#section-5.2">5.2</a>, and <a href="#section-5.3">5.3</a>.  In
+   particular, both the retransmission ambiguity and the packet
+   duplication problems are prevented by the following TCP-LCD variant.
+   On the other hand, the false positives caused by wrapped sequence
+   numbers cannot be completely avoided, but the likelihood is further
+   reduced by a factor of 1/2^32, since the Timestamp Value field
+   (TSval) of the TCP Timestamps option contains 32 bits.
+
+   Hence, implementers may choose to employ the TCP-LCD with the
+   following modifications.
+
+   Step (1) is replaced by step (1'):
+
+   (1')  Before TCP updates the variable "RTO" when it initiates
+         timeout-based loss recovery, set the variables "BACKOFF_CNT"
+         and "RTO_BASE", and the data structure "RETRANS_TS", as
+         follows:
+
+            BACKOFF_CNT := 0;
+            RTO_BASE := RTO;
+
+            RETRANS_TS := [].
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+         Proceed to step (R).
+
+   Step (2) is extended by step (2b):
+
+   (2b)  Store the value of the Timestamp Value field (TSval) of the TCP
+         Timestamps option included in the retransmission "RET" sent in
+         step (R) into the "RETRANS_TS" data structure:
+
+            RETRANS_TS.add(RET.TSval)
+
+   Step (6) is replaced by step (6'):
+
+   (6')  If "SEG.SEQ == SND.UNA &amp;&amp; RETRANS_TS.exists(SEQ.TSval)", i.e.,
+         if the TCP segment "SEG" eliciting the ICMP unreachable message
+         "ICMP_DU" contains the sequence number of a retransmission, and
+         the value in its Timestamp Value field (TSval) is valid, then
+
+            proceed to step (7');
+
+         else
+
+            proceed to step (3).
+
+   Step (7) is replaced by step (7'):
+
+   (7')  Undo the last retransmission timer backoff:
+
+            RETRANS_TS.remove(SEQ.TSval);
+            BACKOFF_CNT := BACKOFF_CNT - 1;
+            RTO := min(RTO_BASE * 2^(BACKOFF_CNT), MAX_RTO).
+
+   The downside of this variant is twofold.  First, the modifications
+   come at a cost: the TCP sender is required to store the timestamps of
+   all retransmissions sent during one timeout-based loss recovery.
+   Second, this variant can only undo a retransmission timer backoff if
+   the intermediate router experiencing the link outage implements
+   [<a href="./rfc1812" title='"Requirements for IP Version 4 Routers"'>RFC1812</a>] and chooses to include, in addition to the first 64 bits of
+   the payload of the triggering datagram, as many bits as are needed to
+   include the TCP Timestamps option in the ICMP unreachable message.
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Interoperability%20Issues"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Interoperability Issues</span>
+
+   This section discusses interoperability issues related to introducing
+   TCP-LCD.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.1.%20%20Detection%20of%20TCP%20Connection%20Failures"></a><a class="selflink" href="#section-7.1" id="section-7.1">7.1</a>.  Detection of TCP Connection Failures</span>
+
+   TCP-LCD may produce side effects for TCP implementations that attempt
+   to detect TCP connection failures by counting timeout-based
+   retransmissions.  [<a href="./rfc1122" title='"Requirements for Internet Hosts - Communication Layers"'>RFC1122</a>] states in <a href="#section-4.2.3.5">Section 4.2.3.5</a> that a TCP host
+   must handle excessive retransmissions of data segments with two
+   thresholds, R1 and R2, that measure the number of retransmissions
+   that have occurred for the same segment.  Both thresholds might be
+   measured either in time units or as a count of retransmissions.
+
+   Due to TCP-LCD's reversion strategy of the retransmission timer, the
+   assumption that a certain number of retransmissions corresponds to a
+   specific time interval no longer holds, as additional retransmissions
+   may be performed during timeout-based-loss recovery to detect the end
+   of the connectivity disruption.  Therefore, a TCP employing TCP-LCD
+   either MUST measure the thresholds R1 and R2 in time units or, in
+   case R1 and R2 are counters of retransmissions, MUST convert them
+   into time intervals that correspond to the time an unmodified TCP
+   would need to reach the specified number of retransmissions.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.2.%20%20Explicit%20Congestion%20Notification%20%28ECN%29"></a><a class="selflink" href="#section-7.2" id="section-7.2">7.2</a>.  Explicit Congestion Notification (ECN)</span>
+
+   With Explicit Congestion Notification (ECN) [<a href="./rfc3168" title='"The Addition of Explicit Congestion Notification (ECN) to IP"'>RFC3168</a>], ECN-capable
+   routers are no longer limited to dropping packets to indicate
+   congestion.  Instead, they can set the Congestion Experienced (CE)
+   codepoint in the IP header to indicate congestion.  With TCP-LCD, it
+   may happen that during a connectivity disruption, a received ICMP
+   unreachable message has been elicited by a timeout-based
+   retransmission that was marked with the CE codepoint before reaching
+   the router experiencing the link outage.  In such a case, a TCP
+   sender MUST, corresponding to <a href="./rfc3168#section-6.1.2">Section 6.1.2 of [RFC3168]</a>,
+   additionally reset the retransmission timer in case the algorithm
+   undoes a retransmission timer backoff.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.3.%20%20TCP-LCD%20and%20IP%20Tunnels"></a><a class="selflink" href="#section-7.3" id="section-7.3">7.3</a>.  TCP-LCD and IP Tunnels</span>
+
+   It is worth noting that IP tunnels, including IPsec [<a href="./rfc4301" title='"Security Architecture for the Internet Protocol"'>RFC4301</a>], IP
+   encapsulation within IP [<a href="./rfc2003" title='"IP Encapsulation within IP"'>RFC2003</a>], Generic Routing Encapsulation
+   (GRE) [<a href="./rfc2784" title='"Generic Routing Encapsulation (GRE)"'>RFC2784</a>], and others, are compatible with TCP-LCD, as long as
+   the received ICMP unreachable messages can be demultiplexed and
+   extracted appropriately by the TCP sender during timeout-based loss
+   recovery.
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   If, for example, end-to-end tunnels like IPsec in transport mode
+   [<a href="./rfc4301" title='"Security Architecture for the Internet Protocol"'>RFC4301</a>] are employed, a TCP sender may receive ICMP unreachable
+   messages where additional steps, e.g., also performing decryption in
+   step (5) of the algorithm, are needed to extract the TCP header from
+   these ICMP messages.  Provided that the received ICMP unreachable
+   message contains enough information, i.e., SEG.SEQ is extractable,
+   this information can still be used as a valid input for the proposed
+   algorithm.
+
+   Likewise, if IP encapsulation like [<a href="./rfc2003" title='"IP Encapsulation within IP"'>RFC2003</a>] is used in some part of
+   the path between the communicating hosts, the tunnel ingress node may
+   receive the ICMP unreachable messages from an intermediate router
+   experiencing the link outage.  Nevertheless, the tunnel ingress node
+   may replay the ICMP unreachable messages in order to inform the TCP
+   sender.  If enough information is preserved to extract SEG.SEQ, the
+   replayed ICMP unreachable messages can still be used in TCP-LCD.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Related%20Work"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Related Work</span>
+
+   Several methods that address TCP's problems in the presence of
+   connectivity disruptions have been proposed in literature.  Some of
+   them try to improve TCP's performance by modifying lower layers.  For
+   example, [<a href="#ref-SM03" title='"Link layer-based TCP optimisation for disconnecting networks"'>SM03</a>] introduces a "smart link layer", which buffers one
+   segment for each active connection and replays these segments upon
+   connectivity re-establishment.  This approach has a serious drawback:
+   previously stateless intermediate routers have to be modified in
+   order to inspect TCP headers, to track the end-to-end connection, and
+   to provide additional buffer space.  This leads to an additional need
+   for memory and processing power.
+
+   On the other hand, stateless link-layer schemes, as proposed in
+   [<a href="./rfc3819" title='"Advice for Internet Subnetwork Designers"'>RFC3819</a>], which unconditionally buffer some small number of packets,
+   may have another problem: if a packet is buffered longer than the
+   maximum segment lifetime (MSL) of 2 min. [<a href="./rfc0793" title='"Transmission Control Protocol"'>RFC0793</a>], i.e., the
+   disconnection lasts longer than the MSL, TCP's assumption that such
+   segments will never be received will no longer be true, violating
+   TCP's semantics [<a href="#ref-TCP-REXMIT-NOW">TCP-REXMIT-NOW</a>].
+
+   Other approaches, like the TCP feedback-based scheme (TCP-F) [<a href="#ref-CRVP01" title='"A feedback-based scheme for improving TCP performance in ad hoc wireless networks"'>CRVP01</a>]
+   or the Explicit Link Failure Notification (ELFN) [<a href="#ref-HV02" title='"Analysis of TCP performance over mobile ad hoc networks"'>HV02</a>] inform a TCP
+   sender about a disrupted path by special messages generated and sent
+   from intermediate routers.  In the case of a link failure, the TCP
+   sender stops sending segments and freezes its retransmission timers.
+   TCP-F stays in this state and remains silent until either a "route
+   establishment notification" is received or an internal timer expires.
+   In contrast, ELFN periodically probes the network to detect
+   connectivity re-establishment.  Both proposals rely on changes to
+   intermediate routers, whereas the scheme proposed in this document is
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   a sender-only modification.  Moreover, ELFN does not consider
+   congestion and may impose serious additional load on the network,
+   depending on the probe interval.
+
+   The authors of "ad hoc TCP" (ATCP) [<a href="#ref-LS01" title='"ATCP: TCP for mobile ad hoc networks"'>LS01</a>] propose enhancements to
+   identify different types of packet loss by introducing a layer
+   between TCP and IP.  They utilize ICMP destination unreachable
+   messages to set TCP's receiver advertised window to zero, thus
+   forcing the TCP sender to perform zero window probing with an
+   exponential backoff.  ICMP destination unreachable messages that
+   arrive during this probing period are ignored.  This approach is
+   nearly orthogonal to this document, which exploits ICMP messages to
+   undo a retransmission timer backoff when TCP is already probing.  In
+   principle, both mechanisms could be combined.  However, due to
+   security considerations, it does not seem appropriate to adopt ATCP's
+   reaction, as discussed in <a href="#section-5.6">Section 5.6</a>.
+
+   Schuetz et al. [<a href="#ref-TCP-RLCI">TCP-RLCI</a>] describe a set of TCP extensions that
+   improve TCP's behavior when transmitting over paths whose
+   characteristics can change rapidly.  Their proposed extensions modify
+   the local behavior of TCP and introduce a new TCP option to signal
+   locally received connectivity-change indications (CCIs) to remote
+   peers.  Upon receipt of a CCI, they re-probe the path characteristics
+   either by performing a speculative retransmission or by sending a
+   single segment of new data, depending on whether the connection is
+   currently stalled in exponential backoff or transmitting in steady-
+   state, respectively.  The authors focus on specifying TCP response
+   mechanisms; nevertheless, underlying layers would have to be modified
+   to explicitly send CCIs to make these immediate responses possible.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Security%20Considerations"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Security Considerations</span>
+
+   Generally, an attacker has only two attack alternatives: to generate
+   ICMP unreachable messages to try to make a TCP modified with TCP-LCD
+   flood the network, or to suppress legitimate ICMP unreachable
+   messages to try to slow down the transmission rate of a TCP sender.
+
+   In order to generate ICMP unreachable messages that fit as an input
+   for TCP-LCD, an attacker would need to guess the correct four-tuple
+   (i.e., Source IP Address, Source TCP port, Destination IP Address,
+   and Destination TCP port) and the exact segment sequence number of
+   the current timeout-based retransmission.  Yet, the correct sequence
+   number is generally hard to guess, given the probability of 1/2^32.
+   Even if an attacker has information about that sequence number (i.e.,
+   the attacker can eavesdrop on the retransmissions) the impact on the
+   network load from the attacker may be considered low, since the
+   retransmission frequency is limited by the RTO that was computed
+   before TCP had entered the timeout-based loss recovery.  Hence, the
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   highest probing frequency is expected to be even lower than once per
+   minimum RTO, i.e., 1 s as specified by [<a href="./rfc2988" title="&quot;Computing TCP's Retransmission Timer&quot;">RFC2988</a>].  It is important to
+   note that an attacker who can correctly guess the four-tuple and the
+   segment sequence number can easily launch more serious attacks (i.e.,
+   hijack the connection), whether or not TCP-LCD is used.
+
+   There may be means by which an attacker can cause the suppression of
+   legitimate ICMP unreachable messages (e.g., by flooding the router
+   experiencing the link outage to trigger ICMP rate-limiting).
+   However, even if the attacker could suppress every legitimate ICMP
+   unreachable message, the security impact of such an attack is
+   negligible, since the TCP sender using TCP-LCD will behave like a
+   regular TCP would.  Note that this kind of attack is
+   indistinguishable from a router experiencing a link outage that is
+   not sending ICMP unreachable messages at all (e.g., because of local
+   policy).
+
+   In summary, the algorithm proposed in this document is considered to
+   be secure.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20Acknowledgments"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  Acknowledgments</span>
+
+   We would like to thank Lars Eggert, Adrian Farrel, Mark Handley, Kai
+   Jakobs, Ilpo Jarvinen, Enrico Marocco, Catherine Meadows, Juergen
+   Quittek, Pasi Sarolahti, Tim Shepard, Joe Touch, and Carsten Wolff
+   for feedback on earlier versions of this document.  We also thank
+   Michael Faber, Daniel Schaffrath, and Damian Lukowski for
+   implementing and testing the algorithm in Linux.  Special thanks go
+   to Ilpo Jarvinen for giving valuable feedback regarding the Linux
+   implementation.
+
+   This work has been supported by the German National Science
+   Foundation (DFG) within the research excellence cluster Ultra High-
+   Speed Mobile Information and Communication (UMIC), RWTH Aachen
+   University.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20References"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.1.%20%20Normative%20References"></a><a class="selflink" href="#section-11.1" id="section-11.1">11.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC0792">RFC0792</a>]   Postel, J., "Internet Control Message Protocol", STD 5,
+               <a href="./rfc792">RFC 792</a>, September 1981.
+
+   [<a id="ref-RFC0793">RFC0793</a>]   Postel, J., "Transmission Control Protocol", STD 7,
+               <a href="./rfc793">RFC 793</a>, September 1981.
+
+   [<a id="ref-RFC1323">RFC1323</a>]   Jacobson, V., Braden, B., and D. Borman, "TCP Extensions
+               for High Performance", <a href="./rfc1323">RFC 1323</a>, May 1992.
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   [<a id="ref-RFC1812">RFC1812</a>]   Baker, F., "Requirements for IP Version 4 Routers",
+               <a href="./rfc1812">RFC 1812</a>, June 1995.
+
+   [<a id="ref-RFC2119">RFC2119</a>]   Bradner, S., "Key words for use in RFCs to Indicate
+               Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC2988">RFC2988</a>]   Paxson, V. and M. Allman, "Computing TCP's Retransmission
+               Timer", <a href="./rfc2988">RFC 2988</a>, November 2000.
+
+   [<a id="ref-RFC4443">RFC4443</a>]   Conta, A., Deering, S., and M. Gupta, "Internet Control
+               Message Protocol (ICMPv6) for the Internet Protocol
+               Version 6 (IPv6) Specification", <a href="./rfc4443">RFC 4443</a>, March 2006.
+
+   [<a id="ref-RFC5681">RFC5681</a>]   Allman, M., Paxson, V., and E. Blanton, "TCP Congestion
+               Control", <a href="./rfc5681">RFC 5681</a>, September 2009.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.2.%20%20Informative%20References"></a><a class="selflink" href="#section-11.2" id="section-11.2">11.2</a>.  Informative References</span>
+
+   [<a id="ref-CRVP01">CRVP01</a>]    Chandran, K., Raghunathan, S., Venkatesan, S., and R.
+               Prakash, "A feedback-based scheme for improving TCP
+               performance in ad hoc wireless networks", IEEE Personal
+               Communications vol. 8, no. 1, pp. 34-39, February 2001.
+
+   [<a id="ref-HV02">HV02</a>]      Holland, G. and N. Vaidya, "Analysis of TCP performance
+               over mobile ad hoc networks", Wireless Networks vol. 8,
+               no. 2-3, pp. 275-288, March 2002.
+
+   [<a id="ref-KP87">KP87</a>]      Karn, P. and C. Partridge, "Improving Round-Trip Time
+               Estimates in Reliable Transport Protocols", Proceedings
+               of the Conference on Applications, Technologies,
+               Architectures, and Protocols for Computer Communication
+               (SIGCOMM'87) pp. 2-7, August 1987.
+
+   [<a id="ref-LS01">LS01</a>]      Liu, J. and S. Singh, "ATCP: TCP for mobile ad hoc
+               networks", IEEE Journal on Selected Areas in
+               Communications vol. 19, no. 7, pp. 1300-1315, July 2001.
+
+   [<a id="ref-RFC0791">RFC0791</a>]   Postel, J., "Internet Protocol", STD 5, <a href="./rfc791">RFC 791</a>,
+               September 1981.
+
+   [<a id="ref-RFC0826">RFC0826</a>]   Plummer, D., "Ethernet Address Resolution Protocol: Or
+               converting network protocol addresses to 48.bit Ethernet
+               address for transmission on Ethernet hardware", STD 37,
+               <a href="./rfc826">RFC 826</a>, November 1982.
+
+   [<a id="ref-RFC1122">RFC1122</a>]   Braden, R., "Requirements for Internet Hosts -
+               Communication Layers", STD 3, <a href="./rfc1122">RFC 1122</a>, October 1989.
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   [<a id="ref-RFC2003">RFC2003</a>]   Perkins, C., "IP Encapsulation within IP", <a href="./rfc2003">RFC 2003</a>,
+               October 1996.
+
+   [<a id="ref-RFC2460">RFC2460</a>]   Deering, S. and R. Hinden, "Internet Protocol, Version 6
+               (IPv6) Specification", <a href="./rfc2460">RFC 2460</a>, December 1998.
+
+   [<a id="ref-RFC2784">RFC2784</a>]   Farinacci, D., Li, T., Hanks, S., Meyer, D., and P.
+               Traina, "Generic Routing Encapsulation (GRE)", <a href="./rfc2784">RFC 2784</a>,
+               March 2000.
+
+   [<a id="ref-RFC3168">RFC3168</a>]   Ramakrishnan, K., Floyd, S., and D. Black, "The Addition
+               of Explicit Congestion Notification (ECN) to IP",
+               <a href="./rfc3168">RFC 3168</a>, September 2001.
+
+   [<a id="ref-RFC3522">RFC3522</a>]   Ludwig, R. and M. Meyer, "The Eifel Detection Algorithm
+               for TCP", <a href="./rfc3522">RFC 3522</a>, April 2003.
+
+   [<a id="ref-RFC3782">RFC3782</a>]   Floyd, S., Henderson, T., and A. Gurtov, "The NewReno
+               Modification to TCP's Fast Recovery Algorithm", <a href="./rfc3782">RFC 3782</a>,
+               April 2004.
+
+   [<a id="ref-RFC3819">RFC3819</a>]   Karn, P., Bormann, C., Fairhurst, G., Grossman, D.,
+               Ludwig, R., Mahdavi, J., Montenegro, G., Touch, J., and
+               L.  Wood, "Advice for Internet Subnetwork Designers",
+               <a href="https://www.rfc-editor.org/bcp/bcp89">BCP 89</a>, <a href="./rfc3819">RFC 3819</a>, July 2004.
+
+   [<a id="ref-RFC4015">RFC4015</a>]   Ludwig, R. and A. Gurtov, "The Eifel Response Algorithm
+               for TCP", <a href="./rfc4015">RFC 4015</a>, February 2005.
+
+   [<a id="ref-RFC4301">RFC4301</a>]   Kent, S. and K. Seo, "Security Architecture for the
+               Internet Protocol", <a href="./rfc4301">RFC 4301</a>, December 2005.
+
+   [<a id="ref-RFC5461">RFC5461</a>]   Gont, F., "TCP's Reaction to Soft Errors", <a href="./rfc5461">RFC 5461</a>,
+               February 2009.
+
+   [<a id="ref-RFC5682">RFC5682</a>]   Sarolahti, P., Kojo, M., Yamamoto, K., and M. Hata,
+               "Forward RTO-Recovery (F-RTO): An Algorithm for Detecting
+               Spurious Retransmission Timeouts with TCP", <a href="./rfc5682">RFC 5682</a>,
+               September 2009.
+
+   [<a id="ref-RFC5927">RFC5927</a>]   Gont, F., "ICMP Attacks against TCP", <a href="./rfc5927">RFC 5927</a>,
+               July 2010.
+
+   [<a id="ref-SESB05">SESB05</a>]    Schuetz, S., Eggert, L., Schmid, S., and M. Brunner,
+               "Protocol enhancements for intermittently connected
+               hosts", SIGCOMM Computer Communication Review vol. 35,
+               no. 3, pp. 5-18, December 2005.
+
+
+
+
+<span class="grey">Zimmermann &amp; Hannemann        Experimental                     [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc6069">RFC 6069</a>             Making TCP More Robust to LCDs        December 2010</span>
+
+
+   [<a id="ref-SM03">SM03</a>]      Scott, J. and G. Mapp, "Link layer-based TCP optimisation
+               for disconnecting networks", SIGCOMM Computer
+               Communication Review vol. 33, no. 5, pp. 31-42,
+               October 2003.
+
+   [<a id="ref-TCP-REXMIT-NOW">TCP-REXMIT-NOW</a>]
+               Eggert, L., Schuetz, S., and S. Schmid, "TCP Extensions
+               for Immediate Retransmissions", Work in Progress,
+               June 2005.
+
+   [<a id="ref-TCP-RLCI">TCP-RLCI</a>]
+               Schuetz, S., Koutsianas, N., Eggert, L., Eddy, W., Swami,
+               Y., and K. Le, "TCP Response to Lower-Layer Connectivity-
+               Change Indications", Work in Progress, February 2008.
+
+   [<a id="ref-Zh86">Zh86</a>]      Zhang, L., "Why TCP Timers Don't Work Well", Proceedings
+               of the Conference on Applications, Technologies,
+               Architectures, and Protocols for Computer Communication
+               (SIGCOMM'86) pp. 397-405, August 1986.
+
+   [<a id="ref-ZimHan09">ZimHan09</a>]
+               Zimmermann, A., "Make TCP more Robust to Long
+               Connectivity Disruptions", Proceedings of the 75th IETF
+               Meeting slides, July 2009,
+               &lt;<a href="http://www.ietf.org/proceedings/75/slides/tcpm-0.pdf">http://www.ietf.org/proceedings/75/slides/tcpm-0.pdf</a>&gt;.
+
+Authors' Addresses
+
+   Alexander Zimmermann
+   RWTH Aachen University
+   Ahornstrasse 55
+   Aachen,   52074
+   Germany
+
+   Phone: +49 241 80 21422
+   EMail: zimmermann@cs.rwth-aachen.de
+
+
+   Arnd Hannemann
+   RWTH Aachen University
+   Ahornstrasse 55
+   Aachen,   52074
+   Germany
+
+   Phone: +49 241 80 21423
+   EMail: hannemann@nets.rwth-aachen.de
+
+
+
+
+
+Zimmermann &amp; Hannemann        Experimental                     [Page 23]
+</pre>
+</body></html>

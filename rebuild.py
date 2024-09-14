@@ -1,80 +1,73 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
-import copy, os, re, sqlite3, string, urllib
-from bs4 import BeautifulSoup, NavigableString, Tag 
+import json
+import sqlite3
+import urllib
+from bs4 import BeautifulSoup
+from pathlib import Path
+from shutil import rmtree
 
-DOCUMENTS_DIR = os.path.join('RFCs.docset', 'Contents', 'Resources', 'Documents')
-HTML_DIR = os.path.join('tools.ietf.org', 'html')
-RFC_DIR = os.path.join('tools.ietf.org', 'rfc')
+DOCUMENTS_DIR = Path(
+    "RFCs.docset", "Contents", "Resources", "Documents", "www.rfc-editor.org", "rfc"
+)
+METADATA_DIR = Path("rfcs")
 
-db = sqlite3.connect('RFCs.docset/Contents/Resources/docSet.dsidx')
+db = sqlite3.connect("RFCs.docset/Contents/Resources/docSet.dsidx")
 cur = db.cursor()
 
-try: cur.execute('DROP TABLE searchIndex;')
-except: pass
-cur.execute('CREATE TABLE searchIndex(id INTEGER PRIMARY KEY, name TEXT, type TEXT, path TEXT);')
-cur.execute('CREATE UNIQUE INDEX anchor ON searchIndex (name, type, path);')
+cur.execute("DROP TABLE IF EXISTS searchIndex;")
+cur.execute(
+    "CREATE TABLE searchIndex(id INTEGER PRIMARY KEY, name TEXT, type TEXT, path TEXT);"
+)
+cur.execute("CREATE UNIQUE INDEX anchor ON searchIndex (name, type, path);")
 
+
+# Remove existing HTML files
+if DOCUMENTS_DIR.exists():
+    rmtree(DOCUMENTS_DIR)
+DOCUMENTS_DIR.mkdir()
 
 # build search index and tables of contents
-for filename in os.listdir(os.path.join(DOCUMENTS_DIR, HTML_DIR)):
-    page = open(os.path.join(DOCUMENTS_DIR, HTML_DIR, filename)).read()
+for html_path in METADATA_DIR.glob("*.html"):
+    json_path = html_path.with_suffix(".json")
+    metadata = json.loads(json_path.read_text())
+    rfc_id = metadata["doc_id"]
+    title = metadata["title"].strip()
+    relative_path = f"www.rfc-editor.org/rfc/{html_path.name}"
 
-    soup = BeautifulSoup(page, 'html5lib')
+    print(f"name: {title}, path: {relative_path}")
 
-    # add each RFC to the search index, using the contents of the <title> tag
-    for tag in soup.find_all('title'):
-        name = tag.text.strip()
+    # Add title of the RFC to search index
+    cur.execute(
+        "INSERT INTO searchIndex(name, type, path) VALUES (?, ?, ?);",
+        (
+            f"{rfc_id}: {title}",
+            "Guide",
+            relative_path,
+        ),
+    )
 
-        if len(name) > 0:
-            path = os.path.join(HTML_DIR, filename)
-            cur.execute('INSERT OR IGNORE INTO searchIndex(name, type, path) VALUES (?,?,?)', (name, 'Guide', path))
-            print('name: %s, path: %s' % (name, path))
+    contents = html_path.read_bytes()
+    soup = BeautifulSoup(contents, "html5lib")
 
     # support table of contents by adding dash <a> tags for each header in the file
-    for tag in soup.find_all('span'):
-        if tag.get('class'):
-            for c in tag.get('class'):
-                if c in ['h2', 'h3', 'h4', 'h5', 'h6']:
-                    dashAnchor = tag.find('a', class_='dashAnchor')
-                    if dashAnchor:
-                        continue
-
+    for tag in soup.find_all("span"):
+        if tag.get("class"):
+            for c in tag.get("class"):
+                if c in {"h2", "h3", "h4", "h5", "h6"}:
                     text = tag.text.strip()
-                    text = text.replace(u'\xa0', u' ') # convert non-breaking space to regular space
+                    # convert non-breaking space to regular space
+                    text = text.replace("\xa0", " ")
 
-                    #print 'adding toc tag for section: %s' % text
-                    name = '//apple_ref/Section/' + urllib.parse.quote(text, '')
-                    dashAnchor = BeautifulSoup('<a name="%s" class="dashAnchor"></a>' % name).a
+                    # print 'adding toc tag for section: %s' % text
+                    name = f"//apple_ref/cpp/Section/{urllib.parse.quote(text, '')}"
+                    dashAnchor = BeautifulSoup(
+                        f'<a name="{name}" class="dashAnchor"></a>',
+                        features="html5lib",
+                    ).a
                     tag.insert(0, dashAnchor)
 
-    fp = open(os.path.join(DOCUMENTS_DIR, HTML_DIR, filename), 'w')
-    fp.write(str(soup))
-    fp.close()
+    DOCUMENTS_DIR.joinpath(html_path.name).write_text(str(soup))
 
 db.commit()
 db.close()
-
-
-# build index file
-index = open(os.path.join(DOCUMENTS_DIR, RFC_DIR, 'index.html')).read()
-soup = BeautifulSoup(index, "html5lib")
-
-# strip unecessary sidebar and javascript
-content = soup.find('div', class_='content').extract()
-soup.find('div', class_='page').append(content)
-[t.extract() for t in soup(['script', 'table'])]
-
-# rewrite all absolute links for RFCs to be local relative links
-for a in soup('a'):
-    if u'href' in a.attrs and a[u'href'].startswith(u'http://tools.ietf.org'):
-        id = a[u'href'].split('/')[-1].lstrip("0")
-        a[u'href'] = "../html/rfc" + id + ".html"
-
-# unfortunately, bs4 doesn't seem to be able to find non-standard tag names like <block> so we have
-# to use a regex :(
-soup = re.sub(r"<block>.*<\/block>", "", str(soup), flags=re.DOTALL)
-
-fp = open(os.path.join(DOCUMENTS_DIR, RFC_DIR, 'index.html'), 'w')
-fp.write(soup)
-fp.close()

@@ -1,0 +1,502 @@
+<html><head></head><body><pre>Network Working Group                                           B. Black
+Request for Comments: 3988                               Layer8 Networks
+Category: Experimental                                       K. Kompella
+                                                        Juniper Networks
+                                                            January 2005
+
+
+            <span class="h1">Maximum Transmission Unit Signalling Extensions</span>
+                  <span class="h1">for the Label Distribution Protocol</span>
+
+Status of This Memo
+
+   This memo defines an Experimental Protocol for the Internet
+   community.  It does not specify an Internet standard of any kind.
+   Discussion and suggestions for improvement are requested.
+   Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2005).
+
+Abstract
+
+   Proper functioning of <a href="./rfc1191">RFC 1191</a> path Maximum Transmission Unit (MTU)
+   discovery requires that IP routers have knowledge of the MTU for each
+   link to which they are connected.  As currently specified, the Label
+   Distribution Protocol (LDP) does not have the ability to signal the
+   MTU for a Label Switched Path (LSP) to the ingress Label Switching
+   Router (LSR).  In the absence of this functionality, the MTU for each
+   LSP must be statically configured by network operators or by
+   equivalent off-line mechanisms.
+
+   This document specifies experimental extensions to LDP in support of
+   LSP MTU discovery.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   As currently specified in [<a href="#ref-2" title='"LDP Specification"'>2</a>], the LDP protocol for MPLS does not
+   support signalling of the MTU for LSPs to ingress LSRs.  This
+   functionality is essential to the proper functioning of <a href="./rfc1191">RFC 1191</a> path
+   MTU detection [<a href="#ref-3" title='"Path MTU discovery"'>3</a>].  Without knowledge of the MTU for an LSP, edge
+   LSRs may transmit packets along that LSP which are, according to [<a href="#ref-4" title='"MPLS Label Stack Encoding"'>4</a>],
+   too big.  These packets may be silently discarded by LSRs along the
+   LSP, effectively preventing communication between certain end hosts.
+
+
+
+
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+   The solution proposed in this document enables automatic
+   determination of the MTU for an LSP by adding a Type-Length-Value
+   triplet (TLV) to carry MTU information for a Forwarding Equivalence
+   Class (FEC) between adjacent LSRs in LDP Label Mapping messages.
+   This information is sufficient for a set of LSRs along the path
+   followed by an LSP to discover either the exact MTU for that LSP, or
+   an approximation that is no worse than could be generated with local
+   information on the ingress LSR.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Conventions%20Used%20in%20This%20Document"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Conventions Used in This Document</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED",  "MAY", and "OPTIONAL" in this
+   document are to be interpreted as described in <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a> [<a href="#ref-1" title='"Key words for use in RFCs to Indicate Requirement Levels"'>1</a>].
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20MTU%20Signalling"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  MTU Signalling</span>
+
+   The signalling procedure described in this document employs the
+   addition of a single TLV to LDP Label Mapping messages and a simple
+   algorithm for LSP MTU calculation.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Definitions"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Definitions</span>
+
+   Link MTU: The MTU of a given link.  This size includes the IP header
+   and data (or other payload) and the label stack but does not include
+   any lower-layer headers.  A link may be an interface (such as
+   Ethernet or Packet-over-SONET), a tunnel (such as GRE or IPsec), or
+   an LSP.
+
+   Peer LSRs: For LSR A and FEC F, this is the set of LSRs that sent a
+   Label Mapping for FEC F to A.
+
+   Downstream LSRs: For LSR A and FEC F, this is the subset of A's peer
+   LSRs for FEC F to which A will forward packets for the FEC.
+   Typically, this subset is determined via the routing table.
+
+   Hop MTU: The MTU of an LSP hop between an upstream LSR, A, and a
+   downstream LSR, B.  This size includes the IP header and data (or
+   other payload) and the part of the label stack that is considered
+   payload as far as this LSP goes.  It does not include any lower-level
+   headers.  (Note: If there are multiple links between A and B, the Hop
+   MTU is the minimum of the Hop MTU of those links used for
+   forwarding.)
+
+   LSP MTU: The MTU of an LSP from a given LSR to the egress(es), over
+   each valid (forwarding) path.  This size includes the IP header and
+   data (or other payload) and any part of the label stack that was
+   received by the ingress LSR before it placed the packet into the LSP
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+   (this part of the label stack is considered part of the payload for
+   this LSP).  The size does not include any lower-level headers.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Example"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Example</span>
+
+   Consider LSRs A - F, interconnected as follows:
+
+                     M       P
+                   _____ C =====
+                  /      |      \
+         A ~~~~~ B ===== D ----- E ----- F
+             L       N       Q       R
+
+   Say that the link MTU for link L is 9216; for links M, Q, and R,
+   4470; and for N and P, is 1500.
+
+   Consider an FEC X for which F is the egress, and say that all LSRs
+   advertise X to their neighbors.
+
+   Note that although LDP may be running on the C - D link, it is not
+   used for forwarding (e.g., because it has a high metric).  In
+   particular, D is an LDP neighbor of C, but D is not one of C's
+   downstream LSRs for FEC X.
+
+   E's peers for FEC X are C, D, and F.  Say that E chooses F as its
+   downstream LSR for X.  E's Hop MTU for link R is 4466.  If F
+   advertised an implicit null label to E, then E MAY set the Hop MTU
+   for R to 4470.
+
+   C's peers for FEC X are B, D, and E.  Say that C chooses E as its
+   downstream LSR for X.  Similarly, A chooses B, B chooses C and D
+   (equal cost multi-path), D chooses E, and E chooses F (respectively)
+   as downstream LSRs.
+
+   C's Hop MTU to E for FEC X is 1496.  B's Hop MTU to C is 4466 and to
+   D is 1496.  A's LSP MTU for FEC X is 1496.  If A has another LSP for
+   FEC Y to F (learned via targeted LDP) that rides over the LSP for FEC
+   X, the MTU for that LSP would be 1492.
+
+   If B had a targeted LDP session to E (e.g., over an RSVP-TE tunnel T)
+   and B received a Mapping for FEC X over the targeted LDP session,
+   then E would also be B's peer, and E may be chosen as a downstream
+   LSR for B.  In that case, B's LSP MTU for FEC X would then be the
+   smaller of {(T's MTU - 4), E's LSP MTU for X}.
+
+   This memo describes how A determines its LSP MTU for FECs X and Y.
+
+
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20Signalling%20Procedure"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  Signalling Procedure</span>
+
+   The procedure for signalling the MTU is performed hop-by-hop by each
+   LSR L along an LSP for a given FEC, F.  The steps are as follows:
+
+   1. First, L computes its LSP MTU for FEC F:
+
+      A. If L is the egress for F, L sets the LSP MTU for F to 65535.
+
+
+      B. [OPTIONAL] If L's only downstream LSR is the egress for F
+         (i.e., L is a penultimate hop for F) and L receives an implicit
+         null label as its Mapping for F, then L can set the Hop MTU for
+         its downstream link to the link MTU instead of (link MTU - 4
+         octets).  L's LSP MTU for F is the Hop MTU.
+
+      C. Otherwise (L is not the egress LSR), L computes the LSP MTU for
+         F as follows:
+
+         a) L determines its downstream LSRs for FEC F.
+
+         b) For each downstream LSR Z, L computes the minimum of the Hop
+            MTU to Z and the LSP MTU in the MTU TLV that Z advertised to
+            L.  If Z did not include the MTU TLV in its Label Mapping,
+            then Z's LSP MTU is set to 65535.
+
+         c) L sets its LSP MTU to the minimum of the MTUs it computed
+            for its downstream LSRs.
+
+   2. For each LDP neighbor (direct or targeted) of L to which L decides
+      to send a Mapping for FEC F, L attaches an MTU TLV with the LSP
+      MTU that it computed for this FEC.  L MAY (because of policy or
+      for other reasons) advertise a smaller MTU than it has computed,
+      but L MUST NOT advertise a larger MTU.
+
+   3. When a new MTU is received for FEC F from a downstream LSR or the
+      set of downstream LSRs for F changes, L returns to step 1.  If the
+      newly computed LSP MTU is unchanged, L SHOULD NOT advertise new
+      information to its neighbors.  Otherwise, L readvertises its
+      Mappings for F to all its peers with an updated MTU TLV.
+
+      This behavior is standard for attributes such as path vector and
+      hop count, and the same rules apply, as specified in [<a href="#ref-2" title='"LDP Specification"'>2</a>].
+
+      If the LSP MTU decreases, L SHOULD readvertise the new MTU
+      immediately; if the LSP MTU increases, L MAY hold down the
+      readvertisement.
+
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20MTU%20TLV"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  MTU TLV</span>
+
+   The MTU TLV encodes information on the maximum transmission unit for
+   an LSP, from the advertising LSR to the egress(es) over all valid
+   paths.
+
+   The encoding for the MTU TLV is as follows:
+
+       0                   1                   2                   3
+       0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |1|1|      MTU TLV (0x0601)     |            Length             |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+      |              MTU              |
+      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+
+   MTU
+
+   This is a 16-bit unsigned integer that represents the MTU in octets
+   for an LSP or a segment of an LSP.
+
+   Note that the U and F bits are set.  An LSR that doesn't recognize
+   the MTU TLV MUST ignore it when it processes the Label Mapping
+   message and forward the TLV to its peers.  This may result in the
+   incorrect computation of the LSP MTU; however, silently forwarding
+   the MTU TLV preserves the maximal amount of information about the LSP
+   MTU.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Example%20of%20Operation"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Example of Operation</span>
+
+   Consider the network example in <a href="#section-2.2">Section 2.2</a>.  For each LSR, Table 1
+   describes the links to its downstream LSRs, the Hop MTU for the peer,
+   the LSP MTU received from the peer, and the LSR's computed LSP MTU.
+
+   Now consider the same network with the following changes: There is an
+   LSP T from B to E, and a targeted LDP session from B to E.  B's peer
+   LSRs are A, C, D, and E; B's downstream LSRs are D and E; to reach E,
+   B chooses to go over T.  The LSP MTU for LSP T is 1496.  This
+   information is depicted in Table 2.
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+         LSR  |  Link  |  Hop MTU  |  Recvd MTU  |  LSP MTU
+         --------------------------------------------------
+          F   |    -   |    65535  |      -      |    65535
+         --------------------------------------------------
+          E   |    R   |     4466  |  F:  65535  |     4466
+         --------------------------------------------------
+          D   |    Q   |     4466  |  E:   4466  |     4466
+         --------------------------------------------------
+          C   |    P   |     1496  |  E:   4466  |     1496
+         --------------------------------------------------
+          B   |    M   |     4466  |  C:   1496  |
+              |    N   |     1496  |  D:   4466  |     1496
+         --------------------------------------------------
+          A   |    L   |     9212  |  B:   1496  |     1496
+         --------------------------------------------------
+                              Table 1
+
+         LSR  |  Link  |  Hop MTU  |  Recvd MTU  |  LSP MTU
+         --------------------------------------------------
+          F   |    -   |    65535  |      -      |    65535
+         --------------------------------------------------
+          E   |    R   |     4466  |  F:  65535  |     4466
+         --------------------------------------------------
+          D   |    Q   |     4466  |  E:   4466  |     4466
+         --------------------------------------------------
+          C   |    P   |     1496  |  E:   4466  |     1496
+         --------------------------------------------------
+          B   |    T   |     1492  |  E:   4466  |
+              |    N   |     1496  |  D:   4466  |     1492
+         --------------------------------------------------
+          A   |    L   |     9212  |  B:   1492  |     1492
+         --------------------------------------------------
+                              Table 2
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Using%20the%20LSP%20MTU"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Using the LSP MTU</span>
+
+   An ingress LSR that forwards an IP packet into an LSP whose MTU it
+   knows MUST either fragment the IP packet to the LSP's MTU (if the
+   Don't Fragment bit is clear) or drop the packet and respond with an
+   ICMP Destination Unreachable message to the source of the packet,
+   with the Code indicating "fragmentation needed and DF set", and the
+   Next-Hop MTU set to the LSP MTU.  In other words, the LSR behaves as
+   <a href="./rfc1191">RFC 1191</a> says, except that it treats the LSP as the next hop
+   "network".
+
+   If the payload for the LSP is not an IP packet, the LSR MUST forward
+   the packet if it fits (size &lt;= LSP MTU) and SHOULD drop it if it
+   doesn't.
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Protocol%20Interaction"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Protocol Interaction</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Interaction%20with%20LSRs%20that%20Do%20Not%20Support%20MTU%20Signalling"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Interaction with LSRs that Do Not Support MTU Signalling</span>
+
+   Changes in MTU for sections of an LSP may cause intermediate LSRs to
+   generate unsolicited label Mapping messages to advertise the new MTU.
+   LSRs that do not support MTU signalling will, due to message and TLV
+   processing mechanisms specified in <a href="./rfc3036">RFC3036</a> [<a href="#ref-2" title='"LDP Specification"'>2</a>], accept the messages
+   carrying the MTU TLV but will ignore the TLV and forward the TLV to
+   the upstream nodes (see <a href="#section-2.4">Section 2.4</a>).
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Interaction%20with%20CR-LDP%20and%20RSVP-TE"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Interaction with CR-LDP and RSVP-TE</span>
+
+   The MTU TLV can be used to discover the Path MTU of both LDP LSPs and
+   CR-LDP LSPs.  This proposal is not impacted in the presence of LSPs
+   created with CR-LDP, as specified in [<a href="#ref-5" title='"Constraint- Based LSP Setup using LDP"'>5</a>].
+
+   Note that LDP/CR-LDP LSPs may tunnel through other LSPs signalled
+   using LDP, CR-LDP, or RSVP-TE [<a href="#ref-6" title='"RSVP-TE: Extensions to RSVP for LSP Tunnels"'>6</a>]; the mechanism suggested here
+   applies in all of these cases, essentially by treating the tunnel
+   LSPs as links.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20References"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.1.%20%20Normative%20References"></a><a class="selflink" href="#section-6.1" id="section-6.1">6.1</a>.  Normative References</span>
+
+   [<a id="ref-1">1</a>]  Bradner, S., "Key words for use in RFCs to Indicate Requirement
+        Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-2">2</a>]  Andersson, L., Doolan, P., Feldman, N., Fredette, A., and B.
+        Thomas, "LDP Specification", <a href="./rfc3036">RFC 3036</a>, January 2001.
+
+   [<a id="ref-3">3</a>]  Mogul, J. and S. Deering, "Path MTU discovery", <a href="./rfc1191">RFC 1191</a>,
+        November 1990.
+
+   [<a id="ref-4">4</a>]  Rosen, E., Tappan, D., Fedorkow, G., Rekhter, Y., Farinacci, D.,
+        Li, T., and A. Conta, "MPLS Label Stack Encoding", <a href="./rfc3032">RFC 3032</a>,
+        January 2001.
+
+   [<a id="ref-6">6</a>]  Awduche, D., Berger, L., Gan, D., Li, T., Srinivasan, V., and G.
+        Swallow, "RSVP-TE: Extensions to RSVP for LSP Tunnels", <a href="./rfc3209">RFC</a>
+        <a href="./rfc3209">3209</a>, December 2001.
+
+
+
+
+
+
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.2.%20%20Informative%20References"></a><a class="selflink" href="#section-6.2" id="section-6.2">6.2</a>.  Informative References</span>
+
+   [<a id="ref-5">5</a>]  Jamoussi, B., Andersson, L., Callon, R., Dantu, R., Wu, L.,
+        Doolan, P., Worster, T., Feldman, N., Fredette, A., Girish, M.,
+        Gray, E., Heinanen, J., Kilty, T., and A. Malis, "Constraint-
+        Based LSP Setup using LDP", <a href="./rfc3212">RFC 3212</a>, January 2002.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Security%20Considerations"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Security Considerations</span>
+
+   This mechanism does not introduce any new weaknesses in LDP.  It is
+   possible to spoof TCP packets belonging to an LDP session to
+   manipulate the LSP MTU, but LDP has mechanisms to thwart these types
+   of attacks.  See Section 5 of [<a href="#ref-2" title='"LDP Specification"'>2</a>] for more information on security
+   aspects of LDP.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  IANA Considerations</span>
+
+   IANA has allocated 0x0601 as a new LDP TLV Type, defined in <a href="#section-2.4">Section</a>
+   <a href="#section-2.4">2.4</a>.  See: <a href="http://www.iana.org/assignments/ldp-namespaces">http://www.iana.org/assignments/ldp-namespaces</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Acknowledgements"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Acknowledgements</span>
+
+   We would like to thank Andre Fredette for a number of detailed
+   comments on earlier versions of the signalling mechanism.  Eric Gray,
+   Giles Heron, and Mark Duffy have contributed numerous useful
+   suggestions.
+
+Authors' Addresses
+
+   Benjamin Black
+   Layer8 Networks
+
+   EMail: ben@layer8.net
+
+
+   Kireeti Kompella
+   Juniper Networks
+   1194 N. Mathilda Ave
+   Sunnyvale, CA  94089
+   US
+
+   EMail: kireeti@juniper.net
+
+
+
+
+
+
+
+
+
+<span class="grey">Black &amp; Kompella              Experimental                      [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc3988">RFC 3988</a>           MTU Signalling Extensions for LDP        January 2005</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The Internet Society (2005).
+
+   This document is subject to the rights, licenses and restrictions
+   contained in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a>, and except as set forth therein, the authors
+   retain all their rights.
+
+   This document and the information contained herein are provided on an
+   "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+   OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY AND THE INTERNET
+   ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE
+   INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+   WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Intellectual Property
+
+   The IETF takes no position regarding the validity or scope of any
+   Intellectual Property Rights or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this document or the extent to which any license under such rights
+   might or might not be available; nor does it represent that it has
+   made any independent effort to identify any such rights.  Information
+   on the IETF's procedures with respect to rights in IETF Documents can
+   be found in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and <a href="https://www.rfc-editor.org/bcp/bcp79">BCP 79</a>.
+
+   Copies of IPR disclosures made to the IETF Secretariat and any
+   assurances of licenses to be made available, or the result of an
+   attempt made to obtain a general license or permission for the use of
+   such proprietary rights by implementers or users of this
+   specification can be obtained from the IETF on-line IPR repository at
+   <a href="http://www.ietf.org/ipr">http://www.ietf.org/ipr</a>.
+
+   The IETF invites any interested party to bring to its attention any
+   copyrights, patents or patent applications, or other proprietary
+   rights that may cover technology that may be required to implement
+   this standard.  Please address the information to the IETF at ietf-
+   ipr@ietf.org.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is currently provided by the
+   Internet Society.
+
+
+
+
+
+
+
+Black &amp; Kompella              Experimental                      [Page 9]
+</pre>
+</body></html>

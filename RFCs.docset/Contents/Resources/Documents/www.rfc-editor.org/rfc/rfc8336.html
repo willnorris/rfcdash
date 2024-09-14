@@ -1,0 +1,614 @@
+<html><head></head><body><pre>Internet Engineering Task Force (IETF)                     M. Nottingham
+Request for Comments: 8336
+Category: Standards Track                                      E. Nygren
+ISSN: 2070-1721                                      Akamai Technologies
+                                                              March 2018
+
+
+                        <span class="h1">The ORIGIN HTTP/2 Frame</span>
+
+Abstract
+
+   This document specifies the ORIGIN frame for HTTP/2, to indicate what
+   origins are available on a given connection.
+
+Status of This Memo
+
+   This is an Internet Standards Track document.
+
+   This document is a product of the Internet Engineering Task Force
+   (IETF).  It represents the consensus of the IETF community.  It has
+   received public review and has been approved for publication by the
+   Internet Engineering Steering Group (IESG).  Further information on
+   Internet Standards is available in <a href="./rfc7841#section-2">Section 2 of RFC 7841</a>.
+
+   Information about the current status of this document, any errata,
+   and how to provide feedback on it may be obtained at
+   <a href="https://www.rfc-editor.org/info/rfc8336">https://www.rfc-editor.org/info/rfc8336</a>.
+
+Copyright Notice
+
+   Copyright (c) 2018 IETF Trust and the persons identified as the
+   document authors.  All rights reserved.
+
+   This document is subject to <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and the IETF Trust's Legal
+   Provisions Relating to IETF Documents
+   (<a href="https://trustee.ietf.org/license-info">https://trustee.ietf.org/license-info</a>) in effect on the date of
+   publication of this document.  Please review these documents
+   carefully, as they describe your rights and restrictions with respect
+   to this document.  Code Components extracted from this document must
+   include Simplified BSD License text as described in Section 4.e of
+   the Trust Legal Provisions and are provided without warranty as
+   described in the Simplified BSD License.
+
+
+
+
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>.  Introduction  . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+     <a href="#section-1.1">1.1</a>.  Notational Conventions  . . . . . . . . . . . . . . . . .   <a href="#page-2">2</a>
+   <a href="#section-2">2</a>.  The ORIGIN HTTP/2 Frame . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-2.1">2.1</a>.  Syntax  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-2.2">2.2</a>.  Processing ORIGIN Frames  . . . . . . . . . . . . . . . .   <a href="#page-3">3</a>
+     <a href="#section-2.3">2.3</a>.  The Origin Set  . . . . . . . . . . . . . . . . . . . . .   <a href="#page-4">4</a>
+     <a href="#section-2.4">2.4</a>.  Authority, Push, and Coalescing with ORIGIN . . . . . . .   <a href="#page-6">6</a>
+   <a href="#section-3">3</a>.  IANA Considerations . . . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-4">4</a>.  Security Considerations . . . . . . . . . . . . . . . . . . .   <a href="#page-7">7</a>
+   <a href="#section-5">5</a>.  References  . . . . . . . . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+     <a href="#section-5.1">5.1</a>.  Normative References  . . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+     <a href="#section-5.2">5.2</a>.  Informative References  . . . . . . . . . . . . . . . . .   <a href="#page-8">8</a>
+   <a href="#appendix-A">Appendix A</a>.  Non-Normative Processing Algorithm . . . . . . . . .  <a href="#page-10">10</a>
+   <a href="#appendix-B">Appendix B</a>.  Operational Considerations for Servers . . . . . . .  <a href="#page-10">10</a>
+   Authors' Addresses  . . . . . . . . . . . . . . . . . . . . . . .  <a href="#page-11">11</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   HTTP/2 [<a href="./rfc7540" title='"Hypertext Transfer Protocol Version 2 (HTTP/2)"'>RFC7540</a>] allows clients to coalesce different origins
+   [<a href="./rfc6454" title='"The Web Origin Concept"'>RFC6454</a>] onto the same connection when certain conditions are met.
+   However, in some cases, a connection is not usable for a coalesced
+   origin, so the 421 (Misdirected Request) status code (<a href="./rfc7540#section-9.1.2">[RFC7540],
+   Section 9.1.2</a>) was defined.
+
+   Using a status code in this manner allows clients to recover from
+   misdirected requests, but at the penalty of adding latency.  To
+   address that, this specification defines a new HTTP/2 frame type,
+   "ORIGIN", to allow servers to indicate for which origins a connection
+   is usable.
+
+   Additionally, experience has shown that HTTP/2's requirement to
+   establish server authority using both DNS and the server's
+   certificate is onerous.  This specification relaxes the requirement
+   to check DNS when the ORIGIN frame is in use.  Doing so has
+   additional benefits, such as removing the latency associated with
+   some DNS lookups.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.1.%20%20Notational%20Conventions"></a><a class="selflink" href="#section-1.1" id="section-1.1">1.1</a>.  Notational Conventions</span>
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and
+   "OPTIONAL" in this document are to be interpreted as described in
+   <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a> [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC2119</a>] [<a href="./rfc8174" title='"Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words"'>RFC8174</a>] when, and only when, they appear in all
+   capitals, as shown here.
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20The%20ORIGIN%20HTTP%2F2%20Frame"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  The ORIGIN HTTP/2 Frame</span>
+
+   This document defines a new HTTP/2 frame type (<a href="./rfc7540#section-4">[RFC7540], Section 4</a>)
+   called ORIGIN, that allows a server to indicate what origin(s)
+   [<a href="./rfc6454" title='"The Web Origin Concept"'>RFC6454</a>] the server would like the client to consider as members of
+   the Origin Set (<a href="#section-2.3">Section 2.3</a>) for the connection within which it
+   occurs.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.1.%20%20Syntax"></a><a class="selflink" href="#section-2.1" id="section-2.1">2.1</a>.  Syntax</span>
+
+   The ORIGIN frame type is 0xc (decimal 12) and contains zero or more
+   instances of the Origin-Entry field.
+
+   +-------------------------------+-------------------------------+
+   |         Origin-Entry (*)                                    ...
+   +-------------------------------+-------------------------------+
+
+   An Origin-Entry is a length-delimited string:
+
+   +-------------------------------+-------------------------------+
+   |         Origin-Len (16)       | ASCII-Origin?               ...
+   +-------------------------------+-------------------------------+
+
+   Specifically:
+
+   Origin-Len:  An unsigned, 16-bit integer indicating the length, in
+      octets, of the ASCII-Origin field.
+
+   Origin:  An OPTIONAL sequence of characters containing the ASCII
+      serialization of an origin (<a href="./rfc6454#section-6.2">[RFC6454], Section 6.2</a>) that the
+      sender asserts this connection is or could be authoritative for.
+
+   The ORIGIN frame does not define any flags.  However, future updates
+   to this specification MAY define flags.  See <a href="#section-2.2">Section 2.2</a>.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.2.%20%20Processing%20ORIGIN%20Frames"></a><a class="selflink" href="#section-2.2" id="section-2.2">2.2</a>.  Processing ORIGIN Frames</span>
+
+   The ORIGIN frame is a non-critical extension to HTTP/2.  Endpoints
+   that do not support this frame can safely ignore it upon receipt.
+
+   When received by an implementing client, it is used to initialize and
+   manipulate the Origin Set (see <a href="#section-2.3">Section 2.3</a>), thereby changing how the
+   client establishes authority for origin servers (see <a href="#section-2.4">Section 2.4</a>).
+
+   The ORIGIN frame MUST be sent on stream 0; an ORIGIN frame on any
+   other stream is invalid and MUST be ignored.
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+   Likewise, the ORIGIN frame is only valid on connections with the "h2"
+   protocol identifier or when specifically nominated by the protocol's
+   definition; it MUST be ignored when received on a connection with the
+   "h2c" protocol identifier.
+
+   This specification does not define any flags for the ORIGIN frame,
+   but future updates to this specification (through IETF consensus)
+   might use them to change its semantics.  The first four flags (0x1,
+   0x2, 0x4, and 0x8) are reserved for backwards-incompatible changes;
+   therefore, when any of them are set, the ORIGIN frame containing them
+   MUST be ignored by clients conforming to this specification, unless
+   the flag's semantics are understood.  The remaining flags are
+   reserved for backwards-compatible changes and do not affect
+   processing by clients conformant to this specification.
+
+   The ORIGIN frame describes a property of the connection and therefore
+   is processed hop by hop.  An intermediary MUST NOT forward ORIGIN
+   frames.  Clients configured to use a proxy MUST ignore any ORIGIN
+   frames received from it.
+
+   Each ASCII-Origin field in the frame's payload MUST be parsed as an
+   ASCII serialization of an origin (<a href="./rfc6454#section-6.2">[RFC6454], Section 6.2</a>).  If
+   parsing fails, the field MUST be ignored.
+
+   Note that the ORIGIN frame does not support wildcard names (e.g.,
+   "*.example.com") in Origin-Entry.  As a result, sending ORIGIN when a
+   wildcard certificate is in use effectively disables any origins that
+   are not explicitly listed in the ORIGIN frame(s) (when the client
+   understands ORIGIN).
+
+   See <a href="#appendix-A">Appendix A</a> for an illustrative algorithm for processing ORIGIN
+   frames.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.3.%20%20The%20Origin%20Set"></a><a class="selflink" href="#section-2.3" id="section-2.3">2.3</a>.  The Origin Set</span>
+
+   The set of origins (as per [<a href="./rfc6454" title='"The Web Origin Concept"'>RFC6454</a>]) that a given connection might
+   be used for is known in this specification as the Origin Set.
+
+   By default, the Origin Set for a connection is uninitialized.  An
+   uninitialized Origin Set means that clients apply the coalescing
+   rules from <a href="./rfc7540#section-9.1.1">Section 9.1.1 of [RFC7540]</a>.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+   When an ORIGIN frame is first received and successfully processed by
+   a client, the connection's Origin Set is defined to contain an
+   initial origin.  The initial origin is composed from:
+
+   o  Scheme: "https"
+
+   o  Host: the value sent in Server Name Indication (SNI) (<a href="./rfc6066#section-3">[RFC6066],
+      Section 3</a>) converted to lower case; if SNI is not present, the
+      remote address of the connection (i.e., the server's IP address)
+
+   o  Port: the remote port of the connection (i.e., the server's port)
+
+   The contents of that ORIGIN frame (and subsequent ones) allow the
+   server to incrementally add new origins to the Origin Set, as
+   described in <a href="#section-2.2">Section 2.2</a>.
+
+   The Origin Set is also affected by the 421 (Misdirected Request)
+   response status code, as defined in <a href="./rfc7540#section-9.1.2">[RFC7540], Section 9.1.2</a>.  Upon
+   receipt of a response with this status code, implementing clients
+   MUST create the ASCII serialization of the corresponding request's
+   origin (as per <a href="./rfc6454#section-6.2">[RFC6454], Section 6.2</a>) and remove it from the
+   connection's Origin Set, if present.
+
+   Note:  When sending an ORIGIN frame to a connection that is
+      initialized as an alternative service [<a href="./rfc7838" title='"HTTP Alternative Services"'>RFC7838</a>], the initial
+      Origin Set (<a href="#section-2.3">Section 2.3</a>) will contain an origin with the
+      appropriate scheme and hostname (since <a href="./rfc7838">RFC 7838</a> specifies that the
+      origin's hostname be sent in SNI).  However, it is possible that
+      the port will be different than that of the intended origin, since
+      the initial Origin Set is calculated using the actual port in use,
+      which can be different for the alternative service.  In this case,
+      the intended origin needs to be sent in the ORIGIN frame
+      explicitly.
+
+      For example, a client making requests for "https://example.com" is
+      directed to an alternative service at ("h2", "x.example.net",
+      "8443").  If this alternative service sends an ORIGIN frame, the
+      initial origin will be "<a href="https://example.com:8443">https://example.com:8443</a>".  The client
+      will not be able to use the alternative service to make requests
+      for "https://example.com" unless that origin is explicitly
+      included in the ORIGIN frame.
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.4.%20%20Authority%2C%20Push%2C%20and%20Coalescing%20with%20ORIGIN"></a><a class="selflink" href="#section-2.4" id="section-2.4">2.4</a>.  Authority, Push, and Coalescing with ORIGIN</span>
+
+   <a href="./rfc7540#section-10.1">Section 10.1 of [RFC7540]</a> uses both DNS and the presented Transport
+   Layer Security (TLS) certificate to establish the origin server(s)
+   that a connection is authoritative for, just as HTTP/1.1 does in
+   [<a href="./rfc7230" title='"Hypertext Transfer Protocol (HTTP/1.1): Message Syntax and Routing"'>RFC7230</a>].
+
+   Furthermore, <a href="./rfc7540#section-9.1.1">Section 9.1.1 of [RFC7540]</a> explicitly allows a
+   connection to be used for more than one origin server, if it is
+   authoritative.  This affects what responses can be considered
+   authoritative, both for direct responses to requests and for server
+   push (see <a href="./rfc7540#section-8.2.2">[RFC7540], Section 8.2.2</a>).  Indirectly, it also affects
+   what requests will be sent on a connection, since clients will
+   generally only send requests on connections that they believe to be
+   authoritative for the origin in question.
+
+   Once an Origin Set has been initialized for a connection, clients
+   that implement this specification use it to help determine what the
+   connection is authoritative for.  Specifically, such clients MUST NOT
+   consider a connection to be authoritative for an origin not present
+   in the Origin Set, and they SHOULD use the connection for all
+   requests to origins in the Origin Set for which the connection is
+   authoritative, unless there are operational reasons for opening a new
+   connection.
+
+   Note that for a connection to be considered authoritative for a given
+   origin, the server is still required to authenticate with a
+   certificate that passes suitable checks; see <a href="./rfc7540#section-9.1.1">Section 9.1.1 of
+   [RFC7540]</a> for more information.  This includes verifying that the
+   host matches a "dNSName" value from the certificate "subjectAltName"
+   field (using the rules defined in [<a href="./rfc2818" title='"HTTP Over TLS"'>RFC2818</a>]; see also <a href="./rfc5280#section-4.2.1.6">[RFC5280],
+   Section 4.2.1.6</a>).
+
+   Additionally, clients MAY avoid consulting DNS to establish the
+   connection's authority for new requests to origins in the Origin Set;
+   however, those that do so face new risks, as explained in <a href="#section-4">Section 4</a>.
+
+   Because ORIGIN can change the set of origins a connection is used for
+   over time, it is possible that a client might have more than one
+   viable connection to an origin open at any time.  When this occurs,
+   clients SHOULD NOT emit new requests on any connection whose Origin
+   Set is a proper subset of another connection's Origin Set, and they
+   SHOULD close it once all outstanding requests are satisfied.
+
+   The Origin Set is unaffected by any alternative services [<a href="./rfc7838" title='"HTTP Alternative Services"'>RFC7838</a>]
+   advertisements made by the server.  Advertising an alternative
+   service does not affect whether a server is authoritative.
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  IANA Considerations</span>
+
+   This specification adds an entry to the "HTTP/2 Frame Type" registry.
+
+   o  Frame Type: ORIGIN
+
+   o  Code: 0xc
+
+   o  Specification: <a href="./rfc8336">RFC 8336</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Security%20Considerations"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Security Considerations</span>
+
+   Clients that blindly trust the ORIGIN frame's contents will be
+   vulnerable to a large number of attacks.  See <a href="#section-2.4">Section 2.4</a> for
+   mitigations.
+
+   Relaxing the requirement to consult DNS when determining authority
+   for an origin means that an attacker who possesses a valid
+   certificate no longer needs to be on path to redirect traffic to
+   them; instead of modifying DNS, they need only convince the user to
+   visit another website in order to coalesce connections to the target
+   onto their existing connection.
+
+   As a result, clients opting not to consult DNS ought to employ some
+   alternative means to establish a high degree of confidence that the
+   certificate is legitimate.  For example, clients might skip
+   consulting DNS only if they receive proof of inclusion in a
+   Certificate Transparency log [<a href="./rfc6962" title='"Certificate Transparency"'>RFC6962</a>] or if they have a recent
+   Online Certificate Status Protocol (OCSP) response [<a href="./rfc6960" title='"X.509 Internet Public Key Infrastructure Online Certificate Status Protocol - OCSP"'>RFC6960</a>]
+   (possibly using the "status_request" TLS extension [<a href="./rfc6066" title='"Transport Layer Security (TLS) Extensions: Extension Definitions"'>RFC6066</a>]) showing
+   that the certificate was not revoked.
+
+   The Origin Set's size is unbounded by this specification and thus
+   could be used by attackers to exhaust client resources.  To mitigate
+   this risk, clients can monitor their state commitment and close the
+   connection if it is too high.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20References"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.1.%20%20Normative%20References"></a><a class="selflink" href="#section-5.1" id="section-5.1">5.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC2119">RFC2119</a>]  Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>,
+              DOI 10.17487/RFC2119, March 1997,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2119">https://www.rfc-editor.org/info/rfc2119</a>&gt;.
+
+   [<a id="ref-RFC2818">RFC2818</a>]  Rescorla, E., "HTTP Over TLS", <a href="./rfc2818">RFC 2818</a>,
+              DOI 10.17487/RFC2818, May 2000,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc2818">https://www.rfc-editor.org/info/rfc2818</a>&gt;.
+
+   [<a id="ref-RFC5280">RFC5280</a>]  Cooper, D., Santesson, S., Farrell, S., Boeyen, S.,
+              Housley, R., and W. Polk, "Internet X.509 Public Key
+              Infrastructure Certificate and Certificate Revocation List
+              (CRL) Profile", <a href="./rfc5280">RFC 5280</a>, DOI 10.17487/RFC5280, May 2008,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc5280">https://www.rfc-editor.org/info/rfc5280</a>&gt;.
+
+   [<a id="ref-RFC6066">RFC6066</a>]  Eastlake 3rd, D., "Transport Layer Security (TLS)
+              Extensions: Extension Definitions", <a href="./rfc6066">RFC 6066</a>,
+              DOI 10.17487/RFC6066, January 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6066">https://www.rfc-editor.org/info/rfc6066</a>&gt;.
+
+   [<a id="ref-RFC6454">RFC6454</a>]  Barth, A., "The Web Origin Concept", <a href="./rfc6454">RFC 6454</a>,
+              DOI 10.17487/RFC6454, December 2011,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6454">https://www.rfc-editor.org/info/rfc6454</a>&gt;.
+
+   [<a id="ref-RFC7540">RFC7540</a>]  Belshe, M., Peon, R., and M. Thomson, Ed., "Hypertext
+              Transfer Protocol Version 2 (HTTP/2)", <a href="./rfc7540">RFC 7540</a>,
+              DOI 10.17487/RFC7540, May 2015,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7540">https://www.rfc-editor.org/info/rfc7540</a>&gt;.
+
+   [<a id="ref-RFC8174">RFC8174</a>]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in <a href="./rfc2119">RFC</a>
+              <a href="./rfc2119">2119</a> Key Words", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc8174">RFC 8174</a>, DOI 10.17487/RFC8174,
+              May 2017, &lt;<a href="https://www.rfc-editor.org/info/rfc8174">https://www.rfc-editor.org/info/rfc8174</a>&gt;.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.2.%20%20Informative%20References"></a><a class="selflink" href="#section-5.2" id="section-5.2">5.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC6960">RFC6960</a>]  Santesson, S., Myers, M., Ankney, R., Malpani, A.,
+              Galperin, S., and C. Adams, "X.509 Internet Public Key
+              Infrastructure Online Certificate Status Protocol - OCSP",
+              <a href="./rfc6960">RFC 6960</a>, DOI 10.17487/RFC6960, June 2013,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6960">https://www.rfc-editor.org/info/rfc6960</a>&gt;.
+
+   [<a id="ref-RFC6962">RFC6962</a>]  Laurie, B., Langley, A., and E. Kasper, "Certificate
+              Transparency", <a href="./rfc6962">RFC 6962</a>, DOI 10.17487/RFC6962, June 2013,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc6962">https://www.rfc-editor.org/info/rfc6962</a>&gt;.
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+   [<a id="ref-RFC7230">RFC7230</a>]  Fielding, R., Ed. and J. Reschke, Ed., "Hypertext Transfer
+              Protocol (HTTP/1.1): Message Syntax and Routing",
+              <a href="./rfc7230">RFC 7230</a>, DOI 10.17487/RFC7230, June 2014,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc7230">https://www.rfc-editor.org/info/rfc7230</a>&gt;.
+
+   [<a id="ref-RFC7838">RFC7838</a>]  Nottingham, M., McManus, P., and J. Reschke, "HTTP
+              Alternative Services", <a href="./rfc7838">RFC 7838</a>, DOI 10.17487/RFC7838,
+              April 2016, &lt;<a href="https://www.rfc-editor.org/info/rfc7838">https://www.rfc-editor.org/info/rfc7838</a>&gt;.
+
+   [<a id="ref-RFC8288">RFC8288</a>]  Nottingham, M., "Web Linking", <a href="./rfc8288">RFC 8288</a>,
+              DOI 10.17487/RFC8288, October 2017,
+              &lt;<a href="https://www.rfc-editor.org/info/rfc8288">https://www.rfc-editor.org/info/rfc8288</a>&gt;.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                    [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20A.%20%20Non-Normative%20Processing%20Algorithm"></a><a class="selflink" href="#appendix-A" id="appendix-A">Appendix A</a>.  Non-Normative Processing Algorithm</span>
+
+   The following algorithm illustrates how a client could handle
+   received ORIGIN frames:
+
+   1.  If the client is configured to use a proxy for the connection,
+       ignore the frame and stop processing.
+
+   2.  If the connection is not identified with the "h2" protocol
+       identifier or another protocol that has explicitly opted into
+       this specification, ignore the frame and stop processing.
+
+   3.  If the frame occurs upon any stream except stream 0, ignore the
+       frame and stop processing.
+
+   4.  If any of the flags 0x1, 0x2, 0x4, or 0x8 are set, ignore the
+       frame and stop processing.
+
+   5.  If no previous ORIGIN frame on the connection has reached this
+       step, initialize the Origin Set as per <a href="#section-2.3">Section 2.3</a>.
+
+   6.  For each "Origin-Entry" in the frame payload:
+
+       1.  Parse "ASCII-Origin" as an ASCII serialization of an origin
+           (<a href="./rfc6454#section-6.2">[RFC6454], Section 6.2</a>), and let the result be
+           "parsed_origin".  If parsing fails, skip to the next
+           "Origin-Entry".
+
+       2.  Add "parsed_origin" to the Origin Set.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/Appendix%20B.%20%20Operational%20Considerations%20for%20Servers"></a><a class="selflink" href="#appendix-B" id="appendix-B">Appendix B</a>.  Operational Considerations for Servers</span>
+
+   The ORIGIN frame allows a server to indicate for which origins a
+   given connection ought be used.  The set of origins advertised using
+   this mechanism is under control of the server; servers are not
+   obligated to use it or to advertise all origins that they might be
+   able to answer a request for.
+
+   For example, it can be used to inform the client that the connection
+   is to only be used for the SNI-based origin, by sending an empty
+   ORIGIN frame.  Or, a larger number of origins can be indicated by
+   including a payload.
+
+   Generally, this information is most useful to send before sending any
+   part of a response that might initiate a new connection; for example,
+   "Link" response header fields [<a href="./rfc8288" title='"Web Linking"'>RFC8288</a>], or links in the response
+   body.
+
+
+
+
+<span class="grey">Nottingham &amp; Nygren          Standards Track                   [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc8336">RFC 8336</a>                      ORIGIN Frames                   March 2018</span>
+
+
+   Therefore, the ORIGIN frame ought be sent as soon as possible on a
+   connection, ideally before any HEADERS or PUSH_PROMISE frames.
+
+   However, if it's desirable to associate a large number of origins
+   with a connection, doing so might introduce end-user-perceived
+   latency, due to their size.  As a result, it might be necessary to
+   select a "core" set of origins to send initially, and expand the set
+   of origins the connection is used for with subsequent ORIGIN frames
+   later (e.g., when the connection is idle).
+
+   That said, senders are encouraged to include as many origins as
+   practical within a single ORIGIN frame; clients need to make
+   decisions about creating connections on the fly, and if the Origin
+   Set is split across many frames, their behavior might be suboptimal.
+
+   Senders take note that, as per <a href="#section-4">Section 4</a>, Step 5, of [<a href="./rfc6454" title='"The Web Origin Concept"'>RFC6454</a>], the
+   values in an ORIGIN header need to be case-normalized before
+   serialization.
+
+   Finally, servers that host alternative services [<a href="./rfc7838" title='"HTTP Alternative Services"'>RFC7838</a>] will need
+   to explicitly advertise their origins when sending ORIGIN, because
+   the default contents of the Origin Set (as per <a href="#section-2.3">Section 2.3</a>) do not
+   contain any alternative services' origins, even if they have been
+   used previously on the connection.
+
+Authors' Addresses
+
+   Mark Nottingham
+
+   Email: mnot@mnot.net
+   URI:   <a href="https://www.mnot.net/">https://www.mnot.net/</a>
+
+
+   Erik Nygren
+   Akamai Technologies
+
+   Email: erik+ietf@nygren.org
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Nottingham &amp; Nygren          Standards Track                   [Page 11]
+</pre>
+</body></html>

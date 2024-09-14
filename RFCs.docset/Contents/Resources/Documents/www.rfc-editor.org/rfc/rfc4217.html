@@ -1,0 +1,1622 @@
+<html><head></head><body><pre>Network Working Group                                 P. Ford-Hutchinson
+Request for Comments: 4217                                    IBM UK Ltd
+Category: Standards Track                                   October 2005
+
+
+                         <span class="h1">Securing FTP with TLS</span>
+
+Status of This Memo
+
+   This document specifies an Internet standards track protocol for the
+   Internet community, and requests discussion and suggestions for
+   improvements.  Please refer to the current edition of the "Internet
+   Official Protocol Standards" (STD 1) for the standardization state
+   and status of this protocol.  Distribution of this memo is unlimited.
+
+Copyright Notice
+
+   Copyright (C) The Internet Society (2005).
+
+Abstract
+
+   This document describes a mechanism that can be used by FTP clients
+   and servers to implement security and authentication using the TLS
+   protocol defined by <a href="./rfc2246">RFC 2246</a>, "The TLS Protocol Version 1.0.", and
+   the extensions to the FTP protocol defined by <a href="./rfc2228">RFC 2228</a>, "FTP Security
+   Extensions".  It describes the subset of the extensions that are
+   required and the parameters to be used, discusses some of the policy
+   issues that clients and servers will need to take, considers some of
+   the implications of those policies, and discusses some expected
+   behaviours of implementations to allow interoperation.  This document
+   is intended to provide TLS support for FTP in a similar way to that
+   provided for SMTP in <a href="./rfc2487">RFC 2487</a>, "SMTP Service Extension for Secure
+   SMTP over Transport Layer Security", and HTTP in <a href="./rfc2817">RFC 2817</a>, "Upgrading
+   to TLS Within HTTP/1.1.".
+
+   This specification is in accordance with <a href="./rfc959">RFC 959</a>, "File Transfer
+   Protocol".  It relies on <a href="./rfc2246">RFC 2246</a>, "The TLS Protocol Version 1.0.",
+   and <a href="./rfc2228">RFC 2228</a>, "FTP Security Extensions".
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 1]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-2"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+Table of Contents
+
+   <a href="#section-1">1</a>. Introduction ....................................................<a href="#page-3">3</a>
+   <a href="#section-2">2</a>. Audience ........................................................<a href="#page-5">5</a>
+   <a href="#section-3">3</a>. Overview ........................................................<a href="#page-5">5</a>
+   <a href="#section-4">4</a>. Session Negotiation on the Control Port .........................<a href="#page-5">5</a>
+      <a href="#section-4.1">4.1</a>. Client Wants a Secured Session .............................<a href="#page-5">5</a>
+      <a href="#section-4.2">4.2</a>. Server Wants a Secured Session .............................<a href="#page-6">6</a>
+   <a href="#section-5">5</a>. Clearing the Control Port .......................................<a href="#page-6">6</a>
+   <a href="#section-6">6</a>. Response to the FEAT Command ....................................<a href="#page-7">7</a>
+   <a href="#section-7">7</a>. Data Connection Behaviour .......................................<a href="#page-8">8</a>
+   <a href="#section-8">8</a>. Mechanisms for the AUTH Command .................................<a href="#page-9">9</a>
+   <a href="#section-9">9</a>. Data Connection Security ........................................<a href="#page-9">9</a>
+   <a href="#section-10">10</a>. A Discussion of Negotiation Behaviour .........................<a href="#page-11">11</a>
+      <a href="#section-10.1">10.1</a>. The Server's View of the Control Connection ..............<a href="#page-11">11</a>
+      <a href="#section-10.2">10.2</a>. The Server's View of the Data Connection .................<a href="#page-12">12</a>
+      <a href="#section-10.3">10.3</a>. The Client's View of the Control Connection ..............<a href="#page-14">14</a>
+      <a href="#section-10.4">10.4</a>. The Client's View of the Data Connection .................<a href="#page-15">15</a>
+   <a href="#section-11">11</a>. Who Negotiates What, Where, and How ...........................<a href="#page-15">15</a>
+      <a href="#section-11.1">11.1</a>. Do we protect at all? ....................................<a href="#page-15">15</a>
+      11.2. What level of protection do we use on the Control
+            connection? ..............................................<a href="#page-15">15</a>
+      <a href="#section-11.3">11.3</a>. Do we protect data connections in general? ...............<a href="#page-16">16</a>
+      <a href="#section-11.4">11.4</a>. Is protection required for a particular data transfer? ...<a href="#page-16">16</a>
+      11.5. What level of protection is required for a
+            particular data ..........................................<a href="#page-16">16</a>
+   <a href="#section-12">12</a>. Timing Diagrams ...............................................<a href="#page-16">16</a>
+      <a href="#section-12.1">12.1</a>. Establishing a Protected Session .........................<a href="#page-17">17</a>
+      12.2. Establishing a Protected Session Without a
+            Password Request .........................................<a href="#page-18">18</a>
+      12.3. Establishing a Protected Session and then
+            Clearing with the CCC ....................................<a href="#page-19">19</a>
+      <a href="#section-12.4">12.4</a>. A Standard Data Transfer Without Protection ..............<a href="#page-20">20</a>
+      <a href="#section-12.5">12.5</a>. A Firewall-Friendly Data Transfer Without Protection .....<a href="#page-20">20</a>
+      <a href="#section-12.6">12.6</a>. A Standard Data Transfer with Protection .................<a href="#page-21">21</a>
+      <a href="#section-12.7">12.7</a>. A Firewall-Friendly Data Transfer with Protection ........<a href="#page-21">21</a>
+   <a href="#section-13">13</a>. Discussion of the REIN Command ................................<a href="#page-22">22</a>
+   <a href="#section-14">14</a>. Discussion of the STAT and ABOR Commands ......................<a href="#page-22">22</a>
+   <a href="#section-15">15</a>. Security Considerations .......................................<a href="#page-23">23</a>
+      <a href="#section-15.1">15.1</a>. Verification of Authentication Tokens ....................<a href="#page-23">23</a>
+           <a href="#section-15.1.1">15.1.1</a>. Server Certificates ...............................<a href="#page-23">23</a>
+           <a href="#section-15.1.2">15.1.2</a>. Client Certificates ...............................<a href="#page-23">23</a>
+      <a href="#section-15.2">15.2</a>. Addressing FTP Security Considerations [<a href="./rfc2577" title='"FTP Security Considerations"'>RFC-2577</a>] ........<a href="#page-24">24</a>
+           <a href="#section-15.2.1">15.2.1</a>. Bounce Attack .....................................<a href="#page-24">24</a>
+           <a href="#section-15.2.2">15.2.2</a>. Restricting Access ................................<a href="#page-24">24</a>
+           <a href="#section-15.2.3">15.2.3</a>. Protecting Passwords ..............................<a href="#page-24">24</a>
+           <a href="#section-15.2.4">15.2.4</a>. Privacy ...........................................<a href="#page-24">24</a>
+           <a href="#section-15.2.5">15.2.5</a>. Protecting Usernames ..............................<a href="#page-24">24</a>
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 2]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-3"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+           <a href="#section-15.2.6">15.2.6</a>. Port Stealing .....................................<a href="#page-25">25</a>
+           <a href="#section-15.2.7">15.2.7</a>. Software-Based Security Problems ..................<a href="#page-25">25</a>
+      <a href="#section-15.3">15.3</a>. Issues with the CCC Command ..............................<a href="#page-25">25</a>
+   <a href="#section-16">16</a>. IANA Considerations ...........................................<a href="#page-25">25</a>
+   <a href="#section-17">17</a>. Other Parameters ..............................................<a href="#page-25">25</a>
+   <a href="#section-18">18</a>. Scalability and Limits ........................................<a href="#page-26">26</a>
+   <a href="#section-19">19</a>. Applicability .................................................<a href="#page-26">26</a>
+   <a href="#section-20">20</a>. Acknowledgements ..............................................<a href="#page-26">26</a>
+   <a href="#section-21">21</a>. References ....................................................<a href="#page-26">26</a>
+      <a href="#section-21.1">21.1</a>. Normative References .....................................<a href="#page-26">26</a>
+      <a href="#section-21.2">21.2</a>. Informative References ...................................<a href="#page-27">27</a>
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/1.%20%20Introduction"></a><a class="selflink" href="#section-1" id="section-1">1</a>.  Introduction</span>
+
+   This document describes how three other documents should be combined
+   to provide a useful, interoperable, and secure file transfer
+   protocol.  Those documents are:
+
+      <a href="./rfc959">RFC 959</a> [<a href="./rfc959" title='"File Transfer Protocol"'>RFC-959</a>]
+
+         The description of the Internet File Transfer Protocol.
+
+      <a href="./rfc2246">RFC 2246</a> [<a href="./rfc2246" title='"The TLS Protocol Version 1.0"'>RFC-2246</a>]
+
+         The description of the Transport Layer Security protocol
+         (developed from the Netscape Secure Sockets Layer (SSL)
+         protocol version 3.0).
+
+      <a href="./rfc2228">RFC 2228</a> [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>]
+
+         Extensions to the FTP protocol to allow negotiation of security
+         mechanisms to allow authentication, confidentiality, and
+         message integrity.
+
+   This document is intended to provide TLS support for FTP in a similar
+   way to that provided for SMTP in <a href="./rfc3207">RFC 3207</a> [<a href="./rfc3207" title='"SMTP Service Extension for Secure SMTP over Transport Layer Security"'>RFC-3207</a>] and HTTP in <a href="./rfc2817">RFC</a>
+   <a href="./rfc2817">2817</a> [<a href="./rfc2817" title='"Upgrading to TLS Within HTTP/1.1"'>RFC-2817</a>].
+
+   The security extensions to FTP in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>] offer a comprehensive
+   set of commands and responses that can be used to add authentication,
+   integrity, and confidentiality to the FTP protocol.  The TLS protocol
+   is a popular (due to its wholesale adoption in the HTTP environment)
+   mechanism for generally securing a socket connection.
+
+   Although TLS is not the only mechanism for securing file transfer, it
+   does offer some of the following positive attributes:
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 3]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-4"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+      - Flexible security levels.  TLS can support confidentiality,
+        integrity, authentication, or some combination of all of these.
+        During a session, this allows clients and servers to dynamically
+        decide on the level of security required for a particular data
+        transfer.
+
+      - Ability to provide strong authentication of the FTP server.
+
+      - It is possible to use TLS identities to authenticate client
+        users and client hosts.
+
+      - Formalised public key management.  By use of well established
+        client identity mechanisms (supported by TLS) during the
+        authentication phase, certificate management may be built into a
+        central function.  Whilst this may not be desirable for all uses
+        of secured file transfer, it offers advantages in certain
+        structured environments.
+
+      - Co-existence and interoperation with authentication mechanisms
+        that are already in place for the HTTPS protocol.  This allows
+        web browsers to incorporate secure file transfer using the same
+        infrastructure that has been set up to allow secure web
+        browsing.
+
+   The TLS protocol is a development of the Netscape Communication
+   Corporation's SSL protocol and this document can be used to allow the
+   FTP protocol to be used with either SSL or TLS.  The actual protocol
+   used will be decided by the negotiation of the protected session by
+   the TLS/SSL layer.  This document will only refer to the TLS
+   protocol; however, it is understood that the Client and Server MAY
+   actually be using SSL if they are so configured.
+
+   There are many ways in which these three protocols can be combined.
+   This document selects one method by which FTP can operate securely,
+   while providing both flexibility and interoperation.  This
+   necessitates a brief description of the actual negotiation mechanism,
+   a detailed description of the required policies and practices, and a
+   discussion of the expected behaviours of clients and servers to allow
+   either party to impose their security requirements on the FTP
+   session.
+
+   The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
+   "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY" and "OPTIONAL" that
+   appear in this document are to be interpreted as described in
+   [<a href="./rfc2119" title='"Key words for use in RFCs to Indicate Requirement Levels"'>RFC-2119</a>].
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 4]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-5"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/2.%20%20Audience"></a><a class="selflink" href="#section-2" id="section-2">2</a>.  Audience</span>
+
+   This document is aimed at developers who wish to implement TLS as a
+   security mechanism to secure FTP clients and/or servers.
+
+   Systems administrators and architects should be fully aware of the
+   security implications discussed in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>], which need to be
+   considered when choosing an implementation of this protocol and
+   configuring it to provide their required security.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/3.%20%20Overview"></a><a class="selflink" href="#section-3" id="section-3">3</a>.  Overview</span>
+
+   A full description of the FTP security protocol enhancements is
+   contained in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>].  This document describes how the AUTH, PROT,
+   PBSZ, and CCC commands, defined therein, should be implemented with
+   the TLS protocol.
+
+   In summary, an FTP session is established on the normal control port.
+   A client requests TLS with the AUTH command and then decides if it
+   wishes to secure the data connections by use of the PBSZ and PROT
+   commands.  Should a client wish to make the control connection revert
+   back into plaintext (for example, once the authentication phase is
+   completed), then the CCC command can be used.
+
+   Implementation of this protocol extension does not ensure that each
+   and every session and data transfer is secure, it merely provides the
+   tools that allow a client and/or server to negotiate an acceptable or
+   required level of security for that given session or data transfer.
+   However, it is possible to have a server implementation that is
+   capable of refusing to operate in an insecure fashion.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.%20%20Session%20Negotiation%20on%20the%20Control%20Port"></a><a class="selflink" href="#section-4" id="section-4">4</a>.  Session Negotiation on the Control Port</span>
+
+   The server listens on the normal FTP control port {FTP-PORT} and the
+   session initiation is not secured at all.  Once the client wishes to
+   secure the session, the AUTH command is sent and the server MAY then
+   allow TLS negotiation to take place.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.1.%20%20Client%20Wants%20a%20Secured%20Session"></a><a class="selflink" href="#section-4.1" id="section-4.1">4.1</a>.  Client Wants a Secured Session</span>
+
+   If a client wishes to attempt to secure a session, then it SHOULD, in
+   accordance with [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>], send the AUTH command with the parameter
+   requesting TLS {TLS-PARM} ('TLS').
+
+   The client then needs to behave according to its policies depending
+   on the response received from the server and also the result of the
+   TLS negotiation.  A client that receives an AUTH rejection MAY choose
+   to continue with the session unprotected if it so desires.
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 5]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-6"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/4.2.%20%20Server%20Wants%20a%20Secured%20Session"></a><a class="selflink" href="#section-4.2" id="section-4.2">4.2</a>.  Server Wants a Secured Session</span>
+
+   The FTP protocol does not allow a server to directly dictate client
+   behaviour; however, the same effect can be achieved by refusing to
+   accept certain FTP commands until the session is secured to a level
+   that is acceptable to the server.
+
+   In either case, '234' is the server response to an 'AUTH TLS' command
+   that it will honour.
+
+   The '334' response, as defined in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>], implies that an ADAT
+   exchange will follow.  This document does not use the ADAT command
+   and so the '334' reply is incorrect.
+
+   The FTP protocol insists that a USER command be used to identify the
+   entity attempting to use the ftp server.  Although the TLS
+   negotiation may be providing authentication information, the USER
+   command MUST still be issued by the client.  However, it will be a
+   server implementation issue to decide which credentials to accept and
+   what consistency checks to make between the client cert used and the
+   parameter on the USER command.
+
+   [<a id="ref-RFC-2228">RFC-2228</a>] states that the user must reauthorize (that is, reissue
+   some or all of the USER, PASS, and ACCT commands) following an AUTH
+   command.  Additionally, this document specifies that all other
+   transfer parameters (other than the AUTH parameter) must be reset,
+   almost as if a REIN command was issued.
+
+      Reset transfer parameters after the AUTH command, including (but
+      are not limited to): user identity, default data ports, TYPE,
+      STRU, MODE, and current working directory.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/5.%20%20Clearing%20the%20Control%20Port"></a><a class="selflink" href="#section-5" id="section-5">5</a>.  Clearing the Control Port</span>
+
+   There are circumstances in which it may be desirable to protect the
+   control connection only during part of the session and then to revert
+   back to a plaintext connection.  This is often due to the limitations
+   of boundary devices such as NAT and firewalls, which expect to be
+   able to examine the content of the control connection in order to
+   modify their behaviour.
+
+   Typically the AUTH, USER, PASS, PBSZ, and PROT commands would be
+   protected within the TLS protocol and then the CCC command would be
+   issued to return to a plaintext socket state.  This has important
+   Security Issues (which are discussed in the Security Considerations
+   section), but this document describes how the command should be used,
+   if the client and server still wish to use it after having considered
+   the issues.
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 6]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-7"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+   When a server receives the CCC command, it should behave as follows:
+
+      If the server does not accept CCC commands (or does not understand
+      them), then a 500 reply should be sent.
+
+      Otherwise, if the control connection is not protected with TLS,
+      then a 533 reply should be sent.
+
+      Otherwise, if the server does not wish to allow the control
+      connection to be cleared at this time, then a 534 reply should be
+      sent.
+
+      Otherwise, the server is accepting the CCC command and should do
+      the following:
+
+         o  Send a 200 reply.
+
+         o  Shutdown the TLS session on the socket and leave it open.
+
+         o  Continue the control connection in plaintext, expecting the
+            next command from the client to be in plaintext.
+
+         o  Not accept any more PBSZ or PROT commands.  All subsequent
+            data transfers must be protected with the current PROT
+            settings.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/6.%20%20Response%20to%20the%20FEAT%20Command"></a><a class="selflink" href="#section-6" id="section-6">6</a>.  Response to the FEAT Command</span>
+
+   The FEAT command (introduced in [<a href="./rfc2389" title='"Feature negotiation mechanism for the File Transfer Protocol"'>RFC-2389</a>]) allows servers with
+   additional features to advertise these to a client by responding to
+   the FEAT command.  If a server supports the FEAT command, then it
+   MUST advertise supported AUTH, PBSZ, and PROT commands in the reply,
+   as described in <a href="./rfc2389#section-3.2">section 3.2 of [RFC-2389]</a>.  Additionally, the AUTH
+   command should have a reply that identifies 'TLS' as one of the
+   possible parameters to AUTH.  It is not necessary to identify the
+   'TLS-C' synonym separately.
+
+   Example reply (in the same style as [<a href="./rfc2389" title='"Feature negotiation mechanism for the File Transfer Protocol"'>RFC-2389</a>])
+
+      C&gt; FEAT
+      S&gt; 211-Extensions supported
+      S&gt;  AUTH TLS
+      S&gt;  PBSZ
+      S&gt;  PROT
+      S&gt; 211 END
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 7]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-8"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/7.%20%20Data%20Connection%20Behaviour"></a><a class="selflink" href="#section-7" id="section-7">7</a>.  Data Connection Behaviour</span>
+
+   The Data Connection in the FTP model can be used in one of three
+   ways.  (Note: These descriptions are not necessarily placed in exact
+   chronological order, but do describe the steps required.  See
+   diagrams later for clarification.)
+
+            i) Classic FTP client/server data exchange
+
+                 - The client obtains a port; sends the port number to
+                   the server; the server connects to the client.  The
+                   client issues a send or receive request to the server
+                   on the control connection and the data transfer
+                   commences on the data connection.
+
+          ii) Firewall-Friendly client/server data exchange (as
+              discussed in [<a href="./rfc1579" title='"Firewall-Friendly FTP"'>RFC-1579</a>]) using the PASV command to reverse
+              the direction of the data connection.
+
+                 - The client requests that the server open a port; the
+                   server obtains a port and returns the address and
+                   port number to the client; the client connects to the
+                   server on this port.  The client issues a send or
+                   receive request on the control connection, and the
+                   data transfer commences on the data connection.
+
+         iii) Client-initiated server/server data exchange (proxy or
+              PASV connections).
+
+                 - The client requests that server A opens a port;
+                   server A obtains a port and returns it to the client;
+                   the client sends this port number to server B.
+                   Server B connects to server A.  The client sends a
+                   send or receive request to server A and the
+                   complement to server B and the data transfer
+                   commences.  In this model, server A is the proxy or
+                   PASV host and is a client for the Data Connection to
+                   server B.
+
+   For i) and ii), the FTP client MUST be the TLS client and the FTP
+   server MUST be the TLS server.
+
+   That is to say, it does not matter which side initiates the
+   connection with a connect() call or which side reacts to the
+   connection via the accept() call; the FTP client, as defined in
+   [<a href="./rfc959" title='"File Transfer Protocol"'>RFC-959</a>], is always the TLS client, as defined in [<a href="./rfc2246" title='"The TLS Protocol Version 1.0"'>RFC-2246</a>].
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 8]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-9"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+   In scenario iii), there is a problem in that neither server A nor
+   server B is the TLS client, given the fact that an FTP server must
+   act as a TLS server for Firewall-Friendly FTP [<a href="./rfc1579" title='"Firewall-Friendly FTP"'>RFC-1579</a>].  Thus, this
+   is explicitly excluded in the security extensions document [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>]
+   and in this document.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/8.%20%20Mechanisms%20for%20the%20AUTH%20Command"></a><a class="selflink" href="#section-8" id="section-8">8</a>.  Mechanisms for the AUTH Command</span>
+
+   The AUTH command takes a single parameter to define the security
+   mechanism to be negotiated.  As the SSL/TLS protocols self-negotiate
+   their levels, there is no need to distinguish between SSL and TLS in
+   the application layer.  The mechanism name for negotiating TLS is the
+   character string identified in {TLS-PARM}.  This allows the client
+   and server to negotiate TLS on the control connection without
+   altering the protection of the data channel.  To protect the data
+   channel as well, the PBSZ command, followed by the PROT command
+   sequence, MUST be used.
+
+   Note: The data connection state MAY be modified by the client issuing
+   the PROT command with the new desired level of data channel
+   protection and the server replying in the affirmative.  This data
+   channel protection negotiation can happen at any point in the session
+   (even straight after a PORT or PASV command) and as often as is
+   required.
+
+   See also <a href="#section-16">Section 16</a>, "IANA Considerations".
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/9.%20%20Data%20Connection%20Security"></a><a class="selflink" href="#section-9" id="section-9">9</a>.  Data Connection Security</span>
+
+   The Data Connection security level is determined by the PROT command.
+
+      The PROT command, as specified in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>], allows client/server
+      negotiation of the security level of the data connection.  Once a
+      PROT command has been issued by the client and accepted by the
+      server returning the '200' reply, the security of subsequent data
+      connections MUST be at that level until another PROT command is
+      issued and accepted; the session ends and a REIN command is
+      issued, or the security of the session (via an AUTH command) is
+      re-negotiated.
+
+   Data Connection Security Negotiation (the PROT command)
+
+      Note: In line with [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>], there is no facility for securing
+      the Data connection with an insecure Control connection.
+      Specifically, the PROT command MUST be preceded by a PBSZ command,
+      and a PBSZ command MUST be preceded by a successful security data
+      exchange (the TLS negotiation in this case).
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                     [Page 9]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-10"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+      The command defined in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>] to negotiate data connection
+      security is the PROT command.  As defined, there are four values
+      that the PROT command parameter can take.
+
+            'C' - Clear - neither Integrity nor Privacy
+
+            'S' - Safe - Integrity without Privacy
+
+            'E' - Confidential - Privacy without Integrity
+
+            'P' - Private - Integrity and Privacy
+
+      As TLS negotiation encompasses (and exceeds) the Safe /
+      Confidential / Private distinction, only Private (use TLS) and
+      Clear (don't use TLS) are used.
+
+      For TLS, the data connection can have one of two security levels.
+
+            1) Clear (requested by 'PROT C')
+
+            2) Private (requested by 'PROT P')
+
+      With 'Clear' protection level, the data connection is made without
+      TLS.  Thus, the connection is unauthenticated and has no
+      confidentiality or integrity.  This might be the desired behaviour
+      for servers sending file lists, pre-encrypted data, or non-
+      sensitive data (e.g., for anonymous FTP servers).
+
+      If the data connection security level is 'Private', then a TLS
+      negotiation must take place on the data connection to the
+      satisfaction of the Client and Server prior to any data being
+      transmitted over the connection.  The TLS layers of the Client and
+      Server will be responsible for negotiating the exact TLS Cipher
+      Suites that will be used (and thus the eventual security of the
+      connection).
+
+      In addition, the PBSZ (protection buffer size) command, as
+      detailed in [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>], is compulsory prior to any PROT command.
+      This document also defines a data channel encapsulation mechanism
+      for protected data buffers.  For FTP-TLS, which appears to the FTP
+      application as a streaming protection mechanism, this is not
+      required.  Thus, the PBSZ command MUST still be issued, but must
+      have a parameter of '0' to indicate that no buffering is taking
+      place and the data connection should not be encapsulated.
+
+      Note that PBSZ 0 is not in the grammar of <a href="./rfc2228#section-8.1">[RFC-2228], section 8.1</a>,
+      where it is stated:
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 10]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-11"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+         PBSZ &lt;sp&gt; &lt;decimal-integer&gt; &lt;CRLF&gt; &lt;decimal-integer&gt; ::= any
+         decimal integer from 1 to (2^32)-1
+
+      However, it should be noted that using a value of '0' to mean a
+      streaming protocol is a reasonable use of '0' for that parameter
+      and is not ambiguous.
+
+   Initial Data Connection Security
+
+      The initial state of the data connection MUST be 'Clear' (this is
+      the behaviour as indicated by [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>]).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.%20%20A%20Discussion%20of%20Negotiation%20Behaviour"></a><a class="selflink" href="#section-10" id="section-10">10</a>.  A Discussion of Negotiation Behaviour</span>
+
+   As [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>] allows security qualities to be negotiated, enabled,
+   and disabled dynamically, this can make implementations seem quite
+   complex.  However, in any given instance the behaviour should be
+   quite straightforward.  Either the server will be enforcing the
+   policy of the server host or it will be providing security
+   capabilities requested by the client.  Either the client will be
+   conforming to the server's policy or will be endeavouring to provide
+   the capabilities that the user desires.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.1.%20%20The%20Server%27s%20View%20of%20the%20Control%20Connection"></a><a class="selflink" href="#section-10.1" id="section-10.1">10.1</a>.  The Server's View of the Control Connection</span>
+
+   A server MAY have a policy statement somewhere that might:
+
+      - Deny any command before TLS is negotiated (this might cause
+        problems if a SITE or some such command is required prior to
+        login).
+
+      - Deny certain commands before TLS is negotiated (e.g., USER,
+        PASS, or ACCT).
+
+      - Deny insecure USER commands for certain users (e.g., not
+        ftp/anonymous).
+
+      - Deny secure USER commands for certain users (e.g.,
+        ftp/anonymous).
+
+      - Define the level(s) of TLS to be allowed.
+
+      - Define the CipherSuites allowed to be used (perhaps on a per
+        host/domain/...  basis).
+
+      - Allow TLS authentication as a substitute for local
+        authentication.
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 11]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-12"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+      - Define data connection policies (see next section).
+
+      It is possible that the TLS negotiation may not be completed
+      satisfactorily for the server, in which case it can be one of
+      these states.
+
+         The TLS negotiation failed completely
+
+            In this case, the control connection should still be in an
+            unprotected mode and the server SHOULD issue an unprotected
+            '421' reply to end the session.
+
+         The TLS negotiation completed successfully, but the server
+         decides that the session parameters are not acceptable (e.g.,
+         Distinguished Name in the client certificate is not permitted
+         to use the server).
+
+            In this case, the control connection should still be in a
+            protected state, so the server MAY either continue to refuse
+            to service commands or issue a protected '421' reply and
+            close the connection.
+
+         The TLS negotiation failed during the TLS handshake
+
+            In this case, the control connection is in an unknown state
+            and the server SHOULD simply drop the control connection.
+
+   The server code will be responsible for implementing the required
+   policies and ensuring that the client is prevented from circumventing
+   the chosen security by refusing to service those commands that are
+   against policy.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.2.%20%20The%20Server%27s%20View%20of%20the%20Data%20Connection"></a><a class="selflink" href="#section-10.2" id="section-10.2">10.2</a>.  The Server's View of the Data Connection</span>
+
+   The server can take one of four basic views of the data connection.
+
+      1 - Don't allow encryption at all (in which case the PROT command
+          should not allow any value other than 'C' - if it is allowed
+          at all).
+
+      2 - Allow the client to choose protection or not.
+
+      3 - Insist on data protection (in which case the PROT command must
+          be issued prior to the first attempted data transfer).
+
+      4 - Decide on one of the above three for each and every data
+          connection.
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 12]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-13"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+   The server SHOULD only check the status of the data protection level
+   (for options 3 and 4 above) on the actual command that will initiate
+   the data transfer (and not on the PORT or PASV).  The following
+   commands, defined in [<a href="./rfc959" title='"File Transfer Protocol"'>RFC-959</a>], cause data connections to be opened
+   and thus may be rejected before any 1xx message due to an incorrect
+   PROT setting.
+
+         STOR
+         RETR
+         NLST
+         LIST
+         STOU
+         APPE
+
+   The reply to indicate that the PROT setting is incorrect is '521 data
+   connection cannot be opened with this PROT setting'
+
+   If the protection level indicates that TLS is required, then it
+   should be negotiated once the data connection is made.  Thus, the
+   '150' reply only states that the command can be used given the
+   current PROT level.  Should the server not like the TLS negotiation,
+   then it will close the data port immediately and follow the '150'
+   command with a '522' reply, which indicates that the TLS negotiation
+   failed or was unacceptable.  (Note: This means that the application
+   can pass a standard list of CipherSuites to the TLS layer for
+   negotiation, and review the one negotiated for applicability in each
+   instance).
+
+   The Security Considerations section discusses the issue of cross-
+   checking any certificates used to authenticate the data connection
+   with the one(s) used to authenticate the control connection.  This is
+   an important security step.
+
+   It is reasonable for the server to insist that the data connection
+   uses a TLS cached session.  This might be a cache of a previous data
+   connection or of a cleared control connection.  If this is the reason
+   for the refusal to allow the data transfer, then the '522' reply
+   should indicate this.
+
+   Note: This has an important impact on client design, but allows
+   servers to minimise the cycles used during TLS negotiation by
+   refusing to perform a full negotiation with a previously
+   authenticated client.
+
+   It should be noted that the TLS authentication of the server will be
+   authentication of the server host itself and not a user on the server
+   host.
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 13]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-14"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.3.%20%20The%20Client%27s%20View%20of%20the%20Control%20Connection"></a><a class="selflink" href="#section-10.3" id="section-10.3">10.3</a>.  The Client's View of the Control Connection</span>
+
+   In most cases, it is likely that the client will be using TLS because
+   the server would refuse to interact insecurely.  To allow for this,
+   clients SHOULD be flexible enough to manage the securing of a session
+   at the appropriate time and still allow the user/server policies to
+   dictate exactly when during the session the security is negotiated.
+
+   In the case where it is the client that is insisting on the securing
+   of the session, the client will need to ensure that the negotiations
+   are all completed satisfactorily and will need to be able to sensibly
+   inform the user should the server not support, or not be prepared to
+   use, the required security levels.
+
+   Clients SHOULD be coded in such a manner as to allow the timing of
+   the AUTH, PBSZ, and PROT commands to be flexible and dictated by the
+   server.  It is quite reasonable for a server to refuse certain
+   commands prior to these commands.  Similarly, it is quite possible
+   that a SITE or quoted command might be needed by a server prior to
+   the AUTH.  A client MUST allow a user to override the timing of these
+   commands to suit a specific server.
+
+   For example, a client SHOULD NOT insist on sending the AUTH as the
+   first command in a session, nor should it insist on issuing a
+   PBSZ/PROT pair directly after the AUTH.  This may well be the default
+   behaviour, but must be overridable by a user.
+
+   The TLS negotiation may not be completed satisfactorily for the
+   client, in which case it will be in one of these states:
+
+      The TLS negotiation failed completely
+
+         In this case, the control connection should still be in an
+         unprotected mode and the client should issue an unprotected
+         QUIT command to end the session.
+
+      The TLS negotiation completed successfully, but the client decides
+      that the session parameters are not acceptable (e.g.,
+      Distinguished Name in certificate is not the actual server
+      expected).
+
+         In this case, the control connection should still be up in a
+         protected state, so the client should issue a protected QUIT
+         command to end the session.
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 14]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-15"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+      The TLS negotiation failed during the TLS handshake.
+
+         In this case, the control connection is in an unknown state and
+         the client should simply drop the control connection.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/10.4.%20%20The%20Client%27s%20View%20of%20the%20Data%20Connection"></a><a class="selflink" href="#section-10.4" id="section-10.4">10.4</a>.  The Client's View of the Data Connection</span>
+
+   Client security policies
+
+      Clients do not typically have 'policies' as such, instead they
+      rely on the user to define their actions and, to a certain extent,
+      are reactive to the server policy.  Thus, a client will need to
+      have commands that will allow the user to switch the protection
+      level of the data connection dynamically; however, there may be a
+      general 'policy' that attempts all LIST and NLST commands on a
+      Clear connection first (and automatically switches to Private if
+      it fails).  In this case, there would need to be a user command
+      available to ensure that a given data transfer was not attempted
+      on an insecure data connection.
+
+      Clients also need to understand that the level of the PROT setting
+      is only checked for a particular data transfer after that transfer
+      has been requested.  Thus, a refusal by the server to accept a
+      particular data transfer should not be read by the client as a
+      refusal to accept that data protection level completely, as not
+      only may other data transfers be acceptable at that protection
+      level, but it is entirely possible that the same transfer may be
+      accepted at the same protection level at a later point in the
+      session.
+
+      It should be noted that the TLS authentication of the client
+      should be an authentication of a user on the client host and not
+      the client host itself.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.%20%20Who%20Negotiates%20What%2C%20Where%2C%20and%20How"></a><a class="selflink" href="#section-11" id="section-11">11</a>.  Who Negotiates What, Where, and How</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.1.%20%20Do%20we%20protect%20at%20all%3F"></a><a class="selflink" href="#section-11.1" id="section-11.1">11.1</a>.  Do we protect at all?</span>
+
+   Client issues 'AUTH TLS', server accepts or rejects.  If the server
+   needs AUTH, then it refuses to accept certain commands until it gets
+   a successfully protected session.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.2.%20%20What%20level%20of%20protection%20do%20we%20use%20on%20the%20Control%20connection%3F"></a><a class="selflink" href="#section-11.2" id="section-11.2">11.2</a>.  What level of protection do we use on the Control connection?</span>
+
+   Decided entirely by the TLS CipherSuite negotiation.
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 15]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-16"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.3.%20%20Do%20we%20protect%20data%20connections%20in%20general%3F"></a><a class="selflink" href="#section-11.3" id="section-11.3">11.3</a>.  Do we protect data connections in general?</span>
+
+   Client issues PROT command, server accepts or rejects.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.4.%20%20Is%20protection%20required%20for%20a%20particular%20data%20transfer%3F"></a><a class="selflink" href="#section-11.4" id="section-11.4">11.4</a>.  Is protection required for a particular data transfer?</span>
+
+   A client would have already issued a PROT command if it required the
+   connection to be protected.
+
+   If a server needs to have the connection protected, then it will
+   reply to the STOR/RETR/NLST/... command with a '522', indicating that
+   the current state of the data connection protection level is not
+   sufficient for that data transfer at that time.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/11.5.%20%20What%20level%20of%20protection%20is%20required%20for%20a%20particular%20data"></a><a class="selflink" href="#section-11.5" id="section-11.5">11.5</a>.  What level of protection is required for a particular data</span>
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/transfer%3F"></a>       transfer?</span>
+
+   Decided entirely by the TLS CipherSuite negotiation.
+
+   Thus, for flexibility, it can be seen that it is desirable for the
+   FTP application to be able to interact with the TLS layer upon which
+   it sits to define and discover the exact TLS CipherSuites that are to
+   be/have been negotiated and to make decisions accordingly.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.%20%20Timing%20Diagrams"></a><a class="selflink" href="#section-12" id="section-12">12</a>.  Timing Diagrams</span>
+
+   These timing diagrams aim to help explain exactly how the TLS
+   handshake and session protection fits into the existing logic of the
+   FTP protocol.  Of course, the FTP protocol itself is not well
+   described with respect to the timing of commands and responses in
+   [<a href="./rfc959" title='"File Transfer Protocol"'>RFC-959</a>], so this is partly based on empirical observation of
+   existing widespread client and server implementations.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 16]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-17"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.1.%20%20Establishing%20a%20Protected%20Session"></a><a class="selflink" href="#section-12.1" id="section-12.1">12.1</a>.  Establishing a Protected Session</span>
+
+              Client                                 Server
+     control          data                   data               control
+   ====================================================================
+
+                                                                socket()
+                                                                bind()
+     socket()
+     connect()  ----------------------------------------------&gt; accept()
+               &lt;----------------------------------------------  220
+     AUTH TLS   ----------------------------------------------&gt;
+               &lt;----------------------------------------------  234
+     TLSneg()  &lt;----------------------------------------------&gt; TLSneg()
+     PBSZ 0     ----------------------------------------------&gt;
+               &lt;----------------------------------------------  200
+     PROT P     ----------------------------------------------&gt;
+               &lt;----------------------------------------------  200
+     USER fred  ----------------------------------------------&gt;
+               &lt;----------------------------------------------  331
+     PASS pass  ----------------------------------------------&gt;
+               &lt;----------------------------------------------  230
+
+   Note 1: The order of the PBSZ/PROT pair and the USER/PASS pair (with
+   respect to each other) is not important (i.e., the USER/PASS can
+   happen prior to the PBSZ/PROT, or the server can refuse to allow a
+   PBSZ/PROT pair until the USER/PASS pair has happened).
+
+   Note 2: The PASS command might not be required at all (if the USER
+   parameter and any client identity presented provide sufficient
+   authentication).  The server would indicate this by issuing a '232'
+   reply to the USER command instead of the '331', which requests a PASS
+   from the client (see below).
+
+   Note 3: The AUTH command might not be the first command after the
+   receipt of the 220 welcome message.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 17]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-18"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.2.%20%20Establishing%20a%20Protected%20Session%20Without%20a%20Password%20Request"></a><a class="selflink" href="#section-12.2" id="section-12.2">12.2</a>.  Establishing a Protected Session Without a Password Request</span>
+       (The TLS Authentication is Sufficient)
+
+              Client                                 Server
+     control          data                   data               control
+   ====================================================================
+
+                                                                socket()
+                                                                bind()
+     socket()
+     connect()  ----------------------------------------------&gt; accept()
+               &lt;----------------------------------------------  220
+     AUTH TLS   ----------------------------------------------&gt;
+               &lt;----------------------------------------------  234
+     TLSneg()  &lt;----------------------------------------------&gt; TLSneg()
+     PBSZ 0     ----------------------------------------------&gt;
+               &lt;----------------------------------------------  200
+     PROT P     ----------------------------------------------&gt;
+               &lt;----------------------------------------------  200
+     USER fred  ----------------------------------------------&gt;
+               &lt;----------------------------------------------  232
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 18]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-19"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.3.%20%20Establishing%20a%20Protected%20Session%20and%20then%20Clearing%20with%20the%20CCC"></a><a class="selflink" href="#section-12.3" id="section-12.3">12.3</a>.  Establishing a Protected Session and then Clearing with the CCC</span>
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/Command"></a>       Command</span>
+
+             Client                                 Server
+    control          data                   data               control
+  ====================================================================
+
+                                                               socket()
+                                                               bind()
+    socket()
+    connect()  ----------------------------------------------&gt; accept()
+              &lt;----------------------------------------------  220
+    AUTH TLS   ----------------------------------------------&gt;
+              &lt;----------------------------------------------  234
+    TLSneg()  &lt;----------------------------------------------&gt; TLSneg()
+    PBSZ 0     ----------------------------------------------&gt;
+              &lt;----------------------------------------------  200
+    PROT P     ----------------------------------------------&gt;
+              &lt;----------------------------------------------  200
+    USER fred  ----------------------------------------------&gt;
+              &lt;----------------------------------------------  232
+    CCC        ----------------------------------------------&gt;
+              &lt;----------------------------------------------  200
+    TLSshutdown()  &lt;-------------------------------------&gt; TLSshutdown()
+
+   - The rest of the control session continues in plaintext with
+     protected data transfers (due to PROT P).
+
+   Note: This has serious security issues (see Security Considerations
+   section) but may be useful in a firewall/NAT scenario.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 19]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-20"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.4.%20%20A%20Standard%20Data%20Transfer%20Without%20Protection"></a><a class="selflink" href="#section-12.4" id="section-12.4">12.4</a>.  A Standard Data Transfer Without Protection</span>
+
+              Client                                 Server
+     control          data                   data               control
+   ====================================================================
+
+                      socket()
+                      bind()
+     PORT w,x,y,z,a,b -----------------------------------------&gt;
+         &lt;----------------------------------------------------- 200
+     STOR file ------------------------------------------------&gt;
+                                             socket()
+                                             bind()
+         &lt;----------------------------------------------------- 150
+                      accept() &lt;-----------  connect()
+                      write()   -----------&gt; read()
+                      close()   -----------&gt; close()
+         &lt;----------------------------------------------------- 226
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.5.%20%20A%20Firewall-Friendly%20Data%20Transfer%20Without%20Protection"></a><a class="selflink" href="#section-12.5" id="section-12.5">12.5</a>.  A Firewall-Friendly Data Transfer Without Protection</span>
+
+              Client                                 Server
+     control          data                   data               control
+   ====================================================================
+
+     PASV --------------------------------------------------------&gt;
+                                             socket()
+                                             bind()
+         &lt;------------------------------------------ 227 (w,x,y,z,a,b)
+                      socket()
+     STOR file ---------------------------------------------------&gt;
+                      connect()  ----------&gt; accept()
+         &lt;-------------------------------------------------------- 150
+                      write()    ----------&gt; read()
+                      close()    ----------&gt; close()
+         &lt;-------------------------------------------------------- 226
+
+   Note: Implementers should be aware that the connect()/accept()
+   function is performed prior to the receipt of the reply from the STOR
+   command.  This contrasts the with situation when a non-firewall-
+   friendly PORT is used prior to the STOR, and the accept()/connect()
+   is performed after the reply from the aforementioned STOR has been
+   dealt with.
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 20]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-21"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.6.%20%20A%20Standard%20Data%20Transfer%20with%20Protection"></a><a class="selflink" href="#section-12.6" id="section-12.6">12.6</a>.  A Standard Data Transfer with Protection</span>
+
+              Client                                 Server
+     control          data                   data               control
+   ====================================================================
+
+                      socket()
+                      bind()
+     PORT w,x,y,z,a,b --------------------------------------------&gt;
+         &lt;-------------------------------------------------------- 200
+     STOR file ---------------------------------------------------&gt;
+                                             socket()
+                                             bind()
+         &lt;-------------------------------------------------------- 150
+                      accept()  &lt;----------  connect()
+                      TLSneg()  &lt;----------&gt; TLSneg()
+                      TLSwrite() ----------&gt; TLSread()
+                      TLSshutdown() -------&gt; TLSshutdown()
+                      close()    ----------&gt; close()
+         &lt;-------------------------------------------------------- 226
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/12.7.%20%20A%20Firewall-Friendly%20Data%20Transfer%20with%20Protection"></a><a class="selflink" href="#section-12.7" id="section-12.7">12.7</a>.  A Firewall-Friendly Data Transfer with Protection</span>
+
+              Client                                 Server
+     control          data                   data               control
+   ====================================================================
+
+     PASV --------------------------------------------------------&gt;
+                                             socket()
+                                             bind()
+         &lt;------------------------------------------ 227 (w,x,y,z,a,b)
+                      socket()
+     STOR file ---------------------------------------------------&gt;
+                      connect()  ----------&gt; accept()
+         &lt;-------------------------------------------------------- 150
+                      TLSneg()   &lt;---------&gt; TLSneg()
+                      TLSwrite()  ---------&gt; TLSread()
+                      TLSshutdown() -------&gt; TLSshutdown()
+                      close()     ---------&gt; close()
+         &lt;-------------------------------------------------------- 226
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 21]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-22"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/13.%20%20Discussion%20of%20the%20REIN%20Command"></a><a class="selflink" href="#section-13" id="section-13">13</a>.  Discussion of the REIN Command</span>
+
+   The REIN command, defined in [<a href="./rfc959" title='"File Transfer Protocol"'>RFC-959</a>], allows the user to reset the
+   state of the FTP session.  From [<a href="./rfc959" title='"File Transfer Protocol"'>RFC-959</a>]:
+
+      REINITIALIZE (REIN)
+
+         This command terminates a USER, flushing all I/O and account
+         information, except to allow any transfer in progress to be
+         completed.  All parameters are reset to the default settings
+         and the control connection is left open.  This is identical to
+         the state in which a user finds himself immediately after the
+         control connection is opened.  A USER command may be expected
+         to follow.
+
+   When this command is processed by the server, the TLS session(s) MUST
+   be cleared and the control and data connections revert to
+   unprotected, clear communications.  It MAY be acceptable to use
+   cached TLS sessions for subsequent connections, however, a server
+   MUST NOT mandate this.
+
+   If the REIN command is being used to clear a TLS session, then the
+   reply to the REIN command MUST be sent in a protected session prior
+   to the session(s) being cleared.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/14.%20%20Discussion%20of%20the%20STAT%20and%20ABOR%20Commands"></a><a class="selflink" href="#section-14" id="section-14">14</a>.  Discussion of the STAT and ABOR Commands</span>
+
+   The ABOR and STAT commands and the use of TCP Urgent Pointers
+
+      [<a id="ref-RFC-959">RFC-959</a>] describes the use of Telnet commands (IP and DM) and the
+      TCP Urgent pointer to indicate the transmission of commands on the
+      control channel during the execution of a data transfer.  FTP uses
+      the Telnet Interrupt Process and Data Mark commands in conjunction
+      with Urgent data to preface two commands: ABOR (Abort Transfer)
+      and STAT (Status request).
+
+      The Urgent Pointer was used because, in a Unix implementation, the
+      receipt of a TCP packet marked as Urgent would result in the
+      execution of the SIGURG interrupt handler.  This reliance on
+      interrupt handlers was necessary on systems that did not implement
+      select() or did not support multiple threads.  TLS does not
+      support the notion of Urgent data.
+
+      When TLS is implemented as a security method in FTP, the server
+      SHOULD NOT rely on the use of SIGURG to process input on the
+      control channel during data transfers.  The client MUST send all
+      data, including Telnet commands, across the TLS session.
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 22]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-23"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.%20%20Security%20Considerations"></a><a class="selflink" href="#section-15" id="section-15">15</a>.  Security Considerations</span>
+
+   This document discusses how TLS may be used in conjunction with
+   [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>] to provide mechanisms for securing FTP sessions.
+   Discussions about security rationale and security properties are
+   contained within the [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>] document and are not repeated here.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.1.%20%20Verification%20of%20Authentication%20Tokens"></a><a class="selflink" href="#section-15.1" id="section-15.1">15.1</a>.  Verification of Authentication Tokens</span>
+
+   In this section, we assume that X.509 certificates will be used for
+   the TLS authentication.  If some other identity token is used (e.g.,
+   kerberos tickets - see [<a href="./rfc2712" title='"Addition of Kerberos Cipher Suites to Transport Layer Security (TLS)"'>RFC-2712</a>]), then similar, mechanism-specific
+   considerations will need to be made.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.1.1.%20%20Server%20Certificates"></a><a class="selflink" href="#section-15.1.1" id="section-15.1.1">15.1.1</a>.  Server Certificates</span>
+
+   - Although it is entirely an implementation decision, it is
+     recommended that certificates used for server authentication of the
+     TLS session contain the server identification information in a
+     similar manner to those used for http servers (see [<a href="./rfc2818" title='"HTTP Over TLS"'>RFC-2818</a>]).
+
+   - It is strongly recommended that the certificate used for server
+     authentication of Data connections be the same certificate as that
+     used for the corresponding Control connection.  If different
+     certificates are to be used, there should be some other mechanism
+     that the client can use to cross-check the data and control
+     connection server identities.
+
+   - If Server Certificates are not used, then many of the security
+     benefits will not be realised.  For Example, in an anonymous
+     Diffie-Hellman environment, there is no server identity
+     authentication, so there is little protection against man-in-the-
+     middle attacks.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.1.2.%20%20Client%20Certificates"></a><a class="selflink" href="#section-15.1.2" id="section-15.1.2">15.1.2</a>.  Client Certificates</span>
+
+   - Deciding which client certificates to allow and defining which
+     fields define what authentication information is entirely a server
+     implementation issue.
+
+   - However, it is strongly recommended that the certificate used for
+     client authentication of Data connections be the same certificate
+     as that used for the corresponding Control connection.  If
+     different certificates are to be used, there should be some other
+     mechanism that the server can use to cross-check the data and
+     control connection client identities.
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 23]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-24"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+   - If Client Certificates are not used, then many of the security
+     benefits will not be realised.  For Example, it would still be
+     possible for a malicious client to hijack a data connection.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.%20%20Addressing%20FTP%20Security%20Considerations%20%5BRFC-2577%5D"></a><a class="selflink" href="#section-15.2" id="section-15.2">15.2</a>.  Addressing FTP Security Considerations [<a href="./rfc2577" title='"FTP Security Considerations"'>RFC-2577</a>]</span>
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.1.%20%20Bounce%20Attack"></a><a class="selflink" href="#section-15.2.1" id="section-15.2.1">15.2.1</a>.  Bounce Attack</span>
+
+   A bounce attack should be harder in a secured FTP environment
+   because:
+
+      - The FTP server that is being used to initiate a false connection
+        will always be a 'server' in the TLS context.  Therefore, only
+        services that act as 'clients' in the TLS context could be
+        vulnerable.  This would be a counter-intuitive way to implement
+        TLS on a service.
+
+      - The FTP server would detect that the authentication credentials
+        for the data connection are not the same as those for the
+        control connection, thus the server policies could be set to
+        drop the data connection.
+
+      - Genuine users are less likely to initiate such attacks when the
+        authentication is strong, and malicious users are less likely to
+        gain access to the FTP server if the authentication is not
+        easily subverted (password guessing, network tracing, etc...)
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.2.%20%20Restricting%20Access"></a><a class="selflink" href="#section-15.2.2" id="section-15.2.2">15.2.2</a>.  Restricting Access</span>
+
+   This document presents a strong mechanism for solving the issue
+   raised in this section.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.3.%20%20Protecting%20Passwords"></a><a class="selflink" href="#section-15.2.3" id="section-15.2.3">15.2.3</a>.  Protecting Passwords</span>
+
+   The twin solutions of strong authentication and data confidentiality
+   ensure that this is not an issue when TLS is used to protect the
+   control session.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.4.%20%20Privacy"></a><a class="selflink" href="#section-15.2.4" id="section-15.2.4">15.2.4</a>.  Privacy</span>
+
+   The TLS protocol ensures data confidentiality by encryption.  Privacy
+   (e.g., access to download logs, user profile information, etc...) is
+   outside the scope of this document (and [<a href="./rfc2577" title='"FTP Security Considerations"'>RFC-2577</a>] presumably).
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.5.%20%20Protecting%20Usernames"></a><a class="selflink" href="#section-15.2.5" id="section-15.2.5">15.2.5</a>.  Protecting Usernames</span>
+
+   This is not an issue when TLS is used as the primary authentication
+   mechanism.
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 24]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-25"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.6.%20%20Port%20Stealing"></a><a class="selflink" href="#section-15.2.6" id="section-15.2.6">15.2.6</a>.  Port Stealing</span>
+
+   This specification will do little for the Denial of Service element
+   of this section; however, strong authentication on the data
+   connection will prevent unauthorised connections from retrieving or
+   submitting files.  Of course, this is only the case where strong
+   client authentication is being used.  If client certificates are not
+   used, then port stealing by a rogue client is still a problem.  If no
+   strong authentication is in use at all (e.g., anonymous Diffie-
+   Hellman), then the port stealing problem will remain.
+
+<span class="h4"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.2.7.%20%20Software-Based%20Security%20Problems"></a><a class="selflink" href="#section-15.2.7" id="section-15.2.7">15.2.7</a>.  Software-Based Security Problems</span>
+
+   Nothing in this specification will affect the discussion in this
+   section.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/15.3.%20%20Issues%20with%20the%20CCC%20Command"></a><a class="selflink" href="#section-15.3" id="section-15.3">15.3</a>.  Issues with the CCC Command</span>
+
+   Using the CCC command can create security issues.  For a full
+   description, see the "CLEAR COMMAND CHANNEL (CCC)" section of
+   [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>].  Clients should not assume that a server will allow the
+   CCC command to be processed.
+
+   Server implementations may wish to refuse to process the CCC command
+   on a session that has not passed through some form of client
+   authentication (e.g., TLS client auth or FTP USER/PASS).  This can
+   prevent anonymous clients from repeatedly requesting AUTH TLS
+   followed by CCC to tie up resources on the server.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/16.%20%20IANA%20Considerations"></a><a class="selflink" href="#section-16" id="section-16">16</a>.  IANA Considerations</span>
+
+   {FTP-PORT} - The port assigned to the FTP control connection is 21.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/17.%20%20Other%20Parameters"></a><a class="selflink" href="#section-17" id="section-17">17</a>.  Other Parameters</span>
+
+   {TLS-PARM} - The parameter for the AUTH command to indicate that TLS
+   is required.  To request the TLS protocol in accordance with this
+   document, the client MUST use 'TLS'
+
+      To maintain backward compatibility with older versions of this
+      document, the server SHOULD accept 'TLS-C' as a synonym for 'TLS'.
+
+      Note: [<a href="./rfc2228" title='"FTP Security Extensions"'>RFC-2228</a>] states that these parameters are case-
+      insensitive.
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 25]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-26"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/18.%20%20Scalability%20and%20Limits"></a><a class="selflink" href="#section-18" id="section-18">18</a>.  Scalability and Limits</span>
+
+   There are no issues other than those concerned with the ability of
+   the server to refuse to have a complete TLS negotiation for each and
+   every data connection, which will allow servers to retain throughput
+   whilst using cycles only when necessary.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/19.%20%20Applicability"></a><a class="selflink" href="#section-19" id="section-19">19</a>.  Applicability</span>
+
+   This mechanism is generally applicable as a mechanism for securing
+   the FTP protocol.  It is unlikely that anonymous FTP clients or
+   servers will require such security (although some might like the
+   authentication features without the confidentiality).
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/20.%20%20Acknowledgements"></a><a class="selflink" href="#section-20" id="section-20">20</a>.  Acknowledgements</span>
+
+   o  Netscape Communications Corporation for the original SSL protocol.
+
+   o  Eric Young for the SSLeay libraries.
+
+   o  University of California, Berkeley for the original
+      implementations of FTP and ftpd, on which the initial
+      implementation of these extensions were layered.
+
+   o  IETF CAT working group.
+
+   o  IETF TLS working group.
+
+   o  IETF FTPEXT working group.
+
+   o  Jeff Altman for the ABOR and STAT discussion.
+
+   o  The various people who have help author this document throughout
+      its protracted draft stages, namely Martin Carpenter, Eric Murray,
+      Tim Hudson, and Volker Wiegand.
+
+<span class="h2"><a class="dashAnchor" name="//apple_ref/cpp/Section/21.%20%20References"></a><a class="selflink" href="#section-21" id="section-21">21</a>.  References</span>
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/21.1.%20%20Normative%20References"></a><a class="selflink" href="#section-21.1" id="section-21.1">21.1</a>.  Normative References</span>
+
+   [<a id="ref-RFC-959">RFC-959</a>]  Postel, J. and J. Reynolds, "File Transfer Protocol", STD
+              9, <a href="./rfc959">RFC 959</a>, October 1985.
+
+   [<a id="ref-RFC-2119">RFC-2119</a>] Bradner, S., "Key words for use in RFCs to Indicate
+              Requirement Levels", <a href="https://www.rfc-editor.org/bcp/bcp14">BCP 14</a>, <a href="./rfc2119">RFC 2119</a>, March 1997.
+
+   [<a id="ref-RFC-2228">RFC-2228</a>] Horowitz, M. and S. Lunt, "FTP Security Extensions", <a href="./rfc2228">RFC</a>
+              <a href="./rfc2228">2228</a>, October 1997.
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 26]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-27"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+   [<a id="ref-RFC-2246">RFC-2246</a>] Dierks, T. and C. Allen, "The TLS Protocol Version 1.0",
+              <a href="./rfc2246">RFC 2246</a>, January 1999.
+
+   [<a id="ref-RFC-2389">RFC-2389</a>] Hethmon, P. and R. Elz, "Feature negotiation mechanism for
+              the File Transfer Protocol", <a href="./rfc2389">RFC 2389</a>, August 1998.
+
+<span class="h3"><a class="dashAnchor" name="//apple_ref/cpp/Section/21.2.%20%20Informative%20References"></a><a class="selflink" href="#section-21.2" id="section-21.2">21.2</a>.  Informative References</span>
+
+   [<a id="ref-RFC-1579">RFC-1579</a>] Bellovin, S., "Firewall-Friendly FTP", <a href="./rfc1579">RFC 1579</a>, February
+              1994.
+
+   [<a id="ref-RFC-2222">RFC-2222</a>] Myers, J., "Simple Authentication and Security Layer
+              (SASL)", <a href="./rfc2222">RFC 2222</a>, October 1997.
+
+   [<a id="ref-RFC-2577">RFC-2577</a>] Allman, M. and S. Ostermann, "FTP Security
+              Considerations", <a href="./rfc2577">RFC 2577</a>, May 1999.
+
+   [<a id="ref-RFC-2712">RFC-2712</a>] Medvinsky, A. and M. Hur, "Addition of Kerberos Cipher
+              Suites to Transport Layer Security (TLS)", <a href="./rfc2712">RFC 2712</a>,
+              October 1999.
+
+   [<a id="ref-RFC-2817">RFC-2817</a>] Khare, R. and S. Lawrence, "Upgrading to TLS Within
+              HTTP/1.1", <a href="./rfc2817">RFC 2817</a>, May 2000.
+
+   [<a id="ref-RFC-2818">RFC-2818</a>] Rescorla, E., "HTTP Over TLS", <a href="./rfc2818">RFC 2818</a>, May 2000.
+
+   [<a id="ref-RFC-3207">RFC-3207</a>] Hoffman, P., "SMTP Service Extension for Secure SMTP over
+              Transport Layer Security", <a href="./rfc3207">RFC 3207</a>, February 2002.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 27]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-28"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+Contributors
+
+   Tim Hudson
+   RSA Data Security
+   Australia Pty Ltd
+
+   Phone: +61 7 3227 4444
+   EMail: tjh@rsasecurity.com.au
+
+
+   Volker Wiegand
+   SuSE Linux
+
+   EMail: wiegand@suse.de
+
+
+   Martin Carpenter
+   Verisign Ltd
+
+   EMail: mcarpenter@verisign.com
+
+
+   Eric Murray
+   Wave Systems Inc.
+
+   EMail: ericm@lne.com
+
+Author's Address
+
+   Paul Ford-Hutchinson
+   IBM UK Ltd
+   PO Box 31
+   Birmingham Road
+   Warwick
+   United Kingdom
+
+   Phone: +44 1926 462005
+   EMail: <a href="./rfc4217">rfc4217</a>@ford-hutchinson.com
+
+
+
+
+
+
+
+
+
+
+
+
+
+<span class="grey">Ford-Hutchinson             Standards Track                    [Page 28]</span></pre>
+<hr class="noprint"/><!--NewPage--><pre class="newpage"><span id="page-29"></span>
+<span class="grey"><a href="./rfc4217">RFC 4217</a>                 Securing FTP with TLS              October 2005</span>
+
+
+Full Copyright Statement
+
+   Copyright (C) The Internet Society (2005).
+
+   This document is subject to the rights, licenses and restrictions
+   contained in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a>, and except as set forth therein, the authors
+   retain all their rights.
+
+   This document and the information contained herein are provided on an
+   "AS IS" basis and THE CONTRIBUTOR, THE ORGANIZATION HE/SHE REPRESENTS
+   OR IS SPONSORED BY (IF ANY), THE INTERNET SOCIETY AND THE INTERNET
+   ENGINEERING TASK FORCE DISCLAIM ALL WARRANTIES, EXPRESS OR IMPLIED,
+   INCLUDING BUT NOT LIMITED TO ANY WARRANTY THAT THE USE OF THE
+   INFORMATION HEREIN WILL NOT INFRINGE ANY RIGHTS OR ANY IMPLIED
+   WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+
+Intellectual Property
+
+   The IETF takes no position regarding the validity or scope of any
+   Intellectual Property Rights or other rights that might be claimed to
+   pertain to the implementation or use of the technology described in
+   this document or the extent to which any license under such rights
+   might or might not be available; nor does it represent that it has
+   made any independent effort to identify any such rights.  Information
+   on the procedures with respect to rights in RFC documents can be
+   found in <a href="https://www.rfc-editor.org/bcp/bcp78">BCP 78</a> and <a href="https://www.rfc-editor.org/bcp/bcp79">BCP 79</a>.
+
+   Copies of IPR disclosures made to the IETF Secretariat and any
+   assurances of licenses to be made available, or the result of an
+   attempt made to obtain a general license or permission for the use of
+   such proprietary rights by implementers or users of this
+   specification can be obtained from the IETF on-line IPR repository at
+   <a href="http://www.ietf.org/ipr">http://www.ietf.org/ipr</a>.
+
+   The IETF invites any interested party to bring to its attention any
+   copyrights, patents or patent applications, or other proprietary
+   rights that may cover technology that may be required to implement
+   this standard.  Please address the information to the IETF at ietf-
+   ipr@ietf.org.
+
+Acknowledgement
+
+   Funding for the RFC Editor function is currently provided by the
+   Internet Society.
+
+
+
+
+
+
+
+Ford-Hutchinson             Standards Track                    [Page 29]
+</pre>
+</body></html>
