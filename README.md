@@ -31,11 +31,13 @@ Updating requires:
 
 To grab the latest RFCs, run the [`sync`][] script.  This will use rsync to fetch all RFCs from the
 IETF website.  This is necessary because new RFCs sometimes update or obsolete older RFCs, so we
-grab everything to make sure we have the latest.
+grab everything to make sure we have the latest.  The script might need running a few times because
+of rate limiting, but keep going.
 
 Once everything is downloaded, run [`rebuild.py`][] to rebuild the search index, and add tables of
-contents to each RFC.
-
+contents to each RFC.  It has a pyproject.toml file to define the dependencies, so you can choose
+your own adventure as to how to install the dependencies and run [`rebuild.py`][]. But
+`uv run rebuild.py` is straightforward.
 
 ## License
 
