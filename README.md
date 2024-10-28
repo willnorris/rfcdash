@@ -13,7 +13,7 @@ for "RFCs".
 If you prefer, you can also subscribe to the docset feed URL at:
 
     https://raw.githubusercontent.com/willnorris/rfcdash/master/RFCs.xml
-    
+
 The unpacked docset will take a little over 700 MB on disk.
 
 
@@ -29,15 +29,13 @@ Updating requires:
  - Python 3, with [beautifulsoup4](https://pypi.python.org/pypi/beautifulsoup4)
    and [html5lib](https://pypi.python.org/pypi/html5lib) modules
 
-To grab the latest RFCs, run the [`sync`][] script.  This will use rsync to fetch all RFCs from the
-IETF website.  This is necessary because new RFCs sometimes update or obsolete older RFCs, so we
-grab everything to make sure we have the latest.  The script might need running a few times because
-of rate limiting, but keep going.
+To grab the latest RFCs, run the [`sync`][] script. This will use rsync to fetch all RFCs from the IETF website. This is necessary because new RFCs sometimes update or obsolete older RFCs, so we grab everything to make sure we have the latest.
 
-Once everything is downloaded, run [`rebuild.py`][] to rebuild the search index, and add tables of
-contents to each RFC.  It has a pyproject.toml file to define the dependencies, so you can choose
-your own adventure as to how to install the dependencies and run [`rebuild.py`][]. But
-`uv run rebuild.py` is straightforward.
+The script might need running a few times because of rate limiting, but keep going.
+
+Once everything is downloaded, run [`rebuild.py`][] to rebuild the search index, and add tables of contents to each RFC.
+
+It has a pyproject.toml file to define the dependencies, so you can choose your own adventure as to how to install the dependencies and run [`rebuild.py`][]. But `uv run rebuild.py` is straightforward.
 
 ## License
 

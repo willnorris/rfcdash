@@ -5,14 +5,25 @@ import sqlite3
 import urllib
 from bs4 import BeautifulSoup
 from pathlib import Path
-from shutil import rmtree
+from shutil import rmtree, copy
 
-DOCUMENTS_DIR = Path(
-    "RFCs.docset", "Contents", "Resources", "Documents", "www.rfc-editor.org", "rfc"
-)
-METADATA_DIR = Path("rfcs")
+# Define all directory paths
+BUILD_DIR = Path("build")
+DOWNLOAD_DIR = BUILD_DIR / "rfcs"
+DOCSET_DIR = BUILD_DIR / "RFCs.docset"
+DB_DIR = DOCSET_DIR / "Contents" / "Resources"
+DOCUMENTS_DIR = DOCSET_DIR / "Contents" / "Resources" / "Documents" / "www.rfc-editor.org" / "rfc"
 
-db = sqlite3.connect("RFCs.docset/Contents/Resources/docSet.dsidx")
+# Create directory structure
+DB_DIR.mkdir(parents=True, exist_ok=True)
+DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Copy icon.png to the docset directory
+icon_source = Path("icon.png")
+copy(icon_source, DOCSET_DIR / "icon.png")
+
+# Generate the Docset
+db = sqlite3.connect(DB_DIR / "docSet.dsidx")
 cur = db.cursor()
 
 cur.execute("DROP TABLE IF EXISTS searchIndex;")
@@ -21,14 +32,13 @@ cur.execute(
 )
 cur.execute("CREATE UNIQUE INDEX anchor ON searchIndex (name, type, path);")
 
-
 # Remove existing HTML files
 if DOCUMENTS_DIR.exists():
     rmtree(DOCUMENTS_DIR)
 DOCUMENTS_DIR.mkdir()
 
 # build search index and tables of contents
-for html_path in METADATA_DIR.glob("*.html"):
+for html_path in DOWNLOAD_DIR.glob("*.html"):
     json_path = html_path.with_suffix(".json")
     metadata = json.loads(json_path.read_text())
     rfc_id = metadata["doc_id"]
@@ -59,7 +69,6 @@ for html_path in METADATA_DIR.glob("*.html"):
                     # convert non-breaking space to regular space
                     text = text.replace("\xa0", " ")
 
-                    # print 'adding toc tag for section: %s' % text
                     name = f"//apple_ref/cpp/Section/{urllib.parse.quote(text, '')}"
                     dashAnchor = BeautifulSoup(
                         f'<a name="{name}" class="dashAnchor"></a>',
